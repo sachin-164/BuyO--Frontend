@@ -1,0 +1,42 @@
+| ✅ Item                                                        | What it Means                                                                                                                                                                                    | Why It’s Important                                                                                                                               |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Link `manifest.json` in `<head>` of every HTML**            | Add this line in the `<head>` tag of all HTML files:  `<link rel="manifest" href="manifest.json">`                                                                                               | It connects the web app to the **manifest file**, which controls how your PWA appears when installed (name, icons, theme color).                 |
+
+
+| **Register `service-worker.js` in JS (usually in app.js)**    | Use this JS code to register the service worker (usually added in `index.html` or `app.js`):  `js if ('serviceWorker' in navigator) { navigator.serviceWorker.register('service-worker.js'); } ` | This enables **offline capability** and **caching** in your PWA, allowing it to work without internet after the first load. 
+
+                     |
+| **Add installable icon sizes in `/assets/icons/`**            | Store icons like `icon-192.png` and `icon-512.png` in the `assets/icons/` folder, and refer them in `manifest.json`.                                                                             | These icons are shown when a user **installs** the app to their device. Without correct sizes, the app might not install or show blank icons.    |
+
+
+| **Test Lighthouse score in Chrome DevTools**                  | In Chrome, right-click → Inspect → Lighthouse → Generate report                                                                                                                                  | This tool checks how good your website is in terms of **performance**, **accessibility**, **PWA**, and **best practices**. Aim for a high score! |
+
+
+| **Create consistent `<nav>` and `<footer>` across all pages** | Copy the same navigation bar and footer code to all pages (or reuse with JS if you're advanced)                                                                                                  | Gives your site a **unified look**, and makes it easier for users to navigate without confusion                                                  |
+
+
+| **Add media queries for responsive layout in `style.css`**    | Use `@media` CSS rules to adjust layout for mobile, tablet, and desktop. Example:  `css @media (max-width: 768px) { .nav { flex-direction: column; } } `                                         | Makes your website **mobile-friendly** and ensures it looks good on all screen sizes — an important part of modern web design                    |
+
+
+
+` Start in this Order `
+
+index.html – Build the Home Page (layout, hero, nav, footer)
+
+style.css – Start designing your global layout and responsiveness
+
+manifest.json – Configure app name, icons, theme
+
+service-worker.js – Add offline caching for basic files
+
+app.js (create in js/) – For interactivity, service worker registration
+
+categories.json – Add your shopping categories
+
+categories.html – Display categories dynamically or statically
+
+product.html – Design product view layout
+
+cart.html – Create a sample cart page
+
+Remaining HTML files – One by one (about.html, profile.html, signup.html, etc.)
