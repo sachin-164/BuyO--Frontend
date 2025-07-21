@@ -1,90 +1,157 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shopping Navbar</title>
 
-  <!-- Favicon -->
-  <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
+<html lang="en"><head><meta charset="UTF-8" />
 
-  <!-- Stylesheet -->
-  <link rel="stylesheet" href="css/Homepage.css" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- Manifest for PWA -->
-  <link rel="manifest" href="manifest.json" />
-</head>
-<body>
-  <header>
+<title>Shopping Navbar</title>
+
+<!-- Favicon -->
+
+<link rel="icon" href="assets/icons/favicon.png" type="image/png" />
+
+
+
+<!-- Link to the external CSS file -->
+
+<link rel="stylesheet" href="css\Homepage.css" />
+
+<!-- Link to the manifest file -->
+
+<link rel="manifest" href="manifest.json" />
+
+</head><body><header>
+
     <div class="container">
-      <nav class="navbar">
-        <div class="logo">
-          <a href="index.html">
-            <img src="assets/icons/logo.png" alt="Shop Logo" />
-          </a>
-        </div>
 
-        <ul class="nav-links">
-          <li><a href="index.html">Home</a></li>
-          <li><a href="product.html">Products</a></li>
-          <li><a href="categories.html">Categories</a></li>
-          <li><a href="about.html">About</a></li>
-          <li><a href="contact.html">Contact</a></li>
-        </ul>
+        <nav class="navbar">
 
-        <div class="search-bar">
-          <input type="text" placeholder="Search products..." />
-          <button>
-            <img src="assets/icons/search-icon.png" alt="Search" />
-          </button>
-        </div>
+            <div class="logo">
 
-        <div class="nav-icons">
-          <a href="cart.html"><img src="assets/icons/cart-icon.png" alt="Cart" /></a>
-          <a href="wishlist.html"><img src="assets/icons/wishlist-icon.png" alt="Wishlist" /></a>
-          <button type="button" class="signin-button" onclick="location.href='signup.html'">Sign-In</button>
-        </div>
+                <a href="index.html">
 
-        <div class="hamburger" id="hamburger">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </nav>
+                    <img src="assets\icons\logo.png" alt="Shop Logo" />
+
+                </a>
+
+            </div>
+
+            <ul class="nav-links">
+
+                <li><a href="#">Home</a></li>
+
+                <li><a href="#">Products</a></li>
+
+                <li><a href="#">Categories</a></li>
+
+                <li><a href="#">About</a></li>
+
+                <li><a href="#">Contact</a></li>
+
+            </ul>
+
+
+
+            <div class="search-bar">
+
+                <input type="text" placeholder="Search products..." />
+
+                <button>
+
+                    <img src="assets\icons\search-icon.png" alt="Search" />
+
+                </button>
+
+            </div>
+
+
+
+            <div class="nav-icons">
+
+                <!-- <a href="#"><img src="assets\icons\profile.png" alt="Profile" /></a> -->
+
+                <a href="#"><img src="assets\icons\cart-icon.png" alt="Cart" /></a>
+
+                <a href="#"><img src="assets\icons\wishlist-icon.png" alt="Wishlist" /></a>
+
+                <button type="button" class="signin-button">
+
+                    Sign-In
+
+                </button>
+
+            </div>
+
+
+
+            <div class="hamburger" id="hamburger">
+
+                <span></span>
+
+                <span></span>
+
+                <span></span>
+
+            </div>
+
+        </nav>
+
     </div>
-  </header>
 
-  <!-- Sidebar for mobile -->
-  <div class="sidebar" id="sidebar1">
-    <ul class="nav-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="product.html">Products</a></li>
-      <li><a href="categories.html">Categories</a></li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="contact.html">Contact</a></li>
-    </ul>
-    <div class="search-bar">
-      <input type="text" placeholder="Search products..." />
-      <button>
-        <img src="assets/icons/search-icon.png" alt="Search" />
-      </button>
-    </div>
-    <div class="nav-icons">
-      <a href="profile.html"><img src="assets/icons/profile.png" alt="Profile"> Profile</a>
-      <a href="cart.html"><img src="assets/icons/cart-icon.png" alt="Cart"> Cart</a>
-      <a href="wishlist.html"><img src="assets/icons/wishlist-icon.png" alt="Wishlist"> Wishlist</a>
-      <button type="button" onclick="location.href='signup.html'" class="signin-button">Sign-In</button>
-    </div>
+</header>
+
+<div class="sidebar" id="sidebar">
+
+  <ul class="nav-links">
+
+    <li><a href="index.html">Home</a></li>
+
+    <li><a href="product.html">Products</a></li>
+
+    <li><a href="categories.html">Categories</a></li>
+
+    <li><a href="about.html">About</a></li>
+
+    <li><a href="contact.html">Contact</a></li>
+
+  </ul>
+
+  <div class="search-bar">
+
+    <input type="text" placeholder="Search products...">
+
+    <button><img src="assets/icons/search-icon.png" alt="Search"></button>
+
   </div>
 
-  <!-- Main page content -->
-  <main style="padding: 2rem; text-align: center; height: 100vh;">
-    <h1>Page Content Area</h1>
-    <p>This page now uses your responsive navigation structure.</p>
-  </main>
+  <div class="nav-icons">
 
-  <!-- JavaScript -->
-  <script src="js/script.js"></script>
-  
-</body>
-</html>
+    <a href="profile.html"><img src="assets/icons/profile.png" alt="Profile"> Profile</a>
+
+    <a href="cart.html"><img src="assets/icons/cart-icon.png" alt="Cart"> Cart</a>
+
+    <a href="wishlist.html"><img src="assets/icons/wishlist-icon.png" alt="Wishlist"> Wishlist</a>
+
+    <button type="button" onclick="location.href='signup.html'" class="signin-button">Sign-In</button>
+
+  </div>
+
+</div>
+
+
+
+<main style="padding: 2rem; text-align: center; height: 100vh;">
+
+    <h1>Page Content Area</h1>
+
+    <p>This page now uses your requested HTML and CSS structure.</p>
+
+</main>
+
+
+
+<!-- Link to the external JavaScript file -->
+
+<script src="js/script.js"></script>
+
+</body></html>
