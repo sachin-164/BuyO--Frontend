@@ -7,10 +7,6 @@ self.addEventListener('install', event => {
         '/css/Homepage.css',
         '/js/script.js',
         '/assets/icons/logo.png',
-        '/assets/icons/search-icon.png',
-        '/assets/icons/profile.png',
-        '/assets/icons/cart-icon.png',
-        '/assets/icons/wishlist-icon.png',
         '/assets/icons/favicon.png',
         '/favicon.png'
       ]);

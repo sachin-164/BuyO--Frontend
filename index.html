@@ -9,7 +9,8 @@
   <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
 
   <!-- External CSS -->
-  <link rel="stylesheet" href="css/Homepage.css" />
+  <link rel="stylesheet" href="css/Header.css" />
+  <link rel="stylesheet" href="css/Homepage.css"/>
 
   <!-- Manifest -->
   <link rel="manifest" href="/manifest.json" />
@@ -19,63 +20,7 @@
 
 </head>
 <body>
-  <header>
-    <div class="container">
-      <nav class="navbar">
-        <div class="logo">
-          <a href="index.html">
-            <img src="assets/icons/logo.png" alt="Shop Logo" />
-          </a>
-        </div>
-        <ul class="nav-links">
-          <li><a href="#">Home</a></li>
-          <li><a href="#">Products</a></li>
-          <li><a href="#">Categories</a></li>
-          <li><a href="#">About</a></li>
-          <li><a href="#">Contact</a></li>
-        </ul>
-
-        <div class="search-bar">
-          <input type="text" placeholder="Search products..." />
-          <button>
-            <img src="assets/icons/search-icon.png" alt="Search" />
-          </button>
-        </div>
-
-        <div class="nav-icons">
-          <a href="#"><i class="fa-solid fa-cart-shopping"></i>Cart</a>
-          <a href="#"><i class="fa-solid fa-heart"></i>Wishlist</a>
-          <button type="button" class="signin-button">Sign-In</button>
-        </div>
-
-        <div class="hamburger">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </nav>
-    </div>
-  </header>
-
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <ul class="nav-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="product.html">Products</a></li>
-      <li><a href="categories.html">Categories</a></li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="contact.html">Contact</a></li>
-    </ul>
-    
-    <!-- ✅ Removed search bar from sidebar -->
-
-    <div class="nav-icons">
-      <a href="profile.html"><img src="assets/icons/profile.png" alt="Profile"> Profile</a>
-      <a href="cart.html"><img src="assets/icons/cart-icon.png" alt="Cart"> Cart</a>
-      <a href="wishlist.html"><img src="assets/icons/wishlist-icon.png" alt="Wishlist"> Wishlist</a>
-      <button type="button" onclick="location.href='signup.html'" class="signin-button">Sign-In</button>
-    </div>
-  </div>
+  <div id="header-placeholder"></div>
 
   <main style="padding: 2rem; text-align: center; height: 100vh;">
     <h1>Page Content Area</h1>
@@ -83,5 +28,6 @@
   </main>
 
   <script src="js/script.js"></script>
+  <!-- <script src="include-header.js"></script>>? -->
 </body>
 </html>
