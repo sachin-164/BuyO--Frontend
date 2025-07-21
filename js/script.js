@@ -1,14 +1,19 @@
-const hamburger = document.querySelector('#hamburger');
-const sidebar = document.getElementById('sidebar');
+document.addEventListener('DOMContentLoaded', () => {
+  const hamburger = document.querySelector('.hamburger');
+  const sidebar = document.querySelector('.sidebar');
 
-hamburger.addEventListener('click', () => {
-    sidebar.classList.toggle('active');
+  if (hamburger && sidebar) {
+    hamburger.addEventListener('click', () => {
+      sidebar.classList.toggle('active');
+      hamburger.classList.toggle('active');
+    });
+  }
+
+  //Close the sidebar if the user clicks outside of it
+  document.addEventListener('click', (event) => {
+    if (sidebar.classList.contains('active') && !sidebar.contains(event.target) && !hamburger.contains(event.target)) {
+        sidebar.classList.remove('active');
+        hamburger.classList.remove('active');
+    }
+  });
 });
-
-// Service Worker Registration
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker
-        .register('/service-worker.js')
-        .then(registration => console.log('Service Worker registered'))
-        .catch(error => console.log('Service Worker registration failed:', error));
-}
