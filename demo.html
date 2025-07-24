@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShopEase - Home</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Custom CSS for enhancements */
+        .dropdown:hover .dropdown-menu {
+            display: block;
+        }
+        
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        
+        .hero-section {
+            background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)), url('https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1000&q=80');
+            background-size: cover;
+            background-position: center;
+        }
+        
+        .category-card:hover img {
+            transform: scale(1.05);
+        }
+        
+        .cart-badge {
+            top: -10px;
+            right: -10px;
+        }
+        
+        .wishlist-badge {
+            top: -10px;
+            right: -10px;
+        }
+        
+        /* Animation for toast notifications */
+        @keyframes slideIn {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+        
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        
+        .toast {
+            animation: slideIn 0.3s ease-out, fadeOut 0.5s ease-out 2.5s forwards;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation Bar -->
+    <nav class="bg-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo and Store Name -->
+                <div class="flex-shrink-0 flex items-center">
+                    <i class="fas fa-shopping-bag text-indigo-600 text-2xl mr-2"></i>
+                    <span class="text-xl font-bold text-indigo-600">ShopEase</span>
+                </div>
+                
+                <!-- Search Bar (Always visible) -->
+                <div class="flex-1 mx-4">
+                    <div class="relative w-full max-w-xl">
+                        <input type="text" placeholder="Search for products..." class="w-full px-4 py-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <button class="absolute right-0 top-0 h-full px-4 text-gray-600 hover:text-indigo-600">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Desktop Menu Items -->
+                <div class="hidden md:flex items-center space-x-4">
+                    <a href="index.html" class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-indigo-600 transition">Home</a>
+                    <a href="about.html" class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-indigo-600 transition">About</a>
+                    <a href="services.html" class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-indigo-600 transition">Services</a>
+                    <a href="products.html" class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-indigo-600 transition">Products</a>
+                    <a href="categories.html" class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-indigo-600 transition">Categories</a>
+                    
+                    <!-- Cart and Wishlist Icons with Badges -->
+                    <div class="flex items-center space-x-2">
+                        <div class="relative">
+                            <a href="cart.html" class="p-2 text-gray-700 hover:text-indigo-600 transition">
+                                <i class="fas fa-shopping-cart text-xl"></i>
+                                <span class="cart-badge absolute bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                            </a>
+                        </div>
+                        <div class="relative">
+                            <a href="wishlist.html" class="p-2 text-gray-700 hover:text-indigo-600 transition">
+                                <i class="fas fa-heart text-xl"></i>
+                                <span class="wishlist-badge absolute bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">2</span>
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Login/Profile Dropdown -->
+                    <div class="relative dropdown">
+                        <button class="flex items-center space-x-1 text-gray-700 hover:text-indigo-600 transition focus:outline-none">
+                            <i class="fas fa-user-circle text-xl"></i>
+                            <span class="text-sm font-medium">Login</span>
+                            <i class="fas fa-chevron-down text-xs"></i>
+                        </button>
+                        <div class="dropdown-menu absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 hidden">
+                            <a href="login.html" class="block px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600">Login</a>
+                            <a href="signup.html" class="block px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600">Sign Up</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Mobile menu button with icons -->
+                <div class="md:hidden flex items-center space-x-2">
+                    <div class="relative">
+                        <a href="cart.html" class="p-2 text-gray-700 hover:text-indigo-600 transition">
+                            <i class="fas fa-shopping-cart text-xl"></i>
+                            <span class="cart-badge absolute bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                        </a>
+                    </div>
+                    <div class="relative">
+                        <a href="wishlist.html" class="p-2 text-gray-700 hover:text-indigo-600 transition">
+                            <i class="fas fa-heart text-xl"></i>
+                            <span class="wishlist-badge absolute bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">2</span>
+                        </a>
+                    </div>
+                    <button class="mobile-menu-button p-2 rounded-md text-gray-700 hover:text-indigo-600 hover:bg-gray-100 focus:outline-none">
+                        <i class="fas fa-bars text-xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Mobile Menu (Hidden by default) -->
+        <div class="mobile-menu hidden md:hidden bg-white border-t">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <!-- Mobile Search Bar -->
+                <div class="relative mb-2">
+                    <input type="text" placeholder="Search..." class="w-full px-4 py-2 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button class="absolute right-0 top-0 h-full px-4 text-gray-600 hover:text-indigo-600">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+                
+                <a href="index.html" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50">Home</a>
+                <a href="about.html" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50">About</a>
+                <a href="services.html" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50">Services</a>
+                <a href="products.html" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50">Products</a>
+                <a href="categories.html" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50">Categories</a>
+                
+                
+                <div class="pt-2 border-t">
+                    <a href="login.html" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50">Login</a>
+                    <a href="signup.html" class="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-indigo-600 hover:bg-gray-50">Sign Up</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero-section text-white py-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="md:w-1/2">
+                <h1 class="text-4xl md:text-5xl font-bold mb-4">Welcome to ShopEase</h1>
+                <p class="text-xl mb-8">Discover amazing products at unbeatable prices. Shop with ease and convenience.</p>
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <a href="products.html" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 text-center">Shop Now</a>
+                    <a href="categories.html" class="bg-white hover:bg-gray-100 text-indigo-600 font-bold py-3 px-6 rounded-lg transition duration-300 text-center">Browse Categories</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Featured Categories -->
+    <section class="py-12 bg-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">Shop by Category</h2>
+                <p class="text-gray-600 max-w-2xl mx-auto">Explore our wide range of product categories</p>
+            </div>
+            
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+                <!-- Category 1 -->
+                <a href="categories.html#electronics" class="category-card bg-gray-50 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition">
+                    <div class="p-4">
+                        <div class="h-40 overflow-hidden">
+                            <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Electronics" class="w-full h-full object-cover transition duration-300">
+                        </div>
+                        <h3 class="mt-4 text-lg font-medium text-gray-800 text-center">Electronics</h3>
+                    </div>
+                </a>
+                
+                <!-- Category 2 -->
+                <a href="categories.html#fashion" class="category-card bg-gray-50 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition">
+                    <div class="p-4">
+                        <div class="h-40 overflow-hidden">
+                            <img src="https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Fashion" class="w-full h-full object-cover transition duration-300">
+                        </div>
+                        <h3 class="mt-4 text-lg font-medium text-gray-800 text-center">Fashion</h3>
+                    </div>
+                </a>
+                
+                <!-- Category 3 -->
+                <a href="categories.html#home" class="category-card bg-gray-50 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition">
+                    <div class="p-4">
+                        <div class="h-40 overflow-hidden">
+                            <img src="https://images.unsplash.com/photo-1556911220-bff31c812dba?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Home & Garden" class="w-full h-full object-cover transition duration-300">
+                        </div>
+                        <h3 class="mt-4 text-lg font-medium text-gray-800 text-center">Home & Garden</h3>
+                    </div>
+                </a>
+                
+                <!-- Category 4 -->
+                <a href="categories.html#beauty" class="category-card bg-gray-50 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition">
+                    <div class="p-4">
+                        <div class="h-40 overflow-hidden">
+                            <img src="https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Beauty" class="w-full h-full object-cover transition duration-300">
+                        </div>
+                        <h3 class="mt-4 text-lg font-medium text-gray-800 text-center">Beauty</h3>
+                    </div>
+                </a>
+                
+                <!-- Category 5 -->
+                <a href="categories.html#sports" class="category-card bg-gray-50 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition">
+                    <div class="p-4">
+                        <div class="h-40 overflow-hidden">
+                            <img src="https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Sports" class="w-full h-full object-cover transition duration-300">
+                        </div>
+                        <h3 class="mt-4 text-lg font-medium text-gray-800 text-center">Sports</h3>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="text-center mt-10">
+                <a href="categories.html" class="inline-flex items-center text-indigo-600 hover:text-indigo-800 font-medium">
+                    View All Categories
+                    <i class="fas fa-arrow-right ml-2"></i>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Featured Products -->
+    <section class="py-12 bg-gray-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">Featured Products</h2>
+                <p class="text-gray-600 max-w-2xl mx-auto">Check out our most popular products</p>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- Product 1 -->
+                <div class="product-card bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition duration-300">
+                    <div class="relative">
+                        <a href="products.html#product1">
+                            <img src="https://images.unsplash.com/photo-1546868871-7041f2a55e12?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Smartphone" class="w-full h-48 object-cover">
+                        </a>
+                        <div class="absolute top-2 right-2">
+                            <button class="wishlist-btn p-2 bg-white rounded-full shadow-md text-gray-400 hover:text-red-500 transition">
+                                <i class="far fa-heart"></i>
+                            </button>
+                        </div>
+                        <div class="absolute bottom-2 left-2 bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded">
+                            -20%
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <a href="products.html#product1" class="block text-lg font-medium text-gray-800 hover:text-indigo-600 mb-1">Premium Smartphone X</a>
+                        <div class="flex items-center mb-2">
+                            <div class="flex text-yellow-400">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star-half-alt"></i>
+                            </div>
+                            <span class="text-gray-600 text-sm ml-2">(42 reviews)</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-gray-500 line-through mr-2">$899.99</span>
+                                <span class="text-lg font-bold text-indigo-600">$719.99</span>
+                            </div>
+                            <button class="add-to-cart-btn p-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition">
+                                <i class="fas fa-shopping-cart"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Product 2 -->
+                <div class="product-card bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition duration-300">
+                    <div class="relative">
+                        <a href="products.html#product2">
+                            <img src="https://images.unsplash.com/photo-1523275335684-37898b6baf30?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Watch" class="w-full h-48 object-cover">
+                        </a>
+                        <div class="absolute top-2 right-2">
+                            <button class="wishlist-btn p-2 bg-white rounded-full shadow-md text-gray-400 hover:text-red-500 transition">
+                                <i class="far fa-heart"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <a href="products.html#product2" class="block text-lg font-medium text-gray-800 hover:text-indigo-600 mb-1">Luxury Smart Watch</a>
+                        <div class="flex items-center mb-2">
+                            <div class="flex text-yellow-400">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="far fa-star"></i>
+                            </div>
+                            <span class="text-gray-600 text-sm ml-2">(28 reviews)</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-lg font-bold text-indigo-600">$249.99</span>
+                            </div>
+                            <button class="add-to-cart-btn p-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition">
+                                <i class="fas fa-shopping-cart"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Product 3 -->
+                <div class="product-card bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition duration-300">
+                    <div class="relative">
+                        <a href="products.html#product3">
+                            <img src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Shoes" class="w-full h-48 object-cover">
+                        </a>
+                        <div class="absolute top-2 right-2">
+                            <button class="wishlist-btn p-2 bg-white rounded-full shadow-md text-red-500">
+                                <i class="fas fa-heart"></i>
+                            </button>
+                        </div>
+                        <div class="absolute bottom-2 left-2 bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded">
+                            New
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <a href="products.html#product3" class="block text-lg font-medium text-gray-800 hover:text-indigo-600 mb-1">Running Shoes Pro</a>
+                        <div class="flex items-center mb-2">
+                            <div class="flex text-yellow-400">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                            </div>
+                            <span class="text-gray-600 text-sm ml-2">(56 reviews)</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-lg font-bold text-indigo-600">$89.99</span>
+                            </div>
+                            <button class="add-to-cart-btn p-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition">
+                                <i class="fas fa-shopping-cart"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Product 4 -->
+                <div class="product-card bg-white rounded-lg overflow-hidden shadow-md hover:shadow-lg transition duration-300">
+                    <div class="relative">
+                        <a href="products.html#product4">
+                            <img src="https://images.unsplash.com/photo-1505740420928-5e560c06d30e?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Headphones" class="w-full h-48 object-cover">
+                        </a>
+                        <div class="absolute top-2 right-2">
+                            <button class="wishlist-btn p-2 bg-white rounded-full shadow-md text-gray-400 hover:text-red-500 transition">
+                                <i class="far fa-heart"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <a href="products.html#product4" class="block text-lg font-medium text-gray-800 hover:text-indigo-600 mb-1">Wireless Headphones</a>
+                        <div class="flex items-center mb-2">
+                            <div class="flex text-yellow-400">
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star"></i>
+                                <i class="fas fa-star-half-alt"></i>
+                            </div>
+                            <span class="text-gray-600 text-sm ml-2">(37 reviews)</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-gray-500 line-through mr-2">$129.99</span>
+                                <span class="text-lg font-bold text-indigo-600">$99.99</span>
+                            </div>
+                            <button class="add-to-cart-btn p-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition">
+                                <i class="fas fa-shopping-cart"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-center mt-10">
+                <a href="products.html" class="inline-flex items-center text-indigo-600 hover:text-indigo-800 font-medium">
+                    View All Products
+                    <i class="fas fa-arrow-right ml-2"></i>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Special Offers -->
+    <section class="py-12 bg-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">Special Offers</h2>
+                <p class="text-gray-600 max-w-2xl mx-auto">Limited time deals you don't want to miss</p>
+            </div>
+            
+            <div class="bg-indigo-50 rounded-xl p-6 md:p-8">
+                <div class="flex flex-col md:flex-row items-center">
+                    <div class="md:w-1/2 mb-6 md:mb-0">
+                        <img src="https://images.unsplash.com/photo-1603302576837-37561b2e2302?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80" alt="Special Offer" class="w-full rounded-lg shadow-md">
+                    </div>
+                    <div class="md:w-1/2 md:pl-8">
+                        <h3 class="text-2xl font-bold text-indigo-800 mb-4">Summer Sale - Up to 50% Off</h3>
+                        <p class="text-gray-700 mb-6">Don't miss our biggest sale of the season! Shop now and save big on selected items. Limited time offer.</p>
+                        <div class="mb-6">
+                            <div class="flex items-center justify-center md:justify-start space-x-4">
+                                <div class="text-center">
+                                    <div class="bg-white rounded-lg shadow-sm w-16 h-16 flex items-center justify-center">
+                                        <span class="text-2xl font-bold text-indigo-600" id="days">05</span>
+                                    </div>
+                                    <span class="text-xs text-gray-600 mt-1">Days</span>
+                                </div>
+                                <div class="text-center">
+                                    <div class="bg-white rounded-lg shadow-sm w-16 h-16 flex items-center justify-center">
+                                        <span class="text-2xl font-bold text-indigo-600" id="hours">12</span>
+                                    </div>
+                                    <span class="text-xs text-gray-600 mt-1">Hours</span>
+                                </div>
+                                <div class="text-center">
+                                    <div class="bg-white rounded-lg shadow-sm w-16 h-16 flex items-center justify-center">
+                                        <span class="text-2xl font-bold text-indigo-600" id="minutes">30</span>
+                                    </div>
+                                    <span class="text-xs text-gray-600 mt-1">Minutes</span>
+                                </div>
+                                <div class="text-center">
+                                    <div class="bg-white rounded-lg shadow-sm w-16 h-16 flex items-center justify-center">
+                                        <span class="text-2xl font-bold text-indigo-600" id="seconds">45</span>
+                                    </div>
+                                    <span class="text-xs text-gray-600 mt-1">Seconds</span>
+                                </div>
+                            </div>
+                        </div>
+                        <a href="products.html" class="inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">
+                            Shop the Sale
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section class="py-12 bg-gray-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">What Our Customers Say</h2>
+                <p class="text-gray-600 max-w-2xl mx-auto">Hear from our satisfied customers</p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Testimonial 1 -->
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <div class="flex items-center mb-4">
+                        <div class="flex text-yellow-400 mr-2">
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                        </div>
+                    </div>
+                    <p class="text-gray-700 mb-4">"I've been shopping with ShopEase for over a year now and I'm always impressed with their fast shipping and excellent customer service. Highly recommend!"</p>
+                    <div class="flex items-center">
+                        <img src="https://randomuser.me/api/portraits/women/32.jpg" alt="Sarah Johnson" class="w-10 h-10 rounded-full mr-3">
+                        <div>
+                            <h4 class="font-medium text-gray-800">Sarah Johnson</h4>
+                            <p class="text-sm text-gray-600">Verified Customer</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Testimonial 2 -->
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <div class="flex items-center mb-4">
+                        <div class="flex text-yellow-400 mr-2">
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star-half-alt"></i>
+                        </div>
+                    </div>
+                    <p class="text-gray-700 mb-4">"The quality of products I've received has always exceeded my expectations. Their return policy is also very customer-friendly."</p>
+                    <div class="flex items-center">
+                        <img src="https://randomuser.me/api/portraits/men/54.jpg" alt="Michael Chen" class="w-10 h-10 rounded-full mr-3">
+                        <div>
+                            <h4 class="font-medium text-gray-800">Michael Chen</h4>
+                            <p class="text-sm text-gray-600">Verified Customer</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Testimonial 3 -->
+                <div class="bg-white p-6 rounded-lg shadow-sm">
+                    <div class="flex items-center mb-4">
+                        <div class="flex text-yellow-400 mr-2">
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                            <i class="fas fa-star"></i>
+                        </div>
+                    </div>
+                    <p class="text-gray-700 mb-4">"I love the variety of products available. Whether I'm shopping for electronics or home goods, I can always find what I need at competitive prices."</p>
+                    <div class="flex items-center">
+                        <img src="https://randomuser.me/api/portraits/women/68.jpg" alt="Jessica Williams" class="w-10 h-10 rounded-full mr-3">
+                        <div>
+                            <h4 class="font-medium text-gray-800">Jessica Williams</h4>
+                            <p class="text-sm text-gray-600">Verified Customer</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Newsletter -->
+    <section class="py-12 bg-indigo-600 text-white">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="md:flex md:items-center md:justify-between">
+                <div class="md:w-1/2 mb-6 md:mb-0">
+                    <h2 class="text-2xl font-bold mb-2">Subscribe to Our Newsletter</h2>
+                    <p>Get the latest updates on new products and upcoming sales</p>
+                </div>
+                <div class="md:w-1/2">
+                    <form class="flex flex-col sm:flex-row gap-2">
+                        <input type="email" placeholder="Your email address" class="flex-grow px-4 py-3 rounded-lg focus:outline-none text-gray-800">
+                        <button type="submit" class="bg-white text-indigo-600 font-bold px-6 py-3 rounded-lg hover:bg-gray-100 transition">Subscribe</button>
+                    </form>
+                    <p class="text-indigo-200 text-sm mt-2">We respect your privacy. Unsubscribe at any time.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white pt-12 pb-6">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-8">
+                <!-- About Column -->
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">About ShopEase</h3>
+                    <p class="text-gray-400 mb-4">Your one-stop shop for all your needs. We provide high-quality products with excellent customer service.</p>
+                    <div class="flex space-x-4">
+                        <a href="#" class="text-gray-400 hover:text-white transition">
+                            <i class="fab fa-facebook-f"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white transition">
+                            <i class="fab fa-twitter"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white transition">
+                            <i class="fab fa-instagram"></i>
+                        </a>
+                        <a href="#" class="text-gray-400 hover:text-white transition">
+                            <i class="fab fa-pinterest"></i>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Quick Links Column -->
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Quick Links</h3>
+                    <ul class="space-y-2">
+                        <li><a href="index.html" class="text-gray-400 hover:text-white transition">Home</a></li>
+                        <li><a href="about.html" class="text-gray-400 hover:text-white transition">About Us</a></li>
+                        <li><a href="services.html" class="text-gray-400 hover:text-white transition">Services</a></li>
+                        <li><a href="products.html" class="text-gray-400 hover:text-white transition">Products</a></li>
+                        <li><a href="categories.html" class="text-gray-400 hover:text-white transition">Categories</a></li>
+                    </ul>
+                </div>
+                
+                <!-- Customer Service Column -->
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Customer Service</h3>
+                    <ul class="space-y-2">
+                        <li><a href="#" class="text-gray-400 hover:text-white transition">Contact Us</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition">FAQs</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition">Shipping Policy</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition">Returns & Refunds</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white transition">Privacy Policy</a></li>
+                    </ul>
+                </div>
+                
+                <!-- Contact Column -->
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Contact Info</h3>
+                    <ul class="space-y-2 text-gray-400">
+                        <li class="flex items-start">
+                            <i class="fas fa-map-marker-alt mt-1 mr-3"></i>
+                            <span>123 Shopping Street, Retail City, RC 12345</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-phone-alt mr-3"></i>
+                            <span>(123) 456-7890</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-envelope mr-3"></i>
+                            <span>support@shopease.com</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="border-t border-gray-700 pt-6 flex flex-col md:flex-row justify-between items-center">
+                <p class="text-gray-400 mb-4 md:mb-0">© 2023 ShopEase. All rights reserved.</p>
+                <div class="flex space-x-6">
+                    <img src="https://via.placeholder.com/40x25" alt="Visa" class="h-6">
+                    <img src="https://via.placeholder.com/40x25" alt="Mastercard" class="h-6">
+                    <img src="https://via.placeholder.com/40x25" alt="PayPal" class="h-6">
+                    <img src="https://via.placeholder.com/40x25" alt="Apple Pay" class="h-6">
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notification (Hidden by default) -->
+    <div id="toast" class="fixed bottom-4 right-4 hidden">
+        <div class="toast bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center">
+            <i class="fas fa-check-circle mr-2"></i>
+            <span id="toast-message">Product added to cart!</span>
+            <button class="ml-4" onclick="hideToast()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // Mobile menu toggle
+        const mobileMenuButton = document.querySelector('.mobile-menu-button');
+        const mobileMenu = document.querySelector('.mobile-menu');
+        
+        mobileMenuButton.addEventListener('click', () => {
+            mobileMenu.classList.toggle('hidden');
+        });
+        
+        // Countdown timer for special offer
+        function updateCountdown() {
+            const now = new Date();
+            const endDate = new Date();
+            endDate.setDate(now.getDate() + 5); // 5 days from now
+            
+            const diff = endDate - now;
+            
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+            
+            document.getElementById('days').textContent = days.toString().padStart(2, '0');
+            document.getElementById('hours').textContent = hours.toString().padStart(2, '0');
+            document.getElementById('minutes').textContent = minutes.toString().padStart(2, '0');
+            document.getElementById('seconds').textContent = seconds.toString().padStart(2, '0');
+        }
+        
+        setInterval(updateCountdown, 1000);
+        updateCountdown();
+        
+        // Add to cart functionality
+        const addToCartButtons = document.querySelectorAll('.add-to-cart-btn');
+        
+        addToCartButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                showToast('Product added to cart!', 'green');
+                
+                // Update cart count
+                const cartBadge = document.querySelector('.cart-badge');
+                let currentCount = parseInt(cartBadge.textContent);
+                cartBadge.textContent = currentCount + 1;
+            });
+        });
+        
+        // Wishlist functionality
+        const wishlistButtons = document.querySelectorAll('.wishlist-btn');
+        
+        wishlistButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                const icon = button.querySelector('i');
+                
+                if (icon.classList.contains('far')) {
+                    icon.classList.remove('far');
+                    icon.classList.add('fas');
+                    icon.classList.add('text-red-500');
+                    showToast('Added to wishlist!', 'red');
+                    
+                    // Update wishlist count
+                    const wishlistBadge = document.querySelector('.wishlist-badge');
+                    let currentCount = parseInt(wishlistBadge.textContent);
+                    wishlistBadge.textContent = currentCount + 1;
+                } else {
+                    icon.classList.remove('fas');
+                    icon.classList.remove('text-red-500');
+                    icon.classList.add('far');
+                    showToast('Removed from wishlist!', 'red');
+                    
+                    // Update wishlist count
+                    const wishlistBadge = document.querySelector('.wishlist-badge');
+                    let currentCount = parseInt(wishlistBadge.textContent);
+                    wishlistBadge.textContent = Math.max(0, currentCount - 1);
+                }
+                
+                e.stopPropagation(); // Prevent following the product link
+            });
+        });
+        
+        // Toast notification functions
+        function showToast(message, color) {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toast-message');
+            
+            toastMessage.textContent = message;
+            toast.classList.remove('hidden');
+            
+            // Remove previous color classes
+            toast.querySelector('.toast').classList.remove('bg-green-500', 'bg-red-500', 'bg-blue-500', 'bg-yellow-500');
+            
+            // Add new color class
+            if (color === 'green') {
+                toast.querySelector('.toast').classList.add('bg-green-500');
+            } else if (color === 'red') {
+                toast.querySelector('.toast').classList.add('bg-red-500');
+            } else if (color === 'blue') {
+                toast.querySelector('.toast').classList.add('bg-blue-500');
+            } else if (color === 'yellow') {
+                toast.querySelector('.toast').classList.add('bg-yellow-500');
+            }
+            
+            // Auto hide after 3 seconds
+            setTimeout(() => {
+                hideToast();
+            }, 3000);
+        }
+        
+        function hideToast() {
+            const toast = document.getElementById('toast');
+            toast.classList.add('hidden');
+        }
+        
+        // Simulate login/logout functionality
+        const loginDropdown = document.querySelector('.dropdown');
+        const loginButton = loginDropdown.querySelector('button');
+        
+        // Check if user is logged in (simulated with localStorage)
+        if (localStorage.getItem('loggedIn') === 'true') {
+            // Change login button to profile
+            loginButton.innerHTML = `
+                <i class="fas fa-user-circle text-xl"></i>
+                <span class="text-sm font-medium">My Profile</span>
+                <i class="fas fa-chevron-down text-xs"></i>
+            `;
+            
+            // Change dropdown menu
+            const dropdownMenu = loginDropdown.querySelector('.dropdown-menu');
+            dropdownMenu.innerHTML = `
+                <a href="profile.html" class="block px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600">Profile</a>
+                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600" id="logout-btn">Logout</a>
+            `;
+            
+            // Add logout functionality
+            document.getElementById('logout-btn').addEventListener('click', (e) => {
+                e.preventDefault();
+                localStorage.removeItem('loggedIn');
+                location.reload();
+            });
+        }
+        
+        // Simulate login form submission
+        if (document.getElementById('login-form')) {
+            document.getElementById('login-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                localStorage.setItem('loggedIn', 'true');
+                window.location.href = 'index.html';
+            });
+        }
+    </script>
+</body>
+</html>

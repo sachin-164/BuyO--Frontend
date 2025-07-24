@@ -1,56 +1,90 @@
-<header class="header">
+ <nav class="navbar">
     <div class="container">
-      <nav class="navbar">
-        <div class="logo">
-          <a href="index.html">
+        <div class="nav-content">
+          <div class="logo">
+            <a href="index.html">
             <img src="assets/icons/logo.png" alt="Shop Logo" />
-          </a>
+            </a>
+          </div>
+            
+            <div class="search-container-desktop">
+                <div class="search-wrapper">
+                    <input type="text" placeholder="Search for products..." class="search-input">
+                    <button class="search-button">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="desktop-menu">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="about.html" class="nav-link">About</a>
+                <a href="services.html" class="nav-link">Services</a>
+                <a href="products.html" class="nav-link">Products</a>
+                <a href="categories.html" class="nav-link">Categories</a>
+                
+                <div class="nav-icons">
+                    <div class="icon-wrapper">
+                        <a href="cart.html" class="icon-link">
+                            <i class="fas fa-shopping-cart"></i>
+                            <span class="cart-badge">3</span>
+                        </a>
+                    </div>
+                    <div class="icon-wrapper">
+                        <a href="wishlist.html" class="icon-link">
+                            <i class="fas fa-heart"></i>
+                            <span class="wishlist-badge">2</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="dropdown">
+                    <button class="dropdown-toggle">
+                        <i class="fas fa-user-circle"></i>
+                        <span>Login</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="dropdown-menu">
+                        <a href="login.html" class="dropdown-item">Login</a>
+                        <a href="signup.html" class="dropdown-item">Sign Up</a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mobile-menu-icons">
+                <div class="icon-wrapper">
+                    <a href="cart.html" class="icon-link">
+                        <i class="fas fa-shopping-cart"></i>
+                        <!-- <span class="cart-badge"></span> -->
+                    </a>
+                </div>
+                <div class="icon-wrapper">
+                    <a href="wishlist.html" class="icon-link">
+                        <i class="fas fa-heart"></i>
+                        <!-- <span class="wishlist-badge"></span> -->
+                    </a>
+                </div>
+                <button class="mobile-menu-button">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
         </div>
-        <ul class="nav-links">
-          <li><a href="index.html"><i class="fa-solid fa-house"></i>Home</a></li>
-          <li><a href="categories.html">Categories</a></li>
-          <li><a href="services.html">Service</a></li>
-          <li><a href="about.html">About</a></li>
-        </ul>
-
-        <div class="search-bar">
-          <input type="text" placeholder="Search products..." />
-          <button>
-            <img src="assets/icons/search-icon.png" alt="Search" />
-          </button>
-        </div>
-
-        <div class="nav-icons">
-          <a href="cart.html"><i class="fa-solid fa-cart-shopping"></i>Cart</a>
-          <a href="wishlist.html"><i class="fa-solid fa-heart"></i>Wishlist</a>
-          <button type="button" onclick="location.href='signup.html'" class="signin-button">Sign-In</button>
-        </div>
-
-        <div class="hamburger">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </nav>
     </div>
-  </header>
-
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <ul class="nav-links">
-      <li><a href="index.html">Home</a></li>
-      <li><a href="product.html">Products</a></li>
-      <li><a href="categories.html">Categories</a></li>
-      <li><a href="about.html">About</a></li>
-      <li><a href="contact.html">Contact</a></li>
-    </ul>
     
-    <!-- ✅ Removed search bar from sidebar -->
-
-    <div class="nav-icons">
-      <a href="profile.html"><img src="assets/icons/profile.png" alt="Profile"> Profile</a>
-      <a href="cart.html"><i class="fa-solid fa-cart-shopping"></i>Cart</a>
-      <a href="wishlist.html"><i class="fa-solid fa-heart"></i>Wishlist</a>
-      <button type="button" onclick="location.href='signup.html'" class="signin-button">Sign-In</button>
+    <div class="mobile-menu hidden">
+        <div class="mobile-menu-content">
+            
+            
+            <a href="index.html" class="mobile-nav-link">Home</a>
+            <a href="about.html" class="mobile-nav-link">About</a>
+            <a href="services.html" class="mobile-nav-link">Services</a>
+            <a href="products.html" class="mobile-nav-link">Products</a>
+            <a href="categories.html" class="mobile-nav-link">Categories</a>
+            
+            <div class="mobile-menu-divider">
+                <a href="login.html" class="mobile-nav-link">Login</a>
+                <a href="signup.html" class="mobile-nav-link">Sign Up</a>
+            </div>
+        </div>
     </div>
-  </div>
+</nav>
