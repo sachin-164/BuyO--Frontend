@@ -23,8 +23,42 @@
   <div id="header-placeholder"></div>
 
   <main style="padding: 2rem; text-align: center; height: 100vh;">
-    <h1>Page Content Area</h1>
-    <p>This page now uses your requested HTML and CSS structure.</p>
+    <section class="hero-banner">
+      <div class="carousel">
+        <div class="slide active">
+          <img src="assets/images/offer1.webp" alt="Offer 1" />
+        </div>
+        <div class="slide">
+          <img src="assets/images/offer2.webp" alt="Offer 2" />
+        </div>
+        <div class="slide">
+          <img src="assets/images/offer3.webp" alt="Offer 3" />
+        </div>
+        <!-- Add more slides as needed -->
+
+        <!-- Navigation buttons -->
+        <button class="prev">&#10094;</button>
+        <button class="next">&#10095;</button>
+      </div>
+    
+    <section class="categories-carousel">
+  <div class="fade-left"></div>
+  <div class="categories-container" id="categoryScroll">
+    <div class="category-item">Electronics</div>
+    <div class="category-item">Fashion</div>
+    <div class="category-item">Grocery</div>
+    <div class="category-item">Home</div>
+    <div class="category-item">Books</div>
+    <div class="category-item">Toys</div>
+    <div class="category-item">Beauty</div>
+    <div class="category-item">Appliances</div>
+    <div class="category-item">Mobiles</div>
+    <div class="category-item">Sports</div>
+    <!-- Add more if needed -->
+  </div>
+  <div class="fade-right"></div>
+</section>
+
   </main>
 
   <script src="js/script.js"></script>
