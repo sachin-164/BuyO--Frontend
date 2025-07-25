@@ -56,7 +56,7 @@
 .search-input {
     width: 100%;
     padding: 8px 16px;
-    border-radius: 9999px;
+    border-radius: 100px;
     border: 1px solid #d1d5db;
     box-sizing: border-box;
 }
@@ -71,13 +71,15 @@
     top: 0;
     height: 100%;
     padding: 0 16px;
-    color: #4b5563;
-    background: transparent;
+    color: #eff0f1;
+    background: #3a34aa;
     border: none;
     cursor: pointer;
+    border-radius: 100px;
 }
 .search-button:hover {
-    color: #4f46e5;
+    color: #ffffff;
+    background-color: #4f46e5;
 }
 
 .desktop-menu {

@@ -21,7 +21,7 @@ function initHeader() {
   const cartBadge = document.querySelector('.cart-badge');
   const wishlistBadge = document.querySelector('.wishlist-badge');
 
-  const cartCount = 0;      // Replace this with dynamic value
+  const cartCount = 5;      // Replace this with dynamic value
   const wishlistCount = 0;  // Replace this with dynamic value
 
   // Show count or hide badge if 0
