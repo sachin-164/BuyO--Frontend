@@ -1,4 +1,3 @@
-// Fetch and inject header, then call initHeader
 fetch('header.html')
   .then(res => res.text())
   .then(data => {
@@ -6,32 +5,50 @@ fetch('header.html')
     initHeader(); // Call this AFTER header is inserted
   });
 
+// This function should be called after the header HTML is loaded into the page.
 function initHeader() {
-  // Toggle mobile menu
-  const mobileMenuButton = document.querySelector('.mobile-menu-button');
-  const mobileMenu = document.querySelector('.mobile-menu');
+    const mobileMenuButton = document.querySelector('.mobile-menu-button');
+    const mobileMenu = document.querySelector('.mobile-menu');
 
-  if (mobileMenuButton && mobileMenu) {
-    mobileMenuButton.addEventListener('click', () => {
-      mobileMenu.classList.toggle('hidden');
-    });
-  }
+    // Ensure elements exist before adding listeners
+    if (mobileMenuButton && mobileMenu) {
+        // 1. Toggle menu when hamburger button is clicked
+        mobileMenuButton.addEventListener('click', () => {
+            mobileMenu.classList.toggle('hidden');
+        });
 
-  // ✅ Update badge counts (you can fetch from localStorage or backend)
-  const cartBadge = document.querySelector('.cart-badge');
-  const wishlistBadge = document.querySelector('.wishlist-badge');
+        // 2. Add "click outside to close" functionality
+        document.addEventListener('click', (event) => {
+            const isMenuOpen = !mobileMenu.classList.contains('hidden');
+            // Check if the click was outside the menu AND outside the button
+            const isClickInsideMenu = mobileMenu.contains(event.target);
+            const isClickOnButton = mobileMenuButton.contains(event.target);
 
-  const cartCount = 5;      // Replace this with dynamic value
-  const wishlistCount = 0;  // Replace this with dynamic value
+            if (isMenuOpen && !isClickInsideMenu && !isClickOnButton) {
+                mobileMenu.classList.add('hidden'); // Close the menu
+            }
+        });
+    }
 
-  // Show count or hide badge if 0
-  if (cartBadge) {
-    cartBadge.textContent = cartCount;
-    cartBadge.style.display = cartCount > 0 ? 'flex' : 'none';
-  }
+    // Update badge counts (can be fetched from localStorage or backend)
+    const cartBadge = document.querySelector('.cart-badge');
+    const wishlistBadge = document.querySelector('.wishlist-badge');
 
-  if (wishlistBadge) {
-    wishlistBadge.textContent = wishlistCount;
-    wishlistBadge.style.display = wishlistCount > 0 ? 'flex' : 'none';
-  }
+    const cartCount = 5;      
+    const wishlistCount = 2;  
+
+    // Show count or hide badge if 0
+    if (cartBadge) {
+        cartBadge.textContent = cartCount;
+        cartBadge.style.display = cartCount > 0 ? 'flex' : 'none';
+    }
+
+    if (wishlistBadge) {
+        wishlistBadge.textContent = wishlistCount;
+        wishlistBadge.style.display = wishlistCount > 0 ? 'flex' : 'none';
+    }
 }
+
+
+
+

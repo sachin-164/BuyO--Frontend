@@ -73,8 +73,11 @@ body {
 .categories-carousel {
     position: relative;
     overflow: hidden;
-    background-color: #fff;
+    /* background-color: #fff; */
     padding: 20px 0;
+    backdrop-filter: blur(40px);
+    box-shadow: 0px 0px 30px rgba(54, 86, 201, 0.37);
+    border: 2px solid rgba(26, 31, 76, 0.18)
 }
 
 .categories-wrapper {
@@ -97,6 +100,7 @@ body {
     font-weight: bold;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
     flex-shrink: 0;
+    
 }
 
 .fade-left,
