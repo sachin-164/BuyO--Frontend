@@ -21,7 +21,7 @@
     width: 100%;
     backdrop-filter: blur(40px);
     box-shadow: 0px 0px 30px rgba(54, 86, 201, 0.37);
-    border: 2px solid rgba(26, 31, 76, 0.18)
+    border: 2px solid rgba(26, 31, 76, 0.18);
 }
 
 .nav-content {
@@ -231,8 +231,11 @@
 }
 
 .mobile-menu {
-    background-color: white;
-    border-top: 1px solid #e5e7eb;
+    /* background-color: rgb(255, 255, 255);
+    border-top: 1px solid #e5e7eb; */
+    backdrop-filter: blur(40px);
+    box-shadow: 0px 0px 30px rgba(54, 86, 201, 0.37);
+    border: 2px solid rgba(26, 31, 76, 0.18);
 }
 
 .mobile-menu-content {
@@ -247,7 +250,7 @@
     border-radius: 6px;
     font-size: 16px;
     font-weight: 500;
-    color: #374151;
+    color: #f1f1f1;
     text-decoration: none;
 }
 .mobile-nav-link:hover {
