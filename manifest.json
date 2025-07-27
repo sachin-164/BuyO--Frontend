@@ -1,6 +1,6 @@
 {
-  "name": "Shopping App",
-  "short_name": "Shop",
+  "name": "BuyO!",
+  "short_name": "BuyO-shop",
   "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#ffffff",
