@@ -1,1 +1,1 @@
-https://github.com/sachin-164/BuyO--Frontend/
+https://sachin-164.github.io/BuyO--Frontend/
