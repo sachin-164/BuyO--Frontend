@@ -163,6 +163,10 @@ main {
 .description .card-button:hover{
     cursor: pointer;
 }
+.card:hover{
+    transform: scale(1.0001);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
 
 
 
@@ -336,7 +340,7 @@ main {
         max-width: 70%;
     }
     .latest-trends {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
     }
     .footer-grid {
         grid-template-columns: repeat(3, 1fr);
