@@ -120,17 +120,12 @@ main {
     display: none;
 }
 
-/* .latest {
-    height: 1500px;
-} */
-
 
 
 .latest-trends{
     padding: 60px 40px 112px 50px;
-    /* background-color: #17cc72; */
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
+    grid-template-columns: repeat(5, 1fr);
     column-gap: 16px;
     row-gap: 20px;
 }
@@ -148,9 +143,17 @@ main {
 .description {
     padding:  10px 10px 10px 10px;
 }
+.desc-text {
+    white-space: nowrap;       /* Keep text in one line */
+    overflow: hidden;          /* Hide overflowing text */
+    text-overflow: ellipsis;   /* Add ... at the end */
+    display: block;            /* Ensure it behaves like a block element */
+    width: 100%;               /* Prevent overflow beyond container */
+}
+
 .description .card-button{
     padding: 6px 8px 6px 8px;
-    margin-left: 170px;
+    margin-left: 105px;
     background-color: rgb(255, 179, 0);
     color: white;
     font-weight: bolder;
@@ -332,6 +335,9 @@ main {
     .hero-content {
         max-width: 70%;
     }
+    .latest-trends {
+        grid-template-columns: repeat(3, 1fr);
+    }
     .footer-grid {
         grid-template-columns: repeat(3, 1fr);
     }
@@ -353,6 +359,9 @@ main {
         padding: 12px;
         font-size: 14px;
     }
+    .latest-trends {
+        grid-template-columns: repeat(2, 1fr);
+    }
     .footer-grid {
         grid-template-columns: repeat(2, 1fr);
     }
@@ -371,6 +380,9 @@ main {
         min-width: 100px;
         font-size: 13px;
     }
+    .latest-trends {
+        grid-template-columns: 1fr; /* 3 columns */
+    }
     .footer-grid {
         grid-template-columns: 1fr;
     }
@@ -388,5 +400,19 @@ main {
         min-width: 80px;
         padding: 10px;
         font-size: 12px;
+    }
+    .latest-trends {
+        grid-template-columns: 1fr;
+        padding: 20px;
+        gap: 12px;
+    }
+
+    .card {
+        height: auto;
+    }
+
+    .description .card-button {
+        margin-left: auto;
+        display: block; 
     }
 }
