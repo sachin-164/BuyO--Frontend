@@ -120,9 +120,76 @@ main {
     display: none;
 }
 
-.latest {
+/* .latest {
     height: 1500px;
+} */
+
+
+
+.latest-trends{
+    padding: 60px 40px 112px 50px;
+    background-color: #17cc72;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    column-gap: 16px;
+    row-gap: 20px;
 }
+.card{
+    background-color: #fff;
+    border-radius: 10px;
+    height: 350px;
+    overflow: hidden;
+}
+.image{
+    width: 100%;
+    display: inline-block;
+}
+
+.description {
+    padding:  10px 10px 10px 10px;
+}
+.description .card-button{
+    padding: 6px 8px 6px 8px;
+    margin-left: 170px;
+    background-color: rgb(255, 179, 0);
+    color: white;
+    font-weight: bolder;
+    border-radius: 6px;
+    border: 0;
+}
+.description .card-button:hover{
+    cursor: pointer;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* --- Footer --- */
 .site-footer {

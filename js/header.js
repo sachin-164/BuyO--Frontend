@@ -34,7 +34,7 @@ function initHeader() {
     const cartBadge = document.querySelector('.cart-badge');
     const wishlistBadge = document.querySelector('.wishlist-badge');
 
-    const cartCount = 15;      
+    const cartCount = 1;      
     const wishlistCount = 2;  
 
     // Show count or hide badge if 0
