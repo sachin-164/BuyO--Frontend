@@ -128,7 +128,7 @@ main {
 
 .latest-trends{
     padding: 60px 40px 112px 50px;
-    background-color: #17cc72;
+    /* background-color: #17cc72; */
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr;
     column-gap: 16px;
