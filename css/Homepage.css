@@ -167,6 +167,7 @@ main {
     grid-template-columns: repeat(5, 1fr);
     column-gap: 16px;
     row-gap: 20px;
+    overflow: hidden;
 }
 .card{
     width: 250px;
