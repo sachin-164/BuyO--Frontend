@@ -6,8 +6,7 @@
 }
 
 body {
-    background-color: #2a5ba4;
-    background-image: linear-gradient(#100b23, #5c4f6e, #b3a8c9);
+    background-image: linear-gradient(#dfe0e2 #b8bcc3 #787a84);
 }
 
 main {
@@ -106,6 +105,9 @@ main {
     right: 0;
     background: linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent);
 }
+.categories-container:hover{
+    animation-play-state: paused;
+}
 
 @keyframes scrollQueue {
     0% {
@@ -130,14 +132,24 @@ main {
     row-gap: 20px;
 }
 .card{
+    width: 250px;
     background-color: #fff;
     border-radius: 10px;
     height: 300px;
     overflow: hidden;
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
 }
-.image{
+.thumbnail {
     width: 100%;
-    display: inline-block;
+    height: 180px; /* fixed height so all cards match */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #f9f9f9; /* optional background */
+}
+.thumbnail .image{
+    max-width: 100%;
+    max-height: 100%;
 }
 
 .description {
@@ -153,7 +165,7 @@ main {
 
 .description .card-button{
     padding: 6px 8px 6px 8px;
-    margin-left: 105px;
+    margin-left: 70px;
     background-color: rgb(255, 179, 0);
     color: white;
     font-weight: bolder;
@@ -164,8 +176,10 @@ main {
     cursor: pointer;
 }
 .card:hover{
-    transform: scale(1.0001);
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    /* transform: scale(1.0001); */
+    transform:translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0 0 0 / 0.5);
+    
 }
 
 
