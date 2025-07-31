@@ -490,7 +490,7 @@ main {
     scroll-snap-type: x mandatory;
     gap: 5px;
     height: 330px;
-    padding-left: 1px;
+    padding: 2px;
   }
   
   .card {
