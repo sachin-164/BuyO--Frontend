@@ -5,6 +5,24 @@ fetch('header.html')
     initHeader(); // Call this AFTER header is inserted
   });
 
+
+function searchProduct(){
+  const input = document.getElementById("searchbox")
+                      .value.toLowerCase();
+  const bodyText = document.body.innerText.toLowerCase();
+  if (!input.trim()) {
+    alert("Please enter something to search.");
+    return;
+  }
+  if (bodyText.includes(input)) {
+    alert("Match found for: " + input);
+  } else {
+    alert("No results found for: " + input);
+  }
+}
+
+
+
 // This function should be called after the header HTML is loaded into the page.
 function initHeader() {
     const mobileMenuButton = document.querySelector('.mobile-menu-button');
@@ -48,6 +66,7 @@ function initHeader() {
         wishlistBadge.style.display = wishlistCount > 0 ? 'flex' : 'none';
     }
 }
+
 
 
 

@@ -245,6 +245,17 @@ main {
     
 }
 
+.best-deals{
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 20%;  /* each product width in mobile */
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: 5px;
+    height: 330px;
+    padding: 2px;
+}
+
 
 
 
@@ -416,6 +427,10 @@ main {
     .hero-content {
         max-width: 70%;
     }
+    .section-header {
+    padding: 40px 20px 0px 50px;
+    }
+
     .latest-trends {
         grid-template-columns: repeat(5, 1fr);
     }
@@ -482,7 +497,10 @@ main {
         padding: 10px;
         font-size: 12px;
     }
-    .latest-trends {
+    .section-header {
+    padding: 40px 20px 0px 20px;
+    }
+    .latest-trends,.best-deals {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: 70%;  /* each product width in mobile */
