@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Product - Buyo</title>
+  <link rel="stylesheet" href="css/add-product.css">
+</head>
+<body>
+
+  <div class="form-container">
+    <h2>Add New Product</h2>
+
+    <form id="productForm" enctype="multipart/form-data">
+      <div class="form-group">
+        <label>Product Name</label>
+        <input type="text" name="name" required>
+      </div>
+
+      <div class="form-group">
+        <label>Category</label>
+        <input type="text" name="category" required>
+      </div>
+
+      <div class="form-group">
+        <label>Description</label>
+        <textarea name="description" rows="3" required></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>MRP Price (₹)</label>
+        <input type="number" name="mrpPrice" id="mrpPrice" required>
+      </div>
+
+      <div class="form-group">
+        <label>Selling Price (₹)</label>
+        <input type="number" name="sellingPrice" id="sellingPrice" required>
+      </div>
+
+      <div class="form-group">
+        <label>Discount (%)</label>
+        <input type="text" name="discount" id="discount" readonly>
+      </div>
+
+      <div class="form-group">
+        <label>Product Image</label>
+        <input type="file" name="image" accept="image/*" required>
+      </div>
+
+      <button type="submit">Add Product</button>
+    </form>
+  </div>
+
+  <script src="js/add-product.js"></script>
+</body>
+</html>

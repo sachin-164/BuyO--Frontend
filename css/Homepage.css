@@ -172,9 +172,16 @@ main {
     width: 250px;
     background-color: #fff;
     border-radius: 10px;
-    height: 300px;
+    height: 320px;
     overflow: hidden;
     transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+.card-bottom{
+    padding-top: 9px; 
+    font-weight: bolder;
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
 }
 .wishlist-icon {
     position: absolute;
@@ -225,10 +232,16 @@ main {
     display: block;            /* Ensure it behaves like a block element */
     width: 100%;               /* Prevent overflow beyond container */
 }
+.mrp {
+  text-decoration: line-through;
+  color: gray;
+  margin-left: 5px;
+  margin-right: 5px;
+}
 
 .description .card-button{
     padding: 6px 8px 6px 8px;
-    margin-left: 70px;
+    /* margin-left: 30px; */
     background-color: rgb(255, 179, 0);
     color: white;
     font-weight: bolder;

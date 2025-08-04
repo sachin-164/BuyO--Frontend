@@ -8,6 +8,9 @@ body {
   background: linear-gradient(to right, #5c4f6e, #2a5ba4);
 }
 
+.video{
+  z-index: 1;
+}
 .container {
   background: #fff;
   padding: 2rem;

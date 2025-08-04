@@ -6,20 +6,20 @@ fetch('header.html')
   });
 
 
-function searchProduct(){
-  const input = document.getElementById("searchbox")
-                      .value.toLowerCase();
-  const bodyText = document.body.innerText.toLowerCase();
-  if (!input.trim()) {
-    alert("Please enter something to search.");
-    return;
-  }
-  if (bodyText.includes(input)) {
-    alert("Match found for: " + input);
-  } else {
-    alert("No results found for: " + input);
-  }
-}
+// function searchProduct(){
+//   const input = document.getElementById("searchbox")
+//                       .value.toLowerCase();
+//   const bodyText = document.body.innerText.toLowerCase();
+//   if (!input.trim()) {
+//     alert("Please enter something to search.");
+//     return;
+//   }
+//   if (bodyText.includes(input)) {
+//     alert("Match found for: " + input);
+//   } else {
+//     alert("No results found for: " + input);
+//   }
+// }
 
 
 
