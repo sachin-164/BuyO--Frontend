@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Secrets — never commit
+.env
+backend/.env
+
+# Uploaded product images
+uploads/
+backend/uploads/
+
+# Logs & OS noise
+*.log
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editor
+.vscode/

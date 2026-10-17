@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shopping Navbar</title>
+
+  <!-- Favicon -->
+  <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
+
+  <!-- External CSS -->
+  <link rel="stylesheet" href="css/Header.css" />
+  <link rel="stylesheet" href="css/product-details.css" />
+
+  <!-- Manifest -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#ffffff" />
+  <!-- font font-awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+</head>
+<body>
+  <div id="header-placeholder"></div>
+
+  <div class="product-details-container">
+  
+    <!-- Product Images Section -->
+    <div class="image-gallery">
+      <div class="main-image">
+        <img id="main-img" src="" alt="Product Image">
+      </div>
+      <div class="thumbnail-images" id="thumbnail-container">
+        <!-- Thumbnails will be added dynamically -->
+      </div>
+    </div>
+
+    <!-- Product Info Section -->
+    <div class="product-info">
+      <h2 id="product-name"></h2>
+      <p class="brand" id="product-brand"></p>
+    
+      <div class="price-section">
+        <span class="selling-price" id="product-price"></span>
+        <span class="mrp" id="product-mrp"></span>
+        <span class="discount" id="product-discount"></span>
+      </div>
+    
+      <p class="description" id="product-description"></p>
+
+      <div class="actions">
+        <button class="wishlist-btn">❤️ Add to Wishlist</button>
+        <button class="cart-btn">🛒 Add to Cart</button>
+        <button class="buy-btn">⚡ Buy Now</button>
+      </div>
+    </div>
+
+  </div>
+
+  
+  
+  <script src="js/config.js"></script>
+  <script src="js/script.js"></script>
+  <script src="js/header.js"></script>
+  <script src="js/product-details.js"></script>
+</body>
+</html>

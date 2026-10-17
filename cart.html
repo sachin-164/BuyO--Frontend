@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shopping Navbar</title>
+
+  <!-- Favicon -->
+  <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
+
+  <!-- External CSS -->
+  <link rel="stylesheet" href="css/Header.css" />
+  <link rel="stylesheet" href="css/cart.css" />
+
+  <!-- Manifest -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#ffffff" />
+  <!-- font font-awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+</head>
+<body class="cart-page">
+  <div id="header-placeholder"></div>
+
+  <!-- Cart Items -->
+  <div id="cart-container"></div>
+
+    <main class="cart-container">
+        <div class="cart-header">
+            <h2>Your Shopping Cart</h2>
+            <p><span id="item-count">3</span> items in cart</p>
+        </div>
+
+        <div class="cart-layout">
+            
+          <div class="cart-items-section" id="cart-items">
+    <div class="cart-item template" style="display:none;">
+        <div class="product-image">
+            <img src="" alt="">
+        </div>
+        <div class="product-details">
+            <div class="item-header">
+                <div>
+                    <h3></h3>
+                    <p></p>
+                </div>
+                <button class="remove-btn"><i class="fas fa-trash-alt"></i></button>
+            </div>
+            <div class="item-footer">
+                <div class="price">
+                    <span class="current-price"></span>
+                    <span class="old-price"></span>
+                </div>
+                <div class="quantity-controls">
+                    <button class="quantity-btn">-</button>
+                    <span class="quantity-display">1</span>
+                    <button class="quantity-btn">+</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+            <!-- Empty Cart -->
+            <div id="empty-cart" class="empty-cart hidden">
+                <i class="fas fa-shopping-cart empty-icon"></i>
+                <h3>Your cart is empty</h3>
+                <p>Looks like you haven't added anything yet</p>
+                <button class="continue-btn">Continue Shopping</button>
+            </div>
+
+            <!-- Order Summary -->
+            <div class="order-summary">
+                <h3>Order Summary</h3>
+                <div class="summary-details">
+                    <div><span>Subtotal</span><span id="subtotal">$0.00</span></div>
+                    <div><span>Shipping</span><span>Free</span></div>
+                    <div><span>Tax</span><span id="tax">$0.00</span></div>
+                    <div class="summary-total"><span>Total</span><span id="total">$0.00</span></div>
+                </div>
+                <div class="promo-section">
+                    <label for="promo-code">Promo Code</label>
+                    <div class="promo-input">
+                        <input type="text" id="promo-code" placeholder="Enter code">
+                        <button>Apply</button>
+                    </div>
+                </div>
+                <button class="checkout-btn">Proceed to Checkout</button>
+                <button class="continue-btn">Continue Shopping</button>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <script src="js/cart.js"></script>
+
+
+  <script src="js/script.js"></script>
+  <script src="js/header.js"></script>
+</body>
+</html>

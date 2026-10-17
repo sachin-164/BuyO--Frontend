@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Add Product</title>
+  <link rel="stylesheet" href="css/add_product.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+<div class="add-product-container">
+  <h2>Add Product</h2>
+  
+  <!-- Product Name -->
+  <div class="form-group">
+    <label for="productName">Product Name</label>
+    <input type="text" id="productName" placeholder="Enter product name">
+  </div>
+
+  <!-- Category -->
+  <div class="form-group">
+    <label for="category">Category</label>
+    <select id="category">
+      <option value="none">None</option>
+      <option value="electronics">Electronics</option>
+      <option value="fashion">Fashion</option>
+      <option value="beauty">Beauty</option>
+      <option value="home">Home</option>
+    </select>
+  </div>
+
+  <!-- Highlight -->
+  <div class="form-group">
+    <label for="highlight">Highlight Section</label>
+    <select id="highlight">
+      <option value="none">None</option>
+      <option value="best-deals">Best Deals</option>
+      <option value="new-products">New Products</option>
+    </select>
+  </div>
+
+  <!-- Image Source -->
+  <div class="form-group">
+    <label for="imageType">Image Source</label>
+    <select id="imageType">
+      <option value="url">Image URL</option>
+      <option value="file">Upload Image</option>
+    </select>
+  </div>
+
+  <!-- Image URL -->
+  <div class="form-group" id="imageUrlGroup">
+    <label for="imageUrl">Image URL</label>
+    <input type="text" id="imageUrl" placeholder="Enter image URL">
+  </div>
+
+  <!-- Image File -->
+  <div class="form-group" id="imageFileGroup" style="display:none;">
+    <label for="imageFile">Upload Image</label>
+    <input type="file" id="imageFile" accept="image/*">
+  </div>
+
+  <!-- Pricing -->
+  <div class="form-group">
+    <label for="mrp">MRP (₹)</label>
+    <input type="number" id="mrp" placeholder="Enter MRP">
+  </div>
+
+  <div class="form-group">
+    <label for="price">Selling Price (₹)</label>
+    <input type="number" id="price" placeholder="Enter selling price">
+  </div>
+
+  <div class="form-group">
+    <label for="discount">Discount (%)</label>
+    <input type="text" id="discount" readonly>
+  </div>
+
+  <!-- Submit -->
+  <div class="form-actions">
+    <button class="btn" id="addProductBtn">Add Product</button>
+  </div>
+</div>
+
+<script src="js\add-product.js"></script>
+</body>
+</html>
