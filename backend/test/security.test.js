@@ -88,6 +88,61 @@ describe("Security hardening (headers, CORS, authz, validation, limits)", () => 
     assert.ok(list.json.products.some((p) => p.name === "Sec Test Lamp"));
   });
 
+  it("signup can never grant admin (role field in the body is ignored)", async () => {
+    const email = helpers.uniqueEmail("rolecheck");
+    helpers.clearOutbox();
+    const res = await helpers.api(ctx.baseUrl, "/api/auth/signup", {
+      method: "POST",
+      body: { name: "Role Check", email, password: "Password123!", role: "admin", isAdmin: true }
+    });
+    assert.equal(res.status, 201, res.text);
+
+    const User = require("../models/user");
+    const user = await User.findOne({ where: { email } });
+    assert.ok(user, "user should exist");
+    assert.equal(user.role, "customer", "public signup must always produce role=customer");
+  });
+
+  it("DB-backed admin role grants/revokes API access (no ADMIN_EMAILS needed)", async () => {
+    const { applyRoleChange } = require("../scripts/admin-role");
+    const { resolveMysqlSettings } = require("../config/dbConnectionOptions");
+    const settings = resolveMysqlSettings(); // points at the scratch test DB (helpers set it)
+
+    const user = await helpers.createVerifiedUser(ctx.baseUrl);
+    const payload = { name: "Role Lamp", category: "home", mrpPrice: 100, sellingPrice: 90, description: "", image: "" };
+
+    const before = await helpers.api(ctx.baseUrl, "/api/products", { method: "POST", body: payload, token: user.token });
+    assert.equal(before.status, 403, "fresh user must not be admin");
+
+    const meBefore = await helpers.api(ctx.baseUrl, "/api/auth/me", { token: user.token });
+    assert.equal(meBefore.json.user.role, "customer");
+    assert.equal(meBefore.json.user.isAdmin, false);
+
+    // Grant through the same code path the audited CLI script uses.
+    const grant = await applyRoleChange({ settings, email: user.email, role: "admin" });
+    assert.equal(grant.changed, true);
+    assert.equal(grant.before, "customer");
+
+    const asAdmin = await helpers.api(ctx.baseUrl, "/api/products", { method: "POST", body: payload, token: user.token });
+    assert.equal(asAdmin.status, 201, `granted admin should succeed: ${asAdmin.text}`);
+    assert.ok(asAdmin.json.product.slug, "schema v1: product rows carry a slug");
+    assert.equal(asAdmin.json.product.stock, 0);
+
+    const meAfter = await helpers.api(ctx.baseUrl, "/api/auth/me", { token: user.token });
+    assert.equal(meAfter.json.user.role, "admin");
+    assert.equal(meAfter.json.user.isAdmin, true);
+
+    // Revoke -> access is lost immediately (requireAuth reads the DB fresh per request).
+    const revoke = await applyRoleChange({ settings, email: user.email, role: "customer" });
+    assert.equal(revoke.changed, true);
+    const afterRevoke = await helpers.api(ctx.baseUrl, "/api/products", {
+      method: "POST",
+      body: { ...payload, name: "Role Lamp 2" },
+      token: user.token
+    });
+    assert.equal(afterRevoke.status, 403, "revoked admin must be rejected");
+  });
+
   it("admin can create a product with an uploaded image (multipart)", async () => {
     const form = new FormData();
     form.append("name", "Sec Test Upload");

@@ -1,4 +1,5 @@
 const Product = require("../models/product");
+const { slugify, uniqueSlug } = require("../utils/slugify");
 
 // ---------- Add Product (POST /api/products, admin-only; body pre-validated) ----------
 const addProduct = async (req, res) => {
@@ -15,13 +16,17 @@ const addProduct = async (req, res) => {
 
     const imageUrl = req.file ? `/uploads/${req.file.filename}` : (req.body.image || "");
 
+    // schema v1: every product has a unique URL slug (de-duplicated server-side).
+    const slug = await uniqueSlug(Product, slugify(name), "product");
+
     const product = await Product.create({
       name,
       category,
       description,
       mrpPrice,
       sellingPrice,
-      image: imageUrl
+      image: imageUrl,
+      slug
     });
 
     res.status(201).json({ success: true, message: "✅ Product added successfully!", product });

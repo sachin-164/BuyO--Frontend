@@ -14,9 +14,12 @@ schema syncing. Both are MySQL-only and never touch a remote host by default.
 - Safety guard: refuses a non-loopback host unless `--allow-remote` is passed explicitly
   (intended for the future hosted database). Default is local-only.
 
-## 2. Restore-verification procedure (documented — do NOT run against production)
+## 2. Restore verification — automated since Phase 3
 
-To gain confidence that a backup is restorable:
+Restoring and verifying a backup is now a one-command, guarded operation
+(see §4). The manual steps below remain documented for reference: they are
+exactly what `db:restore` performs (DDL → rows with `Date`/`Buffer` revival →
+row-count verification → drop the scratch DB).
 
 1. Create a scratch database **locally**, e.g. `buyoDB_restore_verify`. Never restore over an
    existing database.
@@ -33,8 +36,7 @@ To gain confidence that a backup is restorable:
    - the application boots against the scratch DB and `GET /api/products` returns 200.
 5. Drop the scratch database afterwards.
 
-A dedicated `db-restore.js` helper is intentionally **out of scope for Phase 1**; it will be
-added when backups move to the hosted environment (release phase).
+The dedicated `db:restore` helper (below) now automates all of §2.
 
 ## 3. Schema setup — `npm run db:sync -- --confirm-local`
 
@@ -43,6 +45,35 @@ Explicit local schema setup (replaces boot-time `sequelize.sync()`):
 - Refuses to run unless ALL of: `--confirm-local` flag passed, `NODE_ENV` not production,
   loopback host (`localhost`/`127.0.0.1`/`::1`), database listed in `DB_SYNC_ALLOWED_DATABASES`
   (defaults to local dev database names only).
-- Plain sync only (creates missing tables). `--alter` is opt-in for local column changes.
+- Plain sync only (creates missing tables). It **cannot** alter existing tables:
+  `--alter` is refused with a pointer to `npm run db:migrate` (Phase 3+).
 - There is no `force`/drop path in this script — it cannot destroy tables.
-- Production schema changes will be handled by versioned migrations in a later phase.
+- Schema evolution runs through the numbered migrations (`backend/migrations/`).
+
+## 4. Restore tool — `npm run db:restore` (Phase 3)
+
+```bash
+npm run db:restore -- --target buyoDB_scratch_check --confirm-local
+npm run db:restore -- --file backups/buyo-backup-<stamp>.json --target buyoDB_scratch_check --confirm-local
+```
+
+- Restores a backup into a **new, disposable** database and verifies every
+  table's row count against the backup metadata (mismatch = failure).
+- Refuses: non-loopback hosts, `NODE_ENV=production`, missing `--confirm-local`,
+  targets that are not `buyoDB_*` scratch databases (or explicitly listed in
+  `DB_RESTORE_ALLOWED_DATABASES`), targets that already exist, and restoring
+  over the database the backup was taken from.
+- FK checks are disabled only while loading (standard dump/restore technique);
+  counts are verified afterwards, then the script tells you to drop the scratch DB.
+
+### Phase 3 drill result (2026-10-18)
+
+1. `npm run db:backup` → `backups/buyo-backup-20261018-105711.json`
+   (4 tables: users:1, products:0, cartitems:0, wishlistitems:0).
+2. `npm run db:restore -- --file ... --target buyoDB_ph3_restore_test --confirm-local`
+   → all 4 tables restored, row counts match the backup.
+3. Spot check: the restored `users` row was byte-identical in content to the
+   source (same email/name/isVerified) and the restored schema was pre-v1
+   (no `role` column) as expected.
+4. Scratch database dropped. The restore path is now drill-verified, not just
+   documented (also covered by `test/migrations.test.js` on every `npm test`).

@@ -5,13 +5,14 @@
 // on every request (so verification/role changes take effect immediately), and
 // attaches it as req.user.
 //
-// requireAdmin additionally requires the user to be verified and to be listed
-// in the server-side admin allowlist (utils/roles.js). Nothing about admin
+// requireAdmin additionally requires the user to be verified and to have admin
+// role: DB-backed `user.role === 'admin'`, or (transitional) listed in the
+// server-side ADMIN_EMAILS allowlist — see utils/roles.js. Nothing about admin
 // status is ever trusted from the client.
 
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
-const { isAdminEmail } = require("../utils/roles");
+const { isAdminUser } = require("../utils/roles");
 
 function unauthorized(res, message = "Authentication required") {
   return res.status(401).json({ success: false, message });
@@ -52,7 +53,7 @@ async function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (!req.user) return unauthorized(res);
-  if (!req.user.isVerified || !isAdminEmail(req.user.email)) {
+  if (!req.user.isVerified || !isAdminUser(req.user)) {
     return forbidden(res, "Admin privileges required");
   }
   next();

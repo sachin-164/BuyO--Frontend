@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/user");
 const { sendMail } = require("../utils/mailer");
 const { sha256Hex, signAccessToken, signEmailVerificationToken, signPasswordResetToken } = require("../utils/tokens");
-const { isAdminEmail } = require("../utils/roles");
+const { isAdminUser } = require("../utils/roles");
 
 // Used to equalise response timing when an account does not exist
 // (anti user-enumeration). Computed once at module load.
@@ -15,7 +15,8 @@ function publicUser(user) {
     name: user.name,
     email: user.email,
     isVerified: user.isVerified,
-    isAdmin: isAdminEmail(user.email)
+    role: user.role,
+    isAdmin: isAdminUser(user)
   };
 }
 
@@ -31,7 +32,9 @@ const signup = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    await User.create({ name, email, password: hashedPassword, isVerified: false });
+    // Public signup can ONLY create customers. Admins are granted exclusively via
+    // the audited provisioning script (scripts/admin-role.js), never via this API.
+    await User.create({ name, email, password: hashedPassword, isVerified: false, role: "customer" });
 
     const token = signEmailVerificationToken(email);
     const verifyLink = `${process.env.BACKEND_URL}/api/auth/verify?token=${token}`;

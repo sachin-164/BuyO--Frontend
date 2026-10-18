@@ -18,6 +18,14 @@ const User = sequelize.define("User", {
   isVerified: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
+  },
+  // Phase 3: database-backed authorization role. Public signup always creates
+  // "customer"; admins are granted ONLY via the audited provisioning script
+  // (scripts/admin-role.js) — never through the API.
+  role: {
+    type: DataTypes.ENUM("customer", "admin"),
+    allowNull: false,
+    defaultValue: "customer"
   }
 }, {
   timestamps: true

@@ -58,25 +58,31 @@ function getSequelizeOptions(env = process.env) {
   return options;
 }
 
-// Options for raw mysql2 connections (used by scripts/db-backup.js)
-function getMysql2Options(env = process.env) {
-  const settings = resolveMysqlSettings(env);
+// Options for raw mysql2 connections from resolved settings
+// (used by scripts/db-backup.js, db-restore.js, db-migrate.js, admin-role.js)
+function toMysql2Options(settings, { includeDatabase = true } = {}) {
   const options = {
     host: settings.host,
     port: settings.port,
     user: settings.username,
-    password: settings.password,
-    database: settings.database
+    password: settings.password
   };
+  if (includeDatabase && settings.database) options.database = settings.database;
   if (settings.ssl) {
     options.ssl = { rejectUnauthorized: false };
   }
   return options;
 }
 
+// Options for raw mysql2 connections (used by scripts/db-backup.js)
+function getMysql2Options(env = process.env) {
+  return toMysql2Options(resolveMysqlSettings(env));
+}
+
 module.exports = {
   resolveMysqlSettings,
   isLoopbackHost,
   getSequelizeOptions,
-  getMysql2Options
+  getMysql2Options,
+  toMysql2Options
 };

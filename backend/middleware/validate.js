@@ -13,8 +13,9 @@
 //   min / max             — for number
 //
 // On failure: 400 { success: false, message: "Validation failed", errors }.
-// On success: field values are sanitized (trim/lowercase/coerce) and the
-// request continues. Sensitive values are never echoed back.
+// On success: field values are sanitized (trim/lowercase/coerce) and req.body
+// is REPLACED with only the schema-defined fields (whitelist) — unknown fields
+// are dropped. Sensitive values are never echoed back.
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -32,7 +33,13 @@ function validateBody(schema) {
         errors.push(`${field} is required`);
         continue;
       }
-      if (value === undefined || value === null || value === "") continue;
+      if (value === undefined || value === null) continue;
+      if (value === "") {
+        // Optional string fields keep "" (preserves existing API behavior);
+        // any other type treats "" as absent.
+        if (rules.type === "string" || rules.type === "email") cleaned[field] = "";
+        continue;
+      }
 
       if (rules.type === "string" || rules.type === "email") {
         if (typeof value !== "string") {
@@ -96,7 +103,9 @@ function validateBody(schema) {
       return res.status(400).json({ success: false, message: "Validation failed", errors });
     }
 
-    req.body = { ...body, ...cleaned };
+    // Whitelist: only schema-defined, validated fields survive. Unknown fields
+    // (e.g. someone POSTing `role: "admin"` to signup) are dropped here.
+    req.body = cleaned;
     next();
   };
 }

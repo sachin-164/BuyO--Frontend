@@ -14,14 +14,16 @@
 // Usage:
 //   npm run db:backup
 //   npm run db:backup -- --allow-remote
+//
+// Also usable as a library (used by the migration tests): createBackup({...}).
 
 const fsp = require("fs/promises");
 const path = require("path");
 const dotenv = require("dotenv");
-dotenv.config({ path: path.join(__dirname, "..", ".env") });
+dotenv.config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 
 const mysql = require("mysql2/promise");
-const { resolveMysqlSettings, isLoopbackHost, getMysql2Options } = require("../config/dbConnectionOptions");
+const { resolveMysqlSettings, isLoopbackHost, toMysql2Options } = require("../config/dbConnectionOptions");
 
 const BACKUP_DIR = path.resolve(__dirname, "..", "backups");
 
@@ -45,21 +47,17 @@ function normalizeValue(value) {
   return value;
 }
 
-async function main() {
-  const flags = new Set(process.argv.slice(2));
-  const settings = resolveMysqlSettings();
-
+// Library entry point. Throws on refusal (non-loopback without --allow-remote).
+async function createBackup({ flags = new Set(), settings = resolveMysqlSettings(), outDir = BACKUP_DIR } = {}) {
   if (!settings.database) throw new Error("No database configured (MYSQL_DB).");
   if (!isLoopbackHost(settings.host) && !flags.has("--allow-remote")) {
-    console.error(`❌ REFUSED: host "${settings.host}" is not loopback.`);
-    console.error("   Pass --allow-remote only when you intend to back up a hosted database.");
-    process.exit(1);
+    const err = new Error(`host "${settings.host}" is not loopback.`);
+    err.refusedRemote = true;
+    throw err;
   }
 
-  const connection = await mysql.createConnection(getMysql2Options());
-  const [tableRows] = await connection.query("SHOW TABLES");
-  const tables = tableRows.map((row) => Object.values(row)[0]);
-
+  const connection = await mysql.createConnection(toMysql2Options(settings));
+  let tables;
   const dump = {
     format: "buyo-mysql-backup/1",
     createdAt: new Date().toISOString(),
@@ -67,39 +65,63 @@ async function main() {
     tables: {}
   };
 
-  for (const table of tables) {
-    const [[ddlRow]] = await connection.query(`SHOW CREATE TABLE ${escapeIdentifier(table)}`);
-    const createSql = ddlRow["Create Table"] ?? Object.values(ddlRow)[1];
-    const [rows] = await connection.query(`SELECT * FROM ${escapeIdentifier(table)}`);
+  try {
+    const [tableRows] = await connection.query("SHOW TABLES");
+    tables = tableRows.map((row) => Object.values(row)[0]);
 
-    dump.tables[table] = {
-      rowCount: rows.length,
-      createSql,
-      rows: rows.map((row) => {
-        const normalized = {};
-        for (const [column, value] of Object.entries(row)) normalized[column] = normalizeValue(value);
-        return normalized;
-      })
-    };
+    for (const table of tables) {
+      const [[ddlRow]] = await connection.query(`SHOW CREATE TABLE ${escapeIdentifier(table)}`);
+      const createSql = ddlRow["Create Table"] ?? Object.values(ddlRow)[1];
+      const [rows] = await connection.query(`SELECT * FROM ${escapeIdentifier(table)}`);
+
+      dump.tables[table] = {
+        rowCount: rows.length,
+        createSql,
+        rows: rows.map((row) => {
+          const normalized = {};
+          for (const [column, value] of Object.entries(row)) normalized[column] = normalizeValue(value);
+          return normalized;
+        })
+      };
+    }
+  } finally {
+    await connection.end();
   }
 
-  await connection.end();
-
-  await fsp.mkdir(BACKUP_DIR, { recursive: true });
-  const outPath = path.resolve(BACKUP_DIR, `buyo-backup-${timestamp()}.json`);
-  if (!outPath.startsWith(BACKUP_DIR + path.sep)) {
+  await fsp.mkdir(outDir, { recursive: true });
+  const outPath = path.resolve(outDir, `buyo-backup-${timestamp()}.json`);
+  if (!outPath.startsWith(outDir + path.sep)) {
     throw new Error("Refusing to write outside the backups directory.");
   }
 
   await fsp.writeFile(outPath, JSON.stringify(dump, null, 2), "utf8");
 
-  const counts = tables.map((t) => `${t}:${dump.tables[t].rowCount}`).join(", ");
-  console.log(`✅ Backup written: ${path.relative(path.join(__dirname, ".."), outPath)}`);
-  console.log(`   Tables (${tables.length}): ${counts || "(none)"}`);
-  console.log("   Contains schema + data + row counts. No credentials are stored.");
+  return { outPath, database: settings.database, tables, dump };
 }
 
-main().catch((err) => {
-  console.error("❌ db:backup failed:", err.message);
-  process.exit(1);
-});
+async function main() {
+  const flags = new Set(process.argv.slice(2));
+  try {
+    const result = await createBackup({ flags });
+    const counts = result.tables.map((t) => `${t}:${result.dump.tables[t].rowCount}`).join(", ");
+    console.log(`✅ Backup written: ${path.relative(path.join(__dirname, ".."), result.outPath)}`);
+    console.log(`   Tables (${result.tables.length}): ${counts || "(none)"}`);
+    console.log("   Contains schema + data + row counts. No credentials are stored.");
+  } catch (err) {
+    if (err.refusedRemote) {
+      console.error(`❌ REFUSED: ${err.message}`);
+      console.error("   Pass --allow-remote only when you intend to back up a hosted database.");
+      process.exit(1);
+    }
+    throw err;
+  }
+}
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("❌ db:backup failed:", err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { createBackup, BACKUP_DIR };
