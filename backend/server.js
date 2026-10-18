@@ -48,9 +48,9 @@ const startServer = async () => {
     await sequelize.authenticate();
     console.log(`✅ MySQL Connected to DB: ${process.env.MYSQL_DB}`);
 
-    // Sync models (create/alter tables). To hard-reset: sequelize.sync({ force: true })
-    await sequelize.sync({ alter: true });
-    console.log("✅ Database synced");
+    // Schema is managed explicitly — no implicit sync on boot.
+    // Local dev:  npm run db:sync -- --confirm-local
+    // Production: versioned migrations (later phase)
 
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {

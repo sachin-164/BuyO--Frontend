@@ -23,7 +23,4 @@ const User = sequelize.define("User", {
   timestamps: true
 });
 
-// Create table if not exists
-sequelize.sync();
-
 module.exports = User;

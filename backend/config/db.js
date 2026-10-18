@@ -1,15 +1,15 @@
 const { Sequelize } = require("sequelize");
+const { resolveMysqlSettings, getSequelizeOptions } = require("./dbConnectionOptions");
 
-// Create MySQL connection
+// Create MySQL connection.
+// Settings are resolved from environment variables (see dbConnectionOptions.js):
+// local dev uses MYSQL_*; hosted providers may inject MYSQLHOST-style names.
+const settings = resolveMysqlSettings();
 const sequelize = new Sequelize(
-  process.env.MYSQL_DB,      // Database name
-  process.env.MYSQL_USER,    // MySQL username
-  process.env.MYSQL_PASS,    // MySQL password
-  {
-    host: process.env.MYSQL_HOST, // MySQL host
-    dialect: "mysql",
-    logging: false
-  }
+  settings.database,       // Database name
+  settings.username,       // MySQL username
+  settings.password,       // MySQL password
+  getSequelizeOptions()
 );
 
 // Test connection

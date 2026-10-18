@@ -9,6 +9,10 @@ backend/.env
 uploads/
 backend/uploads/
 
+# Local database backups (may contain real data)
+backups/
+backend/backups/
+
 # Logs & OS noise
 *.log
 Thumbs.db
