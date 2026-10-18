@@ -1,15 +1,15 @@
 const Product = require("../models/product");
 
-// ---------- Add Product (POST /api/products, image via multer "image" field) ----------
+// ---------- Add Product (POST /api/products, admin-only; body pre-validated) ----------
 const addProduct = async (req, res) => {
   try {
     const { name, category, description, mrpPrice, sellingPrice } = req.body;
 
-    // Basic validation
-    if (!name || !category || !mrpPrice || !sellingPrice) {
+    if (sellingPrice > mrpPrice) {
       return res.status(400).json({
         success: false,
-        message: "name, category, mrpPrice and sellingPrice are required"
+        message: "Validation failed",
+        errors: ["sellingPrice cannot be greater than mrpPrice"]
       });
     }
 
@@ -19,16 +19,15 @@ const addProduct = async (req, res) => {
       name,
       category,
       description,
-      mrpPrice: Number(mrpPrice),
-      sellingPrice: Number(sellingPrice),
+      mrpPrice,
+      sellingPrice,
       image: imageUrl
     });
 
     res.status(201).json({ success: true, message: "✅ Product added successfully!", product });
-
   } catch (error) {
-    console.error("❌ Error adding product:", error.message);
-    res.status(500).json({ success: false, message: "Error adding product", error: error.message });
+    console.error("❌ Error adding product:", error);
+    res.status(500).json({ success: false, message: "Error adding product" });
   }
 };
 
@@ -38,22 +37,28 @@ const getProducts = async (req, res) => {
     const products = await Product.findAll();
     res.json({ success: true, count: products.length, products });
   } catch (error) {
-    console.error("❌ Error fetching products:", error.message);
-    res.status(500).json({ success: false, message: "Error fetching products", error: error.message });
+    console.error("❌ Error fetching products:", error);
+    res.status(500).json({ success: false, message: "Error fetching products" });
   }
 };
 
 // ---------- Get One Product (GET /api/products/:id) ----------
 const getProductById = async (req, res) => {
   try {
-    const product = await Product.findByPk(req.params.id);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ success: false, message: "Invalid product id" });
+    }
+
+    const product = await Product.findByPk(id);
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
+
     res.json({ success: true, product });
   } catch (error) {
-    console.error("❌ Error fetching product:", error.message);
-    res.status(500).json({ success: false, message: "Error fetching product", error: error.message });
+    console.error("❌ Error fetching product:", error);
+    res.status(500).json({ success: false, message: "Error fetching product" });
   }
 };
 

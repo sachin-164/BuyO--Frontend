@@ -1,56 +1,57 @@
-﻿const bcrypt = require("bcryptjs"); // bcryptjs is the installed dependency (pure JS, same API as bcrypt)
+﻿const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
-const User = require("../models/user"); // Sequelize model
+const User = require("../models/user");
+const { sendMail } = require("../utils/mailer");
+const { sha256Hex, signAccessToken, signEmailVerificationToken, signPasswordResetToken } = require("../utils/tokens");
+const { isAdminEmail } = require("../utils/roles");
 
-// ---------- Email Transporter ----------
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+// Used to equalise response timing when an account does not exist
+// (anti user-enumeration). Computed once at module load.
+const DUMMY_HASH = bcrypt.hashSync("buyo-dummy-password", 10);
+
+function publicUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    isVerified: user.isVerified,
+    isAdmin: isAdminEmail(user.email)
+  };
+}
 
 // ---------- SIGNUP FUNCTION ----------
+// Body is validated + normalised by middleware/validate.js (name, email, password).
 const signup = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Standardize email to lowercase for consistency
-    const lowercaseEmail = email.toLowerCase();
-
-    const existingUser = await User.findOne({ where: { email: lowercaseEmail } });
+    const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(400).json({ success: false, message: "User already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    await User.create({ name, email, password: hashedPassword, isVerified: false });
 
-    const newUser = await User.create({
-      name,
-      email: lowercaseEmail,
-      password: hashedPassword,
-      isVerified: false
-    });
-
-    const token = jwt.sign({ email: lowercaseEmail }, process.env.JWT_SECRET, { expiresIn: "24h" });
-
+    const token = signEmailVerificationToken(email);
     const verifyLink = `${process.env.BACKEND_URL}/api/auth/verify?token=${token}`;
 
-    await transporter.sendMail({
+    await sendMail({
       from: process.env.EMAIL_USER,
-      to: lowercaseEmail,
+      to: email,
       subject: "Verify Your Email",
       html: `<p>Click <a href="${verifyLink}">here</a> to verify your email.</p>
              <p>This link will expire in 24 hours.</p>`
     });
 
-    res.status(201).json({ message: "Signup successful! Check your email for verification." });
-
+    res.status(201).json({ success: true, message: "Signup successful! Check your email for verification." });
   } catch (err) {
+    if (err.name === "SequelizeUniqueConstraintError") {
+      // Lost a race against a concurrent signup with the same email.
+      return res.status(400).json({ success: false, message: "User already exists" });
+    }
     console.error("Signup error:", err);
-    res.status(500).json({ message: "Signup failed", error: err.message });
+    res.status(500).json({ success: false, message: "Signup failed. Please try again later." });
   }
 };
 
@@ -58,40 +59,43 @@ const signup = async (req, res) => {
 const verify = async (req, res) => {
   try {
     const { token } = req.query;
-    if (!token) {
+    if (!token || typeof token !== "string") {
       return res.status(400).send("Verification token is missing.");
     }
-    
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const lowercaseEmail = decoded.email;
 
-    const user = await User.findOne({ where: { email: lowercaseEmail } });
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      if (error.name === "TokenExpiredError") {
+        return res.status(400).send("Verification link has expired. Please request a new one.");
+      }
+      return res.status(400).send("Invalid verification link.");
+    }
+
+    // New tokens carry purpose "email_verify"; legacy tokens only have `email`.
+    // Tokens for other flows (e.g. password reset) are rejected here.
+    if (!decoded.email || (decoded.purpose && decoded.purpose !== "email_verify")) {
+      return res.status(400).send("Invalid verification link.");
+    }
+
+    const email = String(decoded.email).toLowerCase();
+    const user = await User.findOne({ where: { email } });
     if (!user) {
-      console.error(`Verification error: User with email ${lowercaseEmail} not found.`);
+      console.error(`Verification error: user ${email} not found.`);
       return res.status(404).send("Verification failed: User not found.");
     }
 
     if (user.isVerified) {
-      console.log(`User ${user.email} is already verified.`);
       return res.redirect(`${process.env.FRONTEND_URL}/login.html?status=already_verified`);
     }
 
-    await User.update({ isVerified: true }, { where: { email: lowercaseEmail } });
-
-    console.log(`✅ User ${lowercaseEmail} verified`);
+    await user.update({ isVerified: true });
+    console.log(`✅ User ${email} verified`);
 
     res.redirect(`${process.env.FRONTEND_URL}/login.html?status=success`);
-
-  } catch (error) {
-    console.error("Verification error:", error.message);
-
-    if (error.name === 'TokenExpiredError') {
-      return res.status(400).send("Verification link has expired. Please request a new one.");
-    }
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(400).send("Invalid verification link.");
-    }
-    
+  } catch (err) {
+    console.error("Verification error:", err);
     res.status(500).send("An unexpected error occurred during verification.");
   }
 };
@@ -100,24 +104,108 @@ const verify = async (req, res) => {
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const lowercaseEmail = email.toLowerCase();
+    const genericFailure = { success: false, message: "Invalid email or password." };
 
-    const user = await User.findOne({ where: { email: lowercaseEmail } });
-    if (!user) return res.status(400).json({ message: "User not found" });
-
-    if (!user.isVerified) return res.status(400).json({ message: "Email not verified" });
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+      await bcrypt.compare(password, DUMMY_HASH); // equalise timing
+      return res.status(401).json(genericFailure);
+    }
 
     const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) return res.status(400).json({ message: "Invalid credentials" });
+    if (!validPassword) return res.status(401).json(genericFailure);
 
-    const authToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "2h" });
+    // Only revealed after the password is proven correct.
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Email not verified. Please check your inbox for the verification link."
+      });
+    }
 
-    res.json({ message: "Login successful", token: authToken });
-
+    const authToken = signAccessToken(user);
+    res.json({ success: true, message: "Login successful", token: authToken, user: publicUser(user) });
   } catch (err) {
     console.error("Login error:", err);
-    res.status(500).json({ message: "Login failed", error: err.message });
+    res.status(500).json({ success: false, message: "Login failed. Please try again later." });
   }
 };
 
-module.exports = { signup, verify, login };
+// ---------- FORGOT PASSWORD ----------
+const FORGOT_PASSWORD_MESSAGE = "If an account exists for that email, a password reset link has been sent.";
+
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ where: { email } });
+
+    if (user) {
+      const token = signPasswordResetToken(user);
+      const resetLink = `${process.env.FRONTEND_URL}/reset-password.html?token=${token}`;
+      await sendMail({
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: "Reset your BuyO password",
+        html: `<p>Click <a href="${resetLink}">here</a> to reset your BuyO password.</p>
+               <p>This link expires in 30 minutes and can only be used once.</p>
+               <p>If you did not request this, you can safely ignore this email.</p>`
+      });
+    } else {
+      await bcrypt.hash("buyo-dummy-password", 10); // equalise timing
+    }
+
+    res.status(200).json({ success: true, message: FORGOT_PASSWORD_MESSAGE });
+  } catch (err) {
+    // Never reveal account existence — even when mail delivery fails.
+    console.error("Forgot password error:", err);
+    res.status(200).json({ success: true, message: FORGOT_PASSWORD_MESSAGE });
+  }
+};
+
+// ---------- RESET PASSWORD ----------
+const resetPassword = async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    const invalidLink = () =>
+      res.status(400).json({ success: false, message: "Invalid or expired reset link." });
+    const usedLink = () =>
+      res.status(400).json({ success: false, message: "This reset link has already been used or is no longer valid." });
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      return invalidLink();
+    }
+
+    if (decoded.purpose !== "password_reset" || !decoded.sub || !decoded.pwv) return invalidLink();
+
+    const user = await User.findByPk(Number(decoded.sub));
+    if (!user) return invalidLink();
+
+    // Stateless single-use: the token only matches while the password is unchanged.
+    if (sha256Hex(user.password) !== decoded.pwv) return usedLink();
+
+    const newHash = await bcrypt.hash(password, 10);
+
+    // Atomic compare-and-swap: only the first concurrent request wins.
+    const [affected] = await User.update(
+      { password: newHash },
+      { where: { id: user.id, password: user.password } }
+    );
+    if (affected === 0) return usedLink();
+
+    res.json({ success: true, message: "Password updated. You can now sign in." });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ success: false, message: "Password reset failed. Please try again later." });
+  }
+};
+
+// ---------- ME (requires auth middleware) ----------
+const me = async (req, res) => {
+  res.json({ success: true, user: publicUser(req.user) });
+};
+
+module.exports = { signup, verify, login, forgotPassword, resetPassword, me };
