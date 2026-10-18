@@ -14,6 +14,7 @@
     "db:backup": "node scripts/db-backup.js",
     "db:restore": "node scripts/db-restore.js",
     "admin:role": "node scripts/admin-role.js",
+    "test:user": "node scripts/test-user.js",
     "test": "node --test --test-concurrency=1 test/auth.test.js test/security.test.js test/migrations.test.js test/catalog.test.js test/cartWishlist.test.js test/orders.test.js"
   },
   "dependencies": {
