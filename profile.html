@@ -25,19 +25,164 @@
 
   <main id="main" class="buyo-page">
     <div class="buyo-container">
-      <h1 class="results-title">My profile</h1>
-      <p class="ui-empty__text" style="margin-top: var(--space-4); max-width: 60ch;">
-        Account details will live here in a later phase. Nothing has been made
-        up in the meantime.
-      </p>
+
+      <!-- Layout follows design-references/profile.png: sidebar navigation on
+           the left, content cards on the right. Deviations (reported): no
+           charts, reviews, stats, website or phone fields — those don't exist
+           for BuyO customers, and fabricated content is not allowed. -->
+      <h1 class="results-title" id="account-title">Profile Details</h1>
+
+      <!-- Signed-out state. -->
+      <div id="profile-guest" hidden>
+        <div class="ui-empty" style="margin-top: var(--space-8);">
+          <span class="ui-empty__icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+          </span>
+          <h2 class="ui-empty__title">Sign in to view your account</h2>
+          <p class="ui-empty__text">Your profile, orders and addresses live on your account.</p>
+          <div style="display: flex; gap: var(--space-3); flex-wrap: wrap; justify-content: center;">
+            <a class="ui-btn ui-btn--primary" href="login.html?next=profile.html">Sign in</a>
+            <a class="ui-btn ui-btn--secondary" href="signup.html">Create account</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Signed-in account area. -->
+      <div class="ui-account" id="profile-body" hidden style="margin-top: var(--space-6);">
+
+        <!-- Sidebar (reference: left nav with active pill). -->
+        <nav class="ui-account__nav" role="tablist" aria-label="Account sections">
+          <button class="ui-account__nav-item" type="button" role="tab"
+                  id="tab-profile" aria-controls="panel-profile" aria-selected="true" data-tab="profile">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+            Profile
+          </button>
+          <button class="ui-account__nav-item" type="button" role="tab"
+                  id="tab-orders" aria-controls="panel-orders" aria-selected="false" data-tab="orders">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+            Orders
+          </button>
+          <button class="ui-account__nav-item" type="button" role="tab"
+                  id="tab-addresses" aria-controls="panel-addresses" aria-selected="false" data-tab="addresses">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+            Addresses
+          </button>
+          <button class="ui-account__nav-item ui-account__nav-item--danger" type="button" id="signout-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+            Sign out
+          </button>
+        </nav>
+
+        <!-- Panels. -->
+        <div>
+          <!-- Profile tab. -->
+          <section class="ui-account__panel" id="panel-profile" role="tabpanel"
+                   aria-labelledby="tab-profile" tabindex="0">
+            <div class="ui-profile-card">
+              <span class="ui-profile-card__avatar" id="profile-avatar" aria-hidden="true">?</span>
+              <div style="min-width: 0;">
+                <h2 class="ui-profile-card__name" id="profile-name">…</h2>
+                <p class="ui-profile-card__email" id="profile-email"></p>
+                <div class="ui-profile-card__meta" id="profile-meta"></div>
+              </div>
+            </div>
+            <!-- Real counters (orders placed / saved addresses) — the
+                 reference shows stat cards; BuyO only shows numbers the API
+                 actually returned. -->
+            <div class="ui-profile-stats" id="profile-stats" hidden></div>
+          </section>
+
+          <!-- Orders tab. -->
+          <section class="ui-account__panel" id="panel-orders" role="tabpanel"
+                   aria-labelledby="tab-orders" tabindex="0" hidden>
+            <div id="orders-list" aria-live="polite"></div>
+          </section>
+
+          <!-- Addresses tab. -->
+          <section class="ui-account__panel" id="panel-addresses" role="tabpanel"
+                   aria-labelledby="tab-addresses" tabindex="0" hidden>
+            <div class="ui-account__panel-head">
+              <h2 class="ui-account__title">Saved addresses</h2>
+              <button class="ui-btn ui-btn--secondary ui-btn--sm" type="button" id="add-address-btn">
+                + Add address
+              </button>
+            </div>
+            <div id="addresses-list" class="ui-address-grid" aria-live="polite"></div>
+          </section>
+        </div>
+      </div>
+
     </div>
   </main>
+
+  <!-- Address modal — add / edit (server-validated: fullName, phone, line1,
+       line2?, city, state, pincode 6-digit, label?, isDefault?). -->
+  <div class="ui-modal" data-ui-modal id="address-modal" hidden>
+    <div class="ui-modal__overlay" data-ui-modal-close></div>
+    <div class="ui-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="address-modal-title">
+      <div class="ui-modal__head">
+        <h2 class="ui-modal__title" id="address-modal-title">Add new address</h2>
+        <button class="ui-modal__close" type="button" data-ui-modal-close aria-label="Close dialog">✕</button>
+      </div>
+      <form id="address-form" novalidate>
+        <input type="hidden" name="id" value="" />
+        <div class="ui-field">
+          <label class="ui-label" for="addr-name">Full name</label>
+          <input class="ui-input" id="addr-name" name="fullName" type="text" autocomplete="name" required maxlength="100" />
+          <p class="ui-error" data-error-for="fullName" hidden></p>
+        </div>
+        <div class="ui-field">
+          <label class="ui-label" for="addr-phone">Phone</label>
+          <input class="ui-input" id="addr-phone" name="phone" type="tel" autocomplete="tel" required maxlength="20" placeholder="10-digit mobile number" />
+          <p class="ui-error" data-error-for="phone" hidden></p>
+        </div>
+        <div class="ui-field">
+          <label class="ui-label" for="addr-line1">Address line 1</label>
+          <input class="ui-input" id="addr-line1" name="line1" type="text" autocomplete="address-line1" required maxlength="255" />
+          <p class="ui-error" data-error-for="line1" hidden></p>
+        </div>
+        <div class="ui-field">
+          <label class="ui-label" for="addr-line2">Address line 2 <span style="color: var(--color-text-muted); font-weight: 400;">(optional)</span></label>
+          <input class="ui-input" id="addr-line2" name="line2" type="text" autocomplete="address-line2" maxlength="255" />
+        </div>
+        <div class="ui-field">
+          <label class="ui-label" for="addr-city">City</label>
+          <input class="ui-input" id="addr-city" name="city" type="text" autocomplete="address-level2" required maxlength="100" />
+          <p class="ui-error" data-error-for="city" hidden></p>
+        </div>
+        <div class="ui-field">
+          <label class="ui-label" for="addr-state">State</label>
+          <input class="ui-input" id="addr-state" name="state" type="text" autocomplete="address-level1" required maxlength="100" />
+          <p class="ui-error" data-error-for="state" hidden></p>
+        </div>
+        <div class="ui-field">
+          <label class="ui-label" for="addr-pincode">PIN code</label>
+          <input class="ui-input" id="addr-pincode" name="pincode" type="text" inputmode="numeric" autocomplete="postal-code" required maxlength="6" placeholder="6 digits" />
+          <p class="ui-error" data-error-for="pincode" hidden></p>
+        </div>
+        <div class="ui-field">
+          <label class="ui-label" for="addr-label">Label <span style="color: var(--color-text-muted); font-weight: 400;">(optional — e.g. Home, Office)</span></label>
+          <input class="ui-input" id="addr-label" name="label" type="text" maxlength="50" />
+        </div>
+        <label style="display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-sm);">
+          <input type="checkbox" name="isDefault" style="accent-color: var(--color-brand);" />
+          Set as default address
+        </label>
+        <div class="ui-modal__foot">
+          <button class="ui-btn ui-btn--secondary" type="button" data-ui-modal-close>Cancel</button>
+          <button class="ui-btn ui-btn--primary" type="submit" id="save-address-btn">Save address</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <div data-buyo-footer></div>
 
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/catalog.js"></script>
   <script src="js/layout.js"></script>
+  <script src="js/profile.js"></script>
 </body>
 </html>

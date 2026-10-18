@@ -120,6 +120,7 @@
 }
 
 .buyo-icon-btn {
+  position: relative; /* anchors the count badge */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -130,6 +131,29 @@
   text-decoration: none;
   transition: background-color var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
+}
+
+/* Real cart/wishlist count badge (fed by GET /api/cart + /api/wishlist). */
+.buyo-icon-btn__badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent);
+  border: 1.5px solid var(--color-surface);
+  border-radius: var(--radius-full);
+  color: var(--color-brand-strong);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 .buyo-icon-btn:hover {

@@ -1,13 +1,15 @@
-# BuyO Design System (Phase 7, extended in Phase 8)
+# BuyO Design System (Phase 7, extended in Phases 8–9)
 
 Shared visual foundation for the storefront and admin redesign (Phases 8–10).
-**Adoption status (after Phase 8):** the shell and design system are live on
-`index.html`, `categories.html`, `product-details.html`, `products.html`, and
-the stub pages (`about`, `contact`, `services`, `profile`). Legacy `cart.html`
-and `wishlist.html` still use the old `header.html` + `css/Header.css` header —
-their flows are Phase 9. Font Awesome CDN remains **only** on those two legacy
-pages (plus the untouched `demo.html` prototype); every redesigned page uses
-inline SVG icons.
+**Adoption status (after Phase 9):** the shell and design system are live on
+`index.html`, `categories.html`, `products.html`, `product-details.html`,
+`cart.html`, `checkout.html`, `wishlist.html`, `profile.html`, the auth pages
+(`login.html`, `signup.html`, `forgot-password.html`, `reset-password.html`),
+and the stub pages (`about`, `contact`, `services`). No customer-facing page
+uses the legacy `header.html`/`js/header.js` system anymore (the files remain
+in the repo, unlinked). Font Awesome CDN remains **only** on the untouched
+`demo.html` prototype and `admin/` pages (Phase 10); every redesigned page
+uses inline SVG icons.
 
 Load order for any page adopting the system:
 
@@ -113,6 +115,17 @@ All classes are `ui-`-prefixed to coexist with legacy page styles.
 | Breadcrumb | `.ui-breadcrumb` | Product detail pages; muted links, `/` separators. |
 | Product detail | `.ui-detail` (+ `__media/__fallback/__discount/__category/__name/__price-row/__price/__mrp/__stock/__description/__actions/__auth-note`) | Two columns ≥1024px, stacked below; letter-tile fallback when no image. |
 | Footer social | `.buyo-footer__social`, `.buyo-footer__social-link` | Real owner profiles preserved from the legacy footer; inline SVG icons, `rel="noopener noreferrer"`. |
+| Steps | `.ui-steps`, `--circles`, `__item/__num/__connector` | Numbered progress indicators (cart → checkout → completed). Static indicators (not links) when steps aren't navigable; completed steps show a ✓. |
+| Cart line | `.ui-cart-layout`, `.ui-cart-lines`, `.ui-cart-line` (+ `__media/__name/__price/__unit/__note/__remove`), `.ui-qty` + `.ui-qty-btn` | Server-cart rows; qty capped at `min(99, stock)` client-side; stock/`unavailable` flags surface as `.ui-badge--warning/--neutral`. |
+| Summary card | `.ui-summary` (+ `__title/__row/__total/__cta/__notice`) | Totals panel with an honest "preview only" notice for tax. |
+| Checkout | `.ui-checkout-layout/__panel/__panel-title/__back/__steps`, `.ui-checkout-items/__item(+__media/__name/__meta/__price)` | Two-panel layout (review left, steps + form right); stacks below 1024px. |
+| Address card | `.ui-address-card` (+ `__name/__text/__badges/__actions`), `.ui-address-list` (radio cards), `.ui-address-grid` | Selection cards on checkout; CRUD cards (edit/set default/two-step delete) on the profile. |
+| Payment method | `.ui-method-tile` (+ `__icon/__title/__text)` | Single-tile method row; COD-only until a real gateway lands. |
+| Confirmation | `.ui-done` (+ `__mark/__title/__text/__meta/__actions`) | Order-placed panel with real order number/total. |
+| Auth pages | `.ui-auth` (+ `__back/__title/__sub/__aside/__foot`), `.ui-input-wrap`, `.ui-input-toggle`, `.ui-form-alert` (+ `--success`) | Centered headerless column (reference login.png): eye toggle for passwords, `role="alert"` message region. |
+| Account area | `.ui-account` (+ `__nav/__nav-item/--danger/__panel/__panel-head/__title`), `.ui-profile-card` (+ `__avatar/__name/__email/__meta`), `.ui-profile-stats`, `.ui-stat-card` (+ `__value/__label`) | Sidebar-tab account layout (reference profile.png); stat tiles show only real API counts. |
+| Order card | `.ui-order-card` (+ `__head/__number/__date/__grid/__items/__detail`), `.ui-timeline` (+ `__time`) | Order history rows; delivery address + status timeline lazy-load from `GET /api/orders/:id`. |
+| Wishlist extras | `.ui-wish-item/__actions`, `.ui-wish-gone` (+ `__name/__text`) | Product card + Remove row; dashed card for products deleted from the catalog. |
 
 ### JS helpers (`js/ui.js` → `window.BuyOUi`)
 
@@ -168,8 +181,12 @@ Rendered by `js/layout.js` into `[data-buyo-header]` / `[data-buyo-footer]`.
   `GET /api/auth/me`; on success shows “Hi, ⟨first name⟩” with *My profile* /
   *Sign out*; on 401 the API client clears the session (see §6) and the menu
   flips to *Login* / *Create account* in place — **no redirect loops**.
-- **Cart/wishlist icons carry no count badges** until the server cart UI lands
-  in Phase 9 (no fabricated numbers).
+- **Cart/wishlist icons carry real count badges** (Phase 9): on every load with
+  a session, `GET /api/cart` + `GET /api/wishlist` fill the badge counters
+  (hidden at 0, `99+` cap, `aria-label` gains “, N items”); pages announce
+  mutations with `buyo:cart-updated` / `buyo:wishlist-updated` and the header
+  refreshes the matching count (sequential-id guard so a slow response can't
+  overwrite a newer one). Guests and cleared sessions show no badges.
 - **Mobile drawer**: hidden panel opened by the hamburger; `role="dialog"`,
   `aria-modal`, ESC/overlay closes, focus moves in and returns to the button,
   Tab is trapped, auto-closes when resizing to ≥1024px (desktop nav returns).
@@ -180,9 +197,10 @@ Rendered by `js/layout.js` into `[data-buyo-header]` / `[data-buyo-footer]`.
 
 ## 6. API client (`js/api.js` → `window.BuyOApi`)
 
-Single fetch wrapper for all new code. Existing callers (`login.js`,
-`signup.js`, `product-details.js`) still use their inline fetches — rewiring
-auth flows is Phase 9+ work and was out of scope here.
+Single fetch wrapper for all new code. After Phase 9 every flow uses it —
+`login.js`, `signup.js`, `forgot-password.js`, `reset-password.js`, `cart.js`,
+`checkout.js`, `profile.js`, `wishlist.js` included (no page carries its own
+inline `fetch` anymore; `product-details.js` rewired in P8).
 
 ```js
 const res = await BuyOApi.get("/products?q=laptop", { auth: "never" });
@@ -251,6 +269,26 @@ Run after any change to the design system or shell:
    `login.html`: header shows “Hi, ⟨name⟩” after `GET /api/auth/me` succeeds.
    Delete the token in DevTools → any authed call flips the menu back to
    Login with an “expired” toast, no redirect loop.
-8. **Legacy pages** — `index.html`, `cart.html`, `wishlist.html`,
-   `login.html`, `product-details.html` still load with their original header
-   and no new console errors.
+8. **No stale legacy pages** — every customer-facing page loads the shared
+   shell with no new console errors; only `demo.html` and `admin/` still
+   reference Font Awesome (Phase 10 + untouched prototype).
+
+## 10. Reference-driven design mapping
+
+Every redesigned page is built from its `design-references/` screenshot
+before styling: identify the reference → implement → capture local desktop +
+mobile screenshots → compare → correct → report remaining deviations.
+
+| Page | Reference | Notes / deviations |
+|------|-----------|--------------------|
+| `index.html` | `Home_page` screenshot (P8) | Hero + sections + chips. |
+| `categories.html` / `products.html` | `categories.png` (P8) | Filter rail + grid. |
+| `product-details.html` | `product_view.png` (P8) | Media + buy panel. |
+| `cart.html` | `cart.png` | Plain stepper, line cards, summary; no coupon row (no coupon feature), no strikethrough MRP (API lacks it → “₹X each”). |
+| `checkout.html` | `checkout.png` | 3-step circles, address radio cards, COD tile; keeps the BuyO site shell (reference is a standalone checkout header); no discount/credit rows. |
+| `login.html` | `login.png` | Headerless centered column, eye toggle; no Google button and no Remember-me (no backend support — omitted, not faked). |
+| `signup.html` | `login.png` mirrored | No dedicated signup reference exists (reported). |
+| `forgot-password.html` / `reset-password.html` | `login.png` auth-card style | Required by the backend’s reset emails (`reset-password.html?token=…`). |
+| `profile.html` | `profile.png` | Sidebar tabs + identity card + real stat tiles; reference’s Dashboard/Statistics/Reviews/Charts omitted (no such data — not faked). |
+| `wishlist.html` | *(none)* | BuyO product-card system on the shell; stated as a deviation. |
+| `admin/dashboard` etc. | `admin_page.webp` | Phase 10. |

@@ -10,7 +10,9 @@
 // Honesty rules baked in:
 //   - Search submits to products.html?q=... which queries the REAL catalog API.
 //   - The account control reflects the REAL auth state (token + GET /api/auth/me).
-//   - No cart/wishlist count badges (cart isn't server-wired until Phase 9).
+//   - Cart/wishlist count badges are real: GET /api/cart + GET /api/wishlist
+//     (Phase 9), refreshed when a page dispatches buyo:cart-updated /
+//     buyo:wishlist-updated.
 //   - Footer/nav only link to pages that exist and have content.
 (function () {
   "use strict";
@@ -114,11 +116,13 @@
       navHtml +
       "</nav>" +
       '<div class="buyo-header__actions">' +
-      '<a class="buyo-icon-btn" href="cart.html" aria-label="Shopping cart">' +
+      '<a class="buyo-icon-btn" href="cart.html" aria-label="Shopping cart" data-cart-link>' +
       ICONS.cart +
+      '<span class="buyo-icon-btn__badge" data-cart-badge hidden></span>' +
       "</a>" +
-      '<a class="buyo-icon-btn" href="wishlist.html" aria-label="Wishlist">' +
+      '<a class="buyo-icon-btn" href="wishlist.html" aria-label="Wishlist" data-wishlist-link>' +
       ICONS.heart +
+      '<span class="buyo-icon-btn__badge" data-wishlist-badge hidden></span>' +
       "</a>" +
       '<div class="buyo-account" data-buyo-account>' +
       '<button class="buyo-account__toggle" type="button" aria-expanded="false" aria-haspopup="true" data-account-toggle>' +
@@ -237,8 +241,11 @@
     if (!window.BuyOApi || !BuyOApi.getToken()) {
       authState = { status: "guest", name: "" };
       renderAccount();
+      clearBadges();
       return;
     }
+    refreshBadge("cart");
+    refreshBadge("wishlist");
     BuyOApi.get("/auth/me")
       .then(function (res) {
         if (res.ok && res.data && res.data.user) {
@@ -256,6 +263,56 @@
       .catch(function () {
         renderAccount();
       });
+  }
+
+  // ---------- Header count badges (real API data) ----------
+  var badgeSeq = { cart: 0, wishlist: 0 };
+
+  function setBadge(kind, count, baseLabel) {
+    var badge = document.querySelector("[data-" + kind + "-badge]");
+    var link = document.querySelector("[data-" + kind + "-link]");
+    if (!badge) return;
+    var value = Number(count) || 0;
+    if (value > 0) {
+      badge.hidden = false;
+      badge.textContent = value > 99 ? "99+" : String(value);
+      if (link) {
+        link.setAttribute(
+          "aria-label",
+          baseLabel + ", " + value + (value === 1 ? " item" : " items")
+        );
+      }
+    } else {
+      badge.hidden = true;
+      badge.textContent = "";
+      if (link) link.setAttribute("aria-label", baseLabel);
+    }
+  }
+
+  function clearBadges() {
+    setBadge("cart", 0, "Shopping cart");
+    setBadge("wishlist", 0, "Wishlist");
+  }
+
+  // Sequential ids so a slow response can never overwrite a newer one
+  // (rapid quantity clicks on the cart page fire buyo:cart-updated often).
+  function refreshBadge(kind) {
+    if (!window.BuyOApi || !BuyOApi.getToken()) {
+      clearBadges();
+      return;
+    }
+    var seq = ++badgeSeq[kind];
+    var path = kind === "cart" ? "/cart" : "/wishlist";
+    var label = kind === "cart" ? "Shopping cart" : "Wishlist";
+    BuyOApi.get(path).then(function (res) {
+      if (seq !== badgeSeq[kind]) return; // stale — a newer request won
+      if (res.ok) {
+        setBadge(kind, res.data && res.data.count, label);
+      } else if (res.status === 401) {
+        setBadge(kind, 0, label);
+      }
+      // Network/5xx: leave the last known count alone (don't flicker to 0).
+    });
   }
 
   // ---------- Behaviour wiring ----------
@@ -378,6 +435,7 @@
     document.addEventListener("buyo:session-cleared", function () {
       authState = { status: "guest", name: "" };
       renderAccount();
+      clearBadges();
       if (window.BuyOUi) {
         BuyOUi.toast("Your session has expired. Please sign in again.", {
           type: "error"
@@ -388,11 +446,20 @@
     document.addEventListener("buyo:signed-out", function () {
       authState = { status: "guest", name: "" };
       renderAccount();
+      clearBadges();
       var menu = document.querySelector("[data-account-menu]");
       var toggle = document.querySelector("[data-account-toggle]");
       if (menu) menu.hidden = true;
       if (toggle) toggle.setAttribute("aria-expanded", "false");
       if (window.BuyOUi) BuyOUi.toast("Signed out.", { type: "success" });
+    });
+
+    // Pages announce mutations; the header refreshes the matching count.
+    document.addEventListener("buyo:cart-updated", function () {
+      refreshBadge("cart");
+    });
+    document.addEventListener("buyo:wishlist-updated", function () {
+      refreshBadge("wishlist");
     });
   }
 

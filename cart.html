@@ -3,101 +3,95 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shopping Navbar</title>
+  <title>Cart — BuyO</title>
 
   <!-- Favicon -->
   <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
 
-  <!-- External CSS -->
-  <link rel="stylesheet" href="css/Header.css" />
-  <link rel="stylesheet" href="css/cart.css" />
+  <!-- BuyO design system -->
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
 
   <!-- Manifest -->
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#ffffff" />
-  <!-- font font-awesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-
+  <meta name="theme-color" content="#064E4A" />
 </head>
-<body class="cart-page">
-  <div id="header-placeholder"></div>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
 
-  <!-- Cart Items -->
-  <div id="cart-container"></div>
+  <div data-buyo-header></div>
 
-    <main class="cart-container">
-        <div class="cart-header">
-            <h2>Your Shopping Cart</h2>
-            <p><span id="item-count">3</span> items in cart</p>
-        </div>
+  <main id="main" class="buyo-page">
+    <div class="buyo-container">
 
-        <div class="cart-layout">
-            
-          <div class="cart-items-section" id="cart-items">
-    <div class="cart-item template" style="display:none;">
-        <div class="product-image">
-            <img src="" alt="">
+      <!-- Layout follows design-references/cart.png: serif title, step
+           indicator, line items left, order summary right. -->
+      <div class="results-head">
+        <h1 class="results-title">Cart</h1>
+        <p class="results-count" id="cart-count" aria-live="polite"></p>
+      </div>
+
+      <ol class="ui-steps" aria-label="Checkout progress" id="cart-steps">
+        <li class="ui-steps__item ui-steps__item--active" aria-current="step">1. Cart</li>
+        <li class="ui-steps__connector" aria-hidden="true"></li>
+        <li class="ui-steps__item">2. Checkout</li>
+        <li class="ui-steps__connector" aria-hidden="true"></li>
+        <li class="ui-steps__item">3. Payment</li>
+      </ol>
+
+      <!-- Signed-out state: cart data requires a session. -->
+      <div id="cart-guest" hidden>
+        <div class="ui-empty" style="margin-top: var(--space-8);">
+          <span class="ui-empty__icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l2.4 10.4a2 2 0 0 0 2 1.6h6.9a2 2 0 0 0 2-1.6L21 8H6"/></svg>
+          </span>
+          <h2 class="ui-empty__title">Sign in to see your cart</h2>
+          <p class="ui-empty__text">Your cart lives on your account, so it follows you across devices.</p>
+          <div style="display: flex; gap: var(--space-3); flex-wrap: wrap; justify-content: center;">
+            <a class="ui-btn ui-btn--primary" href="login.html?next=cart.html">Sign in</a>
+            <a class="ui-btn ui-btn--secondary" href="signup.html">Create account</a>
+          </div>
         </div>
-        <div class="product-details">
-            <div class="item-header">
-                <div>
-                    <h3></h3>
-                    <p></p>
-                </div>
-                <button class="remove-btn"><i class="fas fa-trash-alt"></i></button>
-            </div>
-            <div class="item-footer">
-                <div class="price">
-                    <span class="current-price"></span>
-                    <span class="old-price"></span>
-                </div>
-                <div class="quantity-controls">
-                    <button class="quantity-btn">-</button>
-                    <span class="quantity-display">1</span>
-                    <button class="quantity-btn">+</button>
-                </div>
-            </div>
+      </div>
+
+      <!-- Empty-cart state. -->
+      <div id="cart-empty" hidden>
+        <div class="ui-empty" style="margin-top: var(--space-8);">
+          <span class="ui-empty__icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 4h2l2.4 10.4a2 2 0 0 0 2 1.6h6.9a2 2 0 0 0 2-1.6L21 8H6"/></svg>
+          </span>
+          <h2 class="ui-empty__title">Your cart is empty</h2>
+          <p class="ui-empty__text">Browse the catalog and add something you love.</p>
+          <a class="ui-btn ui-btn--primary" href="products.html">Continue shopping</a>
         </div>
+      </div>
+
+      <!-- Loaded cart: line items + summary. -->
+      <div class="ui-cart-layout" id="cart-body" hidden style="margin-top: var(--space-6);">
+        <div class="ui-cart-lines" id="cart-lines"></div>
+
+        <aside class="ui-summary" aria-labelledby="summary-title">
+          <h2 class="ui-summary__title" id="summary-title">Order Summary</h2>
+          <dl id="summary-rows"></dl>
+          <p class="ui-summary__notice" id="summary-notice" hidden></p>
+          <button class="ui-btn ui-btn--primary ui-btn--block" type="button" id="proceed-checkout">
+            Proceed to Checkout
+          </button>
+        </aside>
+      </div>
+
     </div>
-</div>
+  </main>
 
+  <div data-buyo-footer></div>
 
-
-            <!-- Empty Cart -->
-            <div id="empty-cart" class="empty-cart hidden">
-                <i class="fas fa-shopping-cart empty-icon"></i>
-                <h3>Your cart is empty</h3>
-                <p>Looks like you haven't added anything yet</p>
-                <button class="continue-btn">Continue Shopping</button>
-            </div>
-
-            <!-- Order Summary -->
-            <div class="order-summary">
-                <h3>Order Summary</h3>
-                <div class="summary-details">
-                    <div><span>Subtotal</span><span id="subtotal">$0.00</span></div>
-                    <div><span>Shipping</span><span>Free</span></div>
-                    <div><span>Tax</span><span id="tax">$0.00</span></div>
-                    <div class="summary-total"><span>Total</span><span id="total">$0.00</span></div>
-                </div>
-                <div class="promo-section">
-                    <label for="promo-code">Promo Code</label>
-                    <div class="promo-input">
-                        <input type="text" id="promo-code" placeholder="Enter code">
-                        <button>Apply</button>
-                    </div>
-                </div>
-                <button class="checkout-btn">Proceed to Checkout</button>
-                <button class="continue-btn">Continue Shopping</button>
-            </div>
-        </div>
-    </main>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
-    <script src="js/cart.js"></script>
-
-
-  <script src="js/script.js"></script>
-  <script src="js/header.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/catalog.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/cart.js"></script>
 </body>
 </html>

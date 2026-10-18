@@ -2,32 +2,73 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Login</title>
-  <link rel="stylesheet" href="css/login.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — BuyO</title>
+
+  <!-- Favicon -->
+  <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
+
+  <!-- BuyO design system -->
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+
+  <!-- Manifest -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#064E4A" />
 </head>
 <body>
-  <div class="container">
-    <h2>Welcome Back</h2>
-    <p>Sign in to access your dashboard</p>
-    <form id="loginForm">
-      <label>Email</label>
-      <input type="email" name="email" placeholder="Enter your email" required>
+  <main id="main" class="buyo-container ui-auth">
 
-      <label>Password</label>
-      <input type="password" name="password" placeholder="Enter your password" required>
+    <!-- Layout follows design-references/login.png: a single centered column —
+         back link, heavy uppercase title, labeled inputs, full-width dark
+         primary button, sign-up footer. No Google sign-in (project decision),
+         no Remember me (the API has no such option — a checkbox would be fake). -->
+    <a class="ui-auth__back" href="index.html"><span aria-hidden="true">←</span> Back to store</a>
 
-      <div class="remember">
-        <input class="checkbox" type="checkbox"> Remember me
-        <a href="#">Forgot password?</a>
+    <h1 class="ui-auth__title">Welcome back</h1>
+    <p class="ui-auth__sub">Sign in to keep shopping and track your orders.</p>
+
+    <div class="ui-form-alert" id="login-alert" role="alert" hidden></div>
+
+    <form id="loginForm" action="index.html" method="get">
+      <div class="ui-field">
+        <label class="ui-label" for="login-email">Email</label>
+        <input class="ui-input" id="login-email" name="email" type="email"
+               autocomplete="email" placeholder="you@example.com" required />
       </div>
 
-      <button type="submit">Sign in</button>
-      <p>Don't have an account? <a href="signup.html">Sign up</a></p>
+      <div class="ui-field">
+        <label class="ui-label" for="login-password">Password</label>
+        <div class="ui-input-wrap">
+          <input class="ui-input" id="login-password" name="password" type="password"
+                 autocomplete="current-password" placeholder="Enter your password" required />
+          <button class="ui-input-toggle" type="button" id="login-password-toggle"
+                  aria-label="Show password" aria-pressed="false">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="ui-auth__aside">
+        <a href="forgot-password.html">Forgot password?</a>
+      </div>
+
+      <button class="ui-btn ui-btn--primary ui-btn--block" type="submit" id="login-submit">
+        Sign in
+      </button>
     </form>
-  </div>
-  
+
+    <p class="ui-auth__foot">
+      Don't have an account? <a href="signup.html">Sign up</a>
+    </p>
+
+  </main>
+
   <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
   <script src="js/login.js"></script>
 </body>
 </html>
