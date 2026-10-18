@@ -548,10 +548,31 @@
     var res = await BuyOApi.get("/orders?limit=20");
     if (res.ok) {
       state.orders = (res.data && res.data.orders) || [];
-      state.ordersTotal =
-        res.data && res.data.pagination && typeof res.data.pagination.total === "number"
-          ? res.data.pagination.total
-          : state.orders.length;
+      // Real order count: the orders list COUNT includes eager-joined item
+      // rows (backend finding P10-1), so pagination.total can overstate —
+      // count unique orders across pages instead (capped honestly with "+").
+      state.ordersTotal = state.orders.length;
+      var pagination = res.data && res.data.pagination;
+      if (pagination && pagination.hasNext) {
+        var seen = {};
+        state.orders.forEach(function (order) { seen[order.id] = true; });
+        var count = state.orders.length;
+        var capped = false;
+        for (var page = 2; page <= 10; page++) {
+          var more = await BuyOApi.get("/orders?limit=20&page=" + page);
+          if (!more.ok) break;
+          var rows = (more.data && more.data.orders) || [];
+          for (var i = 0; i < rows.length; i++) {
+            if (seen[rows[i].id]) continue;
+            seen[rows[i].id] = true;
+            count++;
+          }
+          var next = more.data && more.data.pagination;
+          if (!rows.length || !next || !next.hasNext) break;
+          if (page === 10) capped = true;
+        }
+        state.ordersTotal = capped ? count + "+" : count;
+      }
       renderOrders();
       renderStats();
       return;

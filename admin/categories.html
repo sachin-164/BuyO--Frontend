@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Categories · BuyO Admin</title>
+  <link rel="icon" href="../assets/icons/favicon.png" />
+  <link rel="stylesheet" href="../css/tokens.css" />
+  <link rel="stylesheet" href="../css/base.css" />
+  <link rel="stylesheet" href="../css/components.css" />
+  <link rel="stylesheet" href="css/admin.css" />
+</head>
+<body class="adm">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div class="adm-app" data-adm-shell data-page="categories" data-title="Categories">
+    <div data-adm-side></div>
+    <div class="adm-col">
+      <div data-adm-top></div>
+      <main class="adm-main" id="main" tabindex="-1">
+        <section class="adm-card" aria-labelledby="categories-title">
+          <div class="adm-card__head">
+            <h2 class="adm-card__title" id="categories-title">Categories</h2>
+            <div class="adm-card__head-actions">
+              <button type="button" class="ui-btn ui-btn--primary ui-btn--sm" data-add-category>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg>
+                Add Category
+              </button>
+            </div>
+            <p class="adm-card__subtitle" data-count aria-live="polite">Loading categories…</p>
+          </div>
+
+          <p class="adm-note">
+            GST % comes from each category and applies to its products. Deleting a category keeps products’
+            text labels but clears their category link.
+          </p>
+
+          <div data-table></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Add / edit category (shared modal; server validates every field) -->
+  <div class="ui-modal" data-ui-modal id="category-modal" hidden>
+    <div class="ui-modal__overlay" data-ui-modal-close></div>
+    <div class="ui-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="category-modal-title">
+      <div class="ui-modal__head">
+        <h2 class="ui-modal__title" id="category-modal-title" data-modal-title>Add category</h2>
+        <button class="ui-modal__close" type="button" data-ui-modal-close aria-label="Close dialog">✕</button>
+      </div>
+      <form data-category-form novalidate>
+        <div class="ui-modal__body">
+          <div class="ui-field">
+            <label class="ui-label" for="name">Name *</label>
+            <input class="ui-input" id="name" type="text" maxlength="100" required autocomplete="off"
+                   aria-describedby="name-error" />
+            <span class="ui-error" id="name-error" role="alert"></span>
+          </div>
+          <div class="ui-field">
+            <label class="ui-label" for="slug">Slug</label>
+            <input class="ui-input" id="slug" type="text" maxlength="160" autocomplete="off"
+                   placeholder="auto-generated if blank" aria-describedby="slug-error" />
+            <span class="ui-error" id="slug-error" role="alert"></span>
+          </div>
+          <div class="ui-field">
+            <label class="ui-label" for="description">Description</label>
+            <textarea class="ui-input" id="description" rows="3" maxlength="2000"
+                      aria-describedby="description-error"></textarea>
+            <span class="ui-error" id="description-error" role="alert"></span>
+          </div>
+          <div class="ui-field">
+            <label class="ui-label" for="taxRate">GST % *</label>
+            <input class="ui-input" id="taxRate" type="number" min="0" max="999.99" step="0.01" value="0"
+                   inputmode="decimal" aria-describedby="taxRate-error tax-hint" />
+            <span class="ui-error" id="taxRate-error" role="alert"></span>
+            <p class="adm-hint" id="tax-hint">Applied to this category’s products at checkout.</p>
+          </div>
+        </div>
+        <div class="ui-modal__foot">
+          <button class="ui-btn ui-btn--secondary" type="button" data-ui-modal-close>Cancel</button>
+          <button class="ui-btn ui-btn--primary" type="submit" data-cat-submit>Save category</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/ui.js"></script>
+  <script src="../js/catalog.js"></script>
+  <script src="js/shell.js"></script>
+  <script src="js/categories.js"></script>
+</body>
+</html>

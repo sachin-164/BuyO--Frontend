@@ -4,9 +4,11 @@
 //   401 "Invalid email or password."  |  403 "Email not verified..."
 // Server messages are surfaced honestly (inline alert region, no alerts).
 //
-// ?next= redirect support (used by the cart/checkout guest states) — accepted
-// only when it is a plain same-site page name ("cart.html"), so a crafted URL
-// can never bounce users off-site (open-redirect guard).
+// ?next= redirect support (used by the cart/checkout guest states AND the
+// admin gate) — accepted only when it is a plain same-site page name
+// ("cart.html") or an admin page ("admin/products.html"), so a crafted URL
+// can never bounce users off-site (open-redirect guard). The admin gate
+// re-verifies database-backed admin rights after the redirect anyway.
 (function () {
   "use strict";
   if (!window.BuyOApi) return;
@@ -26,9 +28,12 @@
     } catch (e) {
       return "index.html";
     }
-    // Plain page name only: no slashes, protocols, or hosts. Never bounce
-    // back into the auth pages themselves.
-    if (/^[A-Za-z0-9_-]+\.html$/.test(value) && value !== "login.html" && value !== "signup.html") {
+    // Plain page name (optionally inside /admin): no protocols, hosts, or
+    // extra segments. Never bounce back into the auth pages themselves.
+    if (
+      /^(admin\/)?[A-Za-z0-9_-]+\.html$/.test(value) &&
+      !/(^|\/)(login|signup)\.html$/.test(value)
+    ) {
       return value;
     }
     return "index.html";

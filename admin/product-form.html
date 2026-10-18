@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Add product · BuyO Admin</title>
+  <link rel="icon" href="../assets/icons/favicon.png" />
+  <link rel="stylesheet" href="../css/tokens.css" />
+  <link rel="stylesheet" href="../css/base.css" />
+  <link rel="stylesheet" href="../css/components.css" />
+  <link rel="stylesheet" href="css/admin.css" />
+</head>
+<body class="adm">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div class="adm-app" data-adm-shell data-page="products" data-title="Add product">
+    <div data-adm-side></div>
+    <div class="adm-col">
+      <div data-adm-top></div>
+      <main class="adm-main" id="main" tabindex="-1">
+        <a class="adm-link adm-back" href="products.html">← Back to products</a>
+
+        <section class="adm-card" aria-labelledby="form-title">
+          <div class="adm-card__head">
+            <h2 class="adm-card__title" id="form-title" data-form-title>Add product</h2>
+            <div class="adm-card__head-actions">
+              <a class="ui-btn ui-btn--secondary ui-btn--sm" href="../index.html">View storefront</a>
+            </div>
+            <p class="adm-card__subtitle" data-form-subtitle>Create a catalog entry. Fields marked * are required.</p>
+          </div>
+          <div class="adm-card__body">
+            <p class="adm-inline-note" data-loading hidden>Loading product…</p>
+
+            <form class="adm-form" data-product-form novalidate>
+              <div class="adm-form__grid">
+                <div class="ui-field adm-field--full">
+                  <label class="ui-label" for="name">Product name *</label>
+                  <input class="ui-input" id="name" name="name" type="text" maxlength="200" required
+                         autocomplete="off" aria-describedby="name-error" />
+                  <span class="ui-error" id="name-error" role="alert"></span>
+                </div>
+
+                <div class="ui-field adm-field--full">
+                  <label class="ui-label" for="category">Category *</label>
+                  <select class="ui-input" id="category" name="category" aria-describedby="category-error">
+                    <option value="">Loading categories…</option>
+                  </select>
+                  <div data-custom-wrap hidden>
+                    <label class="ui-label" for="category-custom">Category name</label>
+                    <input class="ui-input" id="category-custom" name="categoryCustom" type="text"
+                           maxlength="100" placeholder="e.g. Sports &amp; Outdoors" autocomplete="off" />
+                    <p class="adm-hint">Used as a free-text category until a matching category exists.</p>
+                  </div>
+                  <span class="ui-error" id="category-error" role="alert"></span>
+                </div>
+
+                <div class="ui-field adm-field--full">
+                  <label class="ui-label" for="description">Description</label>
+                  <textarea class="ui-input" id="description" name="description" rows="4" maxlength="5000"
+                            aria-describedby="description-error"></textarea>
+                  <span class="ui-error" id="description-error" role="alert"></span>
+                </div>
+
+                <div class="ui-field">
+                  <label class="ui-label" for="mrpPrice">MRP (₹) *</label>
+                  <input class="ui-input" id="mrpPrice" name="mrpPrice" type="number" min="0.01" max="100000000"
+                         step="0.01" inputmode="decimal" required aria-describedby="mrpPrice-error" />
+                  <span class="ui-error" id="mrpPrice-error" role="alert"></span>
+                </div>
+
+                <div class="ui-field">
+                  <label class="ui-label" for="sellingPrice">Selling price (₹) *</label>
+                  <input class="ui-input" id="sellingPrice" name="sellingPrice" type="number" min="0.01"
+                         max="100000000" step="0.01" inputmode="decimal" required aria-describedby="sellingPrice-error" />
+                  <span class="ui-error" id="sellingPrice-error" role="alert"></span>
+                  <p class="adm-hint" data-discount-hint hidden></p>
+                </div>
+
+                <div class="ui-field">
+                  <label class="ui-label" for="stock">Stock (units)</label>
+                  <input class="ui-input" id="stock" name="stock" type="number" min="0" step="1" value="0"
+                         inputmode="numeric" aria-describedby="stock-error" />
+                  <span class="ui-error" id="stock-error" role="alert"></span>
+                </div>
+
+                <div class="ui-field">
+                  <label class="ui-label" for="slug">Slug</label>
+                  <input class="ui-input" id="slug" name="slug" type="text" placeholder="auto-generated if blank"
+                         autocomplete="off" aria-describedby="slug-error slug-hint" />
+                  <span class="ui-error" id="slug-error" role="alert"></span>
+                  <p class="adm-hint" id="slug-hint">Lowercase letters, numbers and hyphens only.</p>
+                </div>
+
+                <fieldset class="ui-field adm-field--full adm-fieldset">
+                  <legend class="ui-label">Image</legend>
+
+                  <div class="adm-radio-row" data-image-mode>
+                    <label><input type="radio" name="imageMode" value="file" checked /> Upload file</label>
+                    <label><input type="radio" name="imageMode" value="url" /> Image URL</label>
+                  </div>
+
+                  <div data-image-file-wrap class="ui-field" style="margin-top: var(--space-3);">
+                    <label class="ui-label" for="image-file">Image file</label>
+                    <input class="ui-input" id="image-file" name="imageFile" type="file" accept="image/*" />
+                    <p class="adm-hint">JPG, PNG, GIF or WebP — uploaded when the product is created.</p>
+                  </div>
+
+                  <div data-image-url-wrap class="ui-field" style="margin-top: var(--space-3);" hidden>
+                    <label class="ui-label" for="image-url">Image URL</label>
+                    <input class="ui-input" id="image-url" name="imageUrl" type="url" maxlength="500"
+                           placeholder="/uploads/photo.jpg or https://…" autocomplete="off" />
+                    <p class="adm-hint" data-url-hint>Relative /uploads/ paths or http(s) links are accepted.</p>
+                  </div>
+
+                  <div class="ui-field" style="margin-top: var(--space-3);">
+                    <label class="ui-label" for="image-alt">Image description (alt text)</label>
+                    <input class="ui-input" id="image-alt" name="imageAlt" type="text" maxlength="255"
+                           autocomplete="off" aria-describedby="image-error" />
+                  </div>
+                  <span class="ui-error" id="image-error" role="alert"></span>
+
+                  <div class="adm-img-preview" data-preview hidden>
+                    <img alt="Current product image preview" data-preview-img />
+                    <button type="button" class="ui-btn ui-btn--secondary ui-btn--sm" data-remove-image>
+                      Remove image
+                    </button>
+                  </div>
+                </fieldset>
+              </div>
+
+              <div class="adm-form__actions">
+                <button type="submit" class="ui-btn ui-btn--primary" data-submit>Save product</button>
+                <a class="ui-btn ui-btn--secondary" href="products.html">Cancel</a>
+                <a class="ui-btn ui-btn--secondary" data-storefront-link hidden href="../product-details.html">View in storefront</a>
+              </div>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/ui.js"></script>
+  <script src="../js/catalog.js"></script>
+  <script src="js/shell.js"></script>
+  <script src="js/product-form.js"></script>
+</body>
+</html>

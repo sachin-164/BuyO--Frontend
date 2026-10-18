@@ -291,4 +291,31 @@ mobile screenshots → compare → correct → report remaining deviations.
 | `forgot-password.html` / `reset-password.html` | `login.png` auth-card style | Required by the backend’s reset emails (`reset-password.html?token=…`). |
 | `profile.html` | `profile.png` | Sidebar tabs + identity card + real stat tiles; reference’s Dashboard/Statistics/Reviews/Charts omitted (no such data — not faked). |
 | `wishlist.html` | *(none)* | BuyO product-card system on the shell; stated as a deviation. |
-| `admin/dashboard` etc. | `admin_page.webp` | Phase 10. |
+
+### Phase 10 — admin area (`admin_page.webp`)
+
+The admin area is a separate app (`admin/`, `body.adm`) sharing the same
+tokens/components. Every page is gated by `admin/js/shell.js`, which re-checks
+`GET /api/auth/me` and renders chrome only when the **database** reports
+`{ isVerified: true, isAdmin: true }` (the server's `requireAdmin` remains the
+real wall). All statistics are computed from live API rows — nothing is
+fabricated.
+
+| Admin page | Reference | Notes / deviations |
+|------------|-----------|--------------------|
+| App shell (`admin/css/admin.css` + `admin/js/shell.js`) | `admin_page.webp` chrome | Floating white app card, icon sidebar (Dashboard, expandable Products group → Product List/Categories, Orders, Log out), top bar with off-canvas drawer below 1024px. Reference's purple accent → BuyO dark teal; reference's bell/notifications, Customers, Analytics, Settings nav items **omitted** (no backend endpoints — would be fake controls). Reference avatar photo → initial-letter avatar (no uploads for admins). |
+| `dashboard.html` | `admin_page.webp` (content card + stat tiles) | Real stats only: Orders, Order value (non-cancelled gross; COD note), Products, Out of stock, Categories + Recent orders table. Reference's Sales chart and customer/revenue analytics **omitted** (no analytics endpoint) — no chart is faked. |
+| `products.html` | `admin_page.webp` list page (primary) | Zebra table with thumbnails + name/slug, Price (+ struck MRP), Stock, In/Out-of-stock badges, Edit + two-step trash; Filter bar (category/availability/price — all real server query params) + Add Product; `Previous / pages / Next` footer. "Sales" column → "Orders" naming elsewhere; reference checkbox/bulk-action column **omitted** (no bulk API); Category/Stock/Status headers are not sortable (API only sorts name/price — no fake affordances); reference "See All" → Clear filters. |
+| `product-form.html` (add/edit) | *(none — no form reference)* | Replaces the old never-wired `admin/add-product.html` (legacy file kept, unlinked). Create offers multipart upload (5 MB, image/*) or image URL; edit is URL-only + Remove image (the PUT API accepts URLs — documented API gap, upload-on-edit is future work). Client validation mirrors server rules; server 400 field errors map back onto inputs. |
+| `categories.html` | `admin_page.webp` table styling | Real CRUD via modal (BuyO `.ui-modal` + focus trap); GST % column and delete warning state the server's real behaviour (`affectedProducts` reported in the success toast). |
+| `orders.html` | `admin_page.webp` list page | Real rows (order number, customer, date/time, items, total, status badge) + server-backed status filter chips. Pagination is computed from de-duplicated fetched rows because the admin orders `pagination.total` counts joined item rows (backend finding P10-1 — page compensates, no backend change this phase). |
+| `order-detail.html` | *(none — no detail reference)* | Items + totals, customer/delivery snapshot, status timeline, and **only** the transition buttons the server's `ALLOWED_TRANSITIONS` permits (server re-validates; 409 refreshes the view). Cancel requires a second confirming click. |
+| Gate / denied states | *(none)* | No token / expired session → sign-in card (`?next=admin/…`, same-origin whitelist); valid customer or unverified account → access-denied card. No nav or data is rendered for non-admins. |
+
+Shared adaptations: `.ui-badge` soft-fill variants replace the reference's
+outline badges (reuses the approved badge system); `.ui-btn--danger` was added
+scoped to `body.adm` for destructive actions; admin tables reuse the shared
+`.adm-table` with a 720px desktop floor and horizontal scroll below it.
+Font Awesome appears on **no** new admin page (all icons are inline SVG); the
+legacy `admin/add-product.html` keeps its old markup untouched.
+

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Products · BuyO Admin</title>
+  <link rel="icon" href="../assets/icons/favicon.png" />
+  <link rel="stylesheet" href="../css/tokens.css" />
+  <link rel="stylesheet" href="../css/base.css" />
+  <link rel="stylesheet" href="../css/components.css" />
+  <link rel="stylesheet" href="css/admin.css" />
+</head>
+<body class="adm">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- Primary reference: design-references/admin_page.webp -->
+  <div class="adm-app" data-adm-shell data-page="products" data-title="Products"
+       data-search="true" data-search-placeholder="Search products…">
+    <div data-adm-side></div>
+    <div class="adm-col">
+      <div data-adm-top></div>
+      <main class="adm-main" id="main" tabindex="-1">
+        <section class="adm-card" aria-labelledby="products-title">
+          <div class="adm-card__head">
+            <h2 class="adm-card__title" id="products-title">Products list</h2>
+            <div class="adm-card__head-actions">
+              <button type="button" class="ui-btn ui-btn--secondary ui-btn--sm"
+                      data-filter-toggle aria-expanded="false" aria-controls="product-filters">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true" focusable="false"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5z"/></svg>
+                Filter
+              </button>
+              <a class="ui-btn ui-btn--primary ui-btn--sm" href="product-form.html">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg>
+                Add Product
+              </a>
+            </div>
+            <p class="adm-card__subtitle" data-count aria-live="polite">Loading products…</p>
+          </div>
+
+          <!-- Every control maps to a real server query parameter (category,
+               inStock, minPrice, maxPrice) — no decorative filters. -->
+          <form class="adm-filters" id="product-filters" data-filters hidden>
+            <div class="ui-field">
+              <label class="ui-label" for="filter-category">Category</label>
+              <select class="ui-input" id="filter-category" name="category">
+                <option value="">All categories</option>
+              </select>
+            </div>
+            <div class="ui-field">
+              <label class="ui-label" for="filter-stock">Availability</label>
+              <select class="ui-input" id="filter-stock" name="stock">
+                <option value="">Any stock</option>
+                <option value="true">In stock</option>
+                <option value="false">Out of stock</option>
+              </select>
+            </div>
+            <div class="ui-field">
+              <label class="ui-label" for="filter-min">Min price (₹)</label>
+              <input class="ui-input" id="filter-min" name="min" type="number" min="0" step="1" inputmode="decimal" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-label" for="filter-max">Max price (₹)</label>
+              <input class="ui-input" id="filter-max" name="max" type="number" min="0" step="1" inputmode="decimal" />
+            </div>
+            <div class="ui-field" style="display: flex; align-items: flex-end; gap: var(--space-2);">
+              <button type="submit" class="ui-btn ui-btn--primary ui-btn--sm">Apply</button>
+              <button type="button" class="ui-btn ui-btn--secondary ui-btn--sm" data-clear>Clear</button>
+            </div>
+          </form>
+
+          <div data-table></div>
+          <div data-pager></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="../js/config.js"></script>
+  <script src="../js/api.js"></script>
+  <script src="../js/ui.js"></script>
+  <script src="../js/catalog.js"></script>
+  <script src="js/shell.js"></script>
+  <script src="js/products.js"></script>
+</body>
+</html>
