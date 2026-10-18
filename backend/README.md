@@ -62,7 +62,7 @@ See `docs/admin-provisioning.md`. Public signup always creates `role = 'customer
 ## Tests
 
 ```bash
-npm test    # auth + security + migrations + catalog suites; scratch DBs only (buyoDB_ph2_test / buyoDB_ph3_*)
+npm test    # auth + security + migrations + catalog + cart/wishlist suites; scratch DBs only (buyoDB_ph2_test / buyoDB_ph3_*)
 ```
 
 ## API
@@ -84,10 +84,19 @@ npm test    # auth + security + migrations + catalog suites; scratch DBs only (b
 | POST | `/api/products` | Add product — **admin only** (JWT + DB `role = 'admin'`, `ADMIN_EMAILS` fallback); multipart field `image` |
 | PUT  | `/api/products/:id` | Update product (partial) — **admin only** (`categoryId: null` unlinks; legacy `category` string edits re-link by name) |
 | DELETE | `/api/products/:id` | Delete product — **admin only** |
-| GET  | `/api/cart` | Cart items *(stub — Phase 5)* |
-| POST | `/api/cart` | Add to cart *(stub)* |
-| DELETE | `/api/cart/:id` | Remove from cart *(stub)* |
-| GET/POST/DELETE | `/api/wishlist`, `/api/wishlist/:id` | Wishlist *(stub — Phase 5)* |
+| GET  | `/api/cart` | Cart lines + authoritative totals (JWT required); tax preview per category |
+| POST | `/api/cart` | Add/increment product (JWT; `productId`, `qty?`); duplicate-safe upsert |
+| PUT  | `/api/cart/:id` | Set line quantity (JWT; `qty`) — other users' lines 404 |
+| DELETE | `/api/cart/:id` | Remove cart line (JWT) |
+| GET  | `/api/wishlist` | Wishlist lines with live product data (JWT) |
+| POST | `/api/wishlist` | Add to wishlist (JWT; `productId`) — idempotent, never duplicates |
+| POST | `/api/wishlist/toggle` | Toggle membership (JWT; `productId`) |
+| GET  | `/api/wishlist/products/:productId` | Membership check (JWT) |
+| DELETE | `/api/wishlist/:productId` | Remove from wishlist (JWT) |
+
+Cart totals are **preview-only**: prices come from the live Products table and
+taxes from per-category `taxRate`; checkout recomputes final totals server-side
+(guest-cart merge design: `docs/guest-cart-merge.md`).
 
 `POST /api/products` body (JSON or multipart): `name`, `category` (legacy free-text, kept in sync with `categoryId`), `description`, `mrpPrice`, `sellingPrice`, optional `image` (URL) or `image` file upload, `slug` (auto-generated from name when omitted), `stock` (integer ≥ 0, default 0), `imageMeta` `{ alt?, width?, height? }`, `categoryId` (auto-links when the legacy name matches an existing category). Uploaded files land in `backend/uploads/` and are served at `/uploads/<file>`.
 

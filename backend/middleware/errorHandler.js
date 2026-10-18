@@ -31,6 +31,12 @@ function errorHandler(err, req, res, next) {
     return res.status(400).json({ success: false, message });
   }
 
+  // Controlled HTTP errors thrown by controllers (e.g. validation inside a
+  // transaction) — carries a safe, pre-sanitized JSON body.
+  if (err.name === "HttpError" && err.body) {
+    return res.status(err.status).json(err.body);
+  }
+
   const status = err.status || err.statusCode || 500;
   if (status >= 500) {
     console.error(`❌ ${req.method} ${req.originalUrl}:`, err.stack || err.message);
