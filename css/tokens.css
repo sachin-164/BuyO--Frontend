@@ -1,0 +1,113 @@
+/* css/tokens.css — BuyO design tokens (Phase 7)
+ * Single source of truth for color, type, spacing, radii, shadows, z-index,
+ * motion, and layout metrics. All other stylesheets consume these variables —
+ * never hard-code raw values in component styles.
+ *
+ * Font strategy: no font files exist in this repository (verified: no
+ * .woff2/.woff/.ttf/.otf anywhere outside node_modules), so we do NOT declare
+ * @font-face rules here. --font-ui starts with "Inter" so it is used when the
+ * visitor has Inter installed locally; otherwise it falls back to the system
+ * UI stack. --font-display is a serif stack (Georgia) for display headings,
+ * matching the approved design direction's editorial feel. To self-host real
+ * files later, drop the woff2 files under assets/fonts/ and add @font-face
+ * declarations at the top of this file — nothing else needs to change.
+ *
+ * Dark theme is intentionally deferred: tokens are structured so a
+ * `prefers-color-scheme: dark` block can later override only the color tokens.
+ */
+
+:root {
+  /* ---------- Color: approved BuyO palette ---------- */
+  --color-brand: #064e4a;          /* dark teal — primary actions, footer   */
+  --color-brand-strong: #033b38;   /* deep teal — hover/active, footer base  */
+  --color-brand-soft: rgba(6, 78, 74, 0.08);   /* tinted fills              */
+  --color-accent: #f59e0b;         /* orange accent — highlights, badges     */
+  --color-accent-strong: #d97706;  /* accent hover                          */
+  --color-accent-soft: rgba(245, 158, 11, 0.14);
+  --color-bg: #f7f7f5;             /* warm page background                  */
+  --color-surface: #ffffff;        /* cards, header, inputs                 */
+  --color-text: #171717;           /* primary text                          */
+  --color-text-muted: #737373;     /* secondary text (AA on --color-bg)     */
+  --color-border: #e5e5e5;         /* dividers, input borders               */
+
+  /* ---------- Color: semantic feedback ---------- */
+  --color-danger: #b91c1c;
+  --color-danger-soft: rgba(185, 28, 28, 0.08);
+  --color-success: #15803d;
+  --color-success-soft: rgba(21, 128, 61, 0.1);
+  --color-on-brand: #ffffff;             /* text/icons on teal backgrounds */
+  --color-on-accent: #171717;            /* text on orange (orange bg +
+                                            white text fails AA; dark text
+                                            on orange passes)              */
+  --color-focus: #064e4a;                /* focus ring color               */
+
+  /* ---------- Typography ---------- */
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display: Georgia, "Iowan Old Style", "Times New Roman", serif;
+
+  --text-xs: 0.75rem;    /* 12px — badges, meta        */
+  --text-sm: 0.875rem;   /* 14px — secondary content   */
+  --text-base: 1rem;     /* 16px — body                */
+  --text-lg: 1.125rem;   /* 18px — card titles         */
+  --text-xl: 1.25rem;    /* 20px — section headings    */
+  --text-2xl: 1.5rem;    /* 24px — page headings       */
+  --text-3xl: 1.875rem;  /* 30px — hero small          */
+  --text-4xl: 2.25rem;   /* 36px — hero                */
+  --text-5xl: 3rem;      /* 48px — hero large screens  */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 800;
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+
+  /* ---------- Spacing (4px base scale) ---------- */
+  --space-1: 0.25rem;   /*  4px */
+  --space-2: 0.5rem;    /*  8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-8: 2rem;      /* 32px */
+  --space-10: 2.5rem;   /* 40px */
+  --space-12: 3rem;     /* 48px */
+  --space-16: 4rem;     /* 64px */
+
+  /* ---------- Radii ---------- */
+  --radius-sm: 6px;     /* inputs, small chips        */
+  --radius-md: 10px;    /* buttons, cards             */
+  --radius-lg: 14px;    /* modals, feature cards      */
+  --radius-xl: 20px;    /* hero panels                */
+  --radius-full: 999px; /* pills                      */
+
+  /* ---------- Shadows (low-contrast, warm-tinted) ---------- */
+  --shadow-sm: 0 1px 2px rgba(23, 23, 23, 0.06);
+  --shadow-md: 0 4px 12px rgba(23, 23, 23, 0.08);
+  --shadow-lg: 0 12px 32px rgba(23, 23, 23, 0.12);
+
+  /* ---------- Z-index scale ---------- */
+  --z-base: 1;
+  --z-header: 100;
+  --z-dropdown: 200;
+  --z-drawer: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  /* ---------- Motion ---------- */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  /* Note: every transition/animation in the system must be neutralized by the
+     reduced-motion block in css/base.css — keep that block in sync. */
+
+  /* ---------- Layout metrics ---------- */
+  --container-max: 1200px;
+  --container-pad: var(--space-4);
+  --header-height: 64px;
+}

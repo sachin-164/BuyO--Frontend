@@ -3,34 +3,53 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Products</title>
+  <title>Products — BuyO</title>
 
   <!-- Favicon -->
   <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
 
-  <!-- CSS -->
-  <link rel="stylesheet" href="css/Header.css" />
-  <link rel="stylesheet" href="css/product.css" />
+  <!-- BuyO design system (Phase 7 shell — tokens > base > components > layout) -->
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
 
-  <!-- Font Awesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <meta name="theme-color" content="#064E4A" />
 </head>
 <body>
-  <div id="header-placeholder"></div>
+  <a class="skip-link" href="#main">Skip to content</a>
 
-  <!-- Filter & Sort Section -->
-  <section class="filter-sort-bar">
-    <button>Filter</button>
-    <button>Sort</button>
-    <button>Price</button>
-  </section>
+  <div data-buyo-header></div>
 
-  <!-- Product Grid -->
-  <section id="product-grid" class="product-grid">
-    <!-- JS will load products dynamically -->
-  </section>
+  <main id="main" class="buyo-page">
+    <div class="buyo-container">
+      <div class="results-head">
+        <h1 class="results-title" id="results-title">All products</h1>
+        <div class="results-controls">
+          <p class="results-count" id="results-count" aria-live="polite"></p>
+          <span class="results-sort">
+            <label class="ui-label" for="sort-select">Sort by</label>
+            <select id="sort-select" class="ui-input ui-input--sm">
+              <option value="newest">Newest first</option>
+              <option value="price_asc">Price: low to high</option>
+              <option value="price_desc">Price: high to low</option>
+              <option value="name_asc">Name: A to Z</option>
+              <option value="name_desc">Name: Z to A</option>
+            </select>
+          </span>
+        </div>
+      </div>
 
-  <script src="js/header.js"></script>
+      <section id="results" class="ui-product-grid" aria-live="polite"></section>
+    </div>
+  </main>
+
+  <div data-buyo-footer></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/layout.js"></script>
   <script src="js/products.js"></script>
 </body>
 </html>

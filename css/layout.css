@@ -1,0 +1,405 @@
+/* css/layout.css — BuyO shared shell (header + footer) (Phase 7)
+ * All selectors are scoped under .buyo-header / .buyo-footer / .buyo-nav-drawer
+ * so they can never collide with the legacy Header.css used by pages that have
+ * not yet adopted the shell.
+ *
+ * Breakpoints (see docs/design-system.md):
+ *   >= 1024px : full desktop header (logo + search + links + icons)
+ *   <  1024px : compact header (logo + icons + hamburger) with search on a
+ *               second row; navigation opens as a drawer
+ */
+
+/* ======================================================================
+ * Header
+ * ==================================================================== */
+.buyo-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.buyo-header__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--header-height);
+}
+
+/* Wordmark — text-based logo (no image asset dependency). */
+.buyo-logo {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: -0.02em;
+  color: var(--color-brand);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.buyo-logo:hover {
+  color: var(--color-brand-strong);
+}
+
+.buyo-logo__dot {
+  color: var(--color-accent);
+}
+
+/* Search */
+.buyo-search {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  max-width: 520px;
+}
+
+.buyo-search__input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-right: none;
+  border-radius: var(--radius-full) 0 0 var(--radius-full);
+  font-size: var(--text-sm);
+}
+
+.buyo-search__input:focus {
+  outline: none;
+  border-color: var(--color-brand);
+  box-shadow: inset 0 0 0 1px var(--color-brand);
+}
+
+.buyo-search__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-brand);
+  color: var(--color-on-brand);
+  border-radius: 0 var(--radius-full) var(--radius-full) 0;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.buyo-search__btn:hover {
+  background: var(--color-brand-strong);
+}
+
+/* Desktop navigation links */
+.buyo-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.buyo-nav__link {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.buyo-nav__link:hover,
+.buyo-nav__link[aria-current="page"] {
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+
+/* Icon actions (cart / wishlist / account / menu) */
+.buyo-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.buyo-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  color: var(--color-text);
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.buyo-icon-btn:hover {
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+
+.buyo-icon-btn--menu {
+  display: none; /* shown < 1024px */
+}
+
+/* Account dropdown */
+.buyo-account {
+  position: relative;
+}
+
+.buyo-account__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  max-width: 180px;
+}
+
+.buyo-account__toggle:hover {
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+
+.buyo-account__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.buyo-account__menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: var(--z-dropdown);
+  min-width: 200px;
+  padding: var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.buyo-account__menu[hidden] {
+  display: none;
+}
+
+.buyo-account__menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  text-align: left;
+  text-decoration: none;
+}
+
+.buyo-account__menu-item:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.buyo-account__menu-item--brand {
+  color: var(--color-brand);
+  font-weight: var(--weight-semibold);
+}
+
+.buyo-account__divider {
+  height: 1px;
+  margin: var(--space-2) var(--space-1);
+  background: var(--color-border);
+}
+
+/* Mobile navigation drawer (dialog element, styled as full-height panel) */
+.buyo-nav-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-drawer);
+}
+
+.buyo-nav-drawer[hidden] {
+  display: none;
+}
+
+.buyo-nav-drawer__overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(23, 23, 23, 0.4);
+}
+
+.buyo-nav-drawer__panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(300px, 85vw);
+  height: 100%;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  animation: buyo-drawer-in var(--duration-base) var(--ease-standard);
+}
+
+.buyo-nav-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-4);
+}
+
+.buyo-nav-drawer__title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+
+.buyo-nav-drawer__link {
+  display: block;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.buyo-nav-drawer__link:hover {
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+}
+
+.buyo-nav-drawer__divider {
+  height: 1px;
+  margin: var(--space-3) 0;
+  background: var(--color-border);
+}
+
+@keyframes buyo-drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* ======================================================================
+ * Footer
+ * ==================================================================== */
+.buyo-footer {
+  margin-top: auto;
+  background: var(--color-brand);
+  color: var(--color-on-brand);
+}
+
+.buyo-footer__inner {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: var(--space-8);
+  padding-block: var(--space-10);
+}
+
+.buyo-footer__brand {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-extrabold);
+}
+
+.buyo-footer__brand .buyo-logo__dot {
+  color: var(--color-accent);
+}
+
+.buyo-footer__blurb {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: rgba(255, 255, 255, 0.78);
+  max-width: 40ch;
+}
+
+.buyo-footer__heading {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: var(--space-3);
+}
+
+.buyo-footer__links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.buyo-footer__link {
+  font-size: var(--text-sm);
+  color: rgba(255, 255, 255, 0.88);
+  text-decoration: none;
+}
+
+.buyo-footer__link:hover {
+  color: var(--color-on-brand);
+  text-decoration: underline;
+}
+
+/* Links on teal need a light focus ring (the default dark ring is invisible). */
+.buyo-footer a:focus-visible {
+  outline-color: var(--color-on-brand);
+}
+
+.buyo-footer__bottom {
+  padding-block: var(--space-4);
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  font-size: var(--text-xs);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* ======================================================================
+ * Responsive
+ * ==================================================================== */
+@media (max-width: 1023.98px) {
+  .buyo-header__bar {
+    flex-wrap: wrap;
+    height: auto;
+    padding-block: var(--space-2);
+    row-gap: var(--space-2);
+  }
+
+  /* Search drops to its own full-width row. */
+  .buyo-search {
+    order: 10;
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .buyo-nav {
+    display: none;
+  }
+
+  .buyo-account__toggle .buyo-account__name {
+    display: none;
+  }
+
+  .buyo-icon-btn--menu {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .buyo-footer__inner {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+    padding-block: var(--space-8);
+  }
+}
