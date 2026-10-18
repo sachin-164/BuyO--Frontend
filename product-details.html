@@ -3,64 +3,84 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shopping Navbar</title>
+  <title>Product — BuyO</title>
 
   <!-- Favicon -->
   <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
 
-  <!-- External CSS -->
-  <link rel="stylesheet" href="css/Header.css" />
-  <link rel="stylesheet" href="css/product-details.css" />
+  <!-- BuyO design system -->
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
 
   <!-- Manifest -->
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#ffffff" />
-  <!-- font font-awesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-
+  <meta name="theme-color" content="#064E4A" />
 </head>
 <body>
-  <div id="header-placeholder"></div>
+  <a class="skip-link" href="#main">Skip to content</a>
 
-  <div class="product-details-container">
-  
-    <!-- Product Images Section -->
-    <div class="image-gallery">
-      <div class="main-image">
-        <img id="main-img" src="" alt="Product Image">
-      </div>
-      <div class="thumbnail-images" id="thumbnail-container">
-        <!-- Thumbnails will be added dynamically -->
-      </div>
+  <div data-buyo-header></div>
+
+  <main id="main" class="buyo-page">
+    <div class="buyo-container">
+
+      <nav class="ui-breadcrumb" aria-label="Breadcrumb" id="breadcrumb" hidden>
+        <a href="index.html">Home</a>
+        <span aria-hidden="true">/</span>
+        <a href="products.html">Products</a>
+        <span aria-hidden="true" id="breadcrumb-sep" hidden>/</span>
+        <a href="#" id="breadcrumb-category" hidden></a>
+      </nav>
+
+      <!-- Loading / error / not-found state replaces the whole detail block. -->
+      <div id="detail-status" hidden></div>
+
+      <!-- Loaded product (hidden until GET /api/products/:identifier succeeds). -->
+      <article class="ui-detail" id="detail" hidden>
+        <div class="ui-detail__media" id="detail-media"></div>
+
+        <div>
+          <a class="ui-detail__category" id="detail-category" href="categories.html"></a>
+          <h1 class="ui-detail__name" id="detail-name"></h1>
+
+          <div class="ui-detail__price-row">
+            <span class="ui-detail__price" id="detail-price"></span>
+            <span class="ui-detail__mrp" id="detail-mrp" hidden></span>
+          </div>
+
+          <div class="ui-detail__stock" id="detail-stock"></div>
+
+          <p class="ui-detail__description" id="detail-description"></p>
+
+          <div class="ui-detail__actions">
+            <button class="ui-btn ui-btn--primary" type="button" id="add-to-cart">
+              Add to cart
+            </button>
+            <button class="ui-btn ui-btn--secondary" type="button" id="add-to-wishlist">
+              Add to wishlist
+            </button>
+          </div>
+
+          <!-- Honest sign-in prompt shown when there is no session. -->
+          <p class="ui-detail__auth-note" id="auth-note" hidden>
+            <a href="login.html">Sign in</a> to add items to your cart or
+            wishlist.
+          </p>
+        </div>
+      </article>
+
     </div>
+  </main>
 
-    <!-- Product Info Section -->
-    <div class="product-info">
-      <h2 id="product-name"></h2>
-      <p class="brand" id="product-brand"></p>
-    
-      <div class="price-section">
-        <span class="selling-price" id="product-price"></span>
-        <span class="mrp" id="product-mrp"></span>
-        <span class="discount" id="product-discount"></span>
-      </div>
-    
-      <p class="description" id="product-description"></p>
+  <div data-buyo-footer></div>
 
-      <div class="actions">
-        <button class="wishlist-btn">❤️ Add to Wishlist</button>
-        <button class="cart-btn">🛒 Add to Cart</button>
-        <button class="buy-btn">⚡ Buy Now</button>
-      </div>
-    </div>
-
-  </div>
-
-  
-  
   <script src="js/config.js"></script>
-  <script src="js/script.js"></script>
-  <script src="js/header.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/catalog.js"></script>
+  <script src="js/layout.js"></script>
   <script src="js/product-details.js"></script>
 </body>
 </html>

@@ -3,27 +3,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shopping Navbar</title>
+  <title>Services — BuyO</title>
 
   <!-- Favicon -->
   <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
 
-  <!-- External CSS -->
-  <link rel="stylesheet" href="css/Header.css" />
+  <!-- BuyO design system -->
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
 
   <!-- Manifest -->
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#ffffff" />
-  <!-- font font-awesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-
+  <meta name="theme-color" content="#064E4A" />
 </head>
 <body>
-  <div id="header-placeholder"></div>
+  <a class="skip-link" href="#main">Skip to content</a>
 
+  <div data-buyo-header></div>
 
+  <main id="main" class="buyo-page">
+    <div class="buyo-container">
+      <h1 class="results-title">Services</h1>
+      <p class="ui-empty__text" style="margin-top: var(--space-4); max-width: 60ch;">
+        This page doesn't have content yet. It will be written in a later
+        phase — nothing has been made up here in the meantime.
+      </p>
+    </div>
+  </main>
 
-  <script src="js/script.js"></script>
-  <script src="js/header.js"></script>
+  <div data-buyo-footer></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/layout.js"></script>
 </body>
 </html>

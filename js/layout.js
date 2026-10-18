@@ -30,8 +30,25 @@
     close:
       '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
     box:
-      '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>'
+      '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>',
+    facebook:
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 8.5V6.8c0-.8.2-1.3 1.4-1.3H17V2.6c-.3 0-1.3-.1-2.4-.1-2.4 0-4 1.5-4 4.2v1.8H8V12h2.6v8H14v-8h2.6l.4-3.5z"/></svg>',
+    x:
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3.5 3h5.1l4.1 5.9L17.9 3H21l-6.7 7.6L21.5 21h-5.1l-4.5-6.4L6.1 21H3l7.1-8.1z"/></svg>',
+    instagram:
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1.1" fill="currentColor" stroke="none"/></svg>',
+    linkedin:
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5ZM3.2 9.5h3.6V21H3.2zM9 9.5h3.5v1.6h.1c.5-.9 1.7-1.9 3.5-1.9 3.7 0 4.4 2.5 4.4 5.7V21h-3.6v-5.3c0-1.3 0-2.9-1.8-2.9s-2 1.4-2 2.8V21H9z"/></svg>'
   };
+
+  // Real social profiles preserved from the legacy homepage footer (verified
+  // owner-managed links — not placeholders).
+  var SOCIAL_LINKS = [
+    { href: "https://www.facebook.com/share/1B6HoexzAv/?mibextid=qi2Omg", label: "BuyO on Facebook", icon: "facebook" },
+    { href: "https://x.com/sachinsani94?t=8qXJYnxxlZMN1GyR4Yj_PA&s=09", label: "BuyO on X", icon: "x" },
+    { href: "https://www.instagram.com/sachinsani_official?igsh=MTk3cmRyaHVpOWk0cw==", label: "BuyO on Instagram", icon: "instagram" },
+    { href: "https://www.linkedin.com/in/sachin-hd?utm_source=share&utm_campaign=share_via&utm_content=profile&utm_medium=android_app", label: "BuyO on LinkedIn", icon: "linkedin" }
+  ];
 
   // Pages with real content that are safe to link from the shell. Stub pages
   // (about/services/contact/profile content) are deliberately excluded until
@@ -141,6 +158,19 @@
       "<div>" +
       '<div class="buyo-footer__brand">buyo<span class="buyo-logo__dot">!</span></div>' +
       '<p class="buyo-footer__blurb">Everyday essentials, delivered simply. Browse the catalog, keep a wishlist, and check out with cash on delivery.</p>' +
+      '<div class="buyo-footer__social">' +
+      SOCIAL_LINKS.map(function (link) {
+        return (
+          '<a class="buyo-footer__social-link" href="' +
+          link.href +
+          '" target="_blank" rel="noopener noreferrer" aria-label="' +
+          esc(link.label) +
+          '">' +
+          ICONS[link.icon] +
+          "</a>"
+        );
+      }).join("") +
+      "</div>" +
       "</div>" +
       "<div>" +
       '<h2 class="buyo-footer__heading">Shop</h2>' +

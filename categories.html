@@ -3,37 +3,51 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shopping Navbar</title>
+  <title>Categories — BuyO</title>
 
   <!-- Favicon -->
   <link rel="icon" href="assets/icons/favicon.png" type="image/png" />
 
-  <!-- External CSS -->
-  <link rel="stylesheet" href="css/Header.css" />
-  <link rel="stylesheet" href="css/categories.css" />
+  <!-- BuyO design system -->
+  <link rel="stylesheet" href="css/tokens.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/layout.css" />
 
   <!-- Manifest -->
   <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#ffffff" />
-  <!-- font font-awesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-
+  <meta name="theme-color" content="#064E4A" />
 </head>
 <body>
-  <div id="header-placeholder"></div>
-  <!-- Categories Section -->
-  <main class="categories-page">
-    <h2 class="page-title">Shop by Categories</h2>
-    <div id="categories-container" class="categories-grid">
-      <!-- Categories will be rendered here dynamically -->
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div data-buyo-header></div>
+
+  <main id="main" class="buyo-page">
+    <div class="buyo-container">
+      <h1 class="results-title" id="page-title">Shop by category</h1>
+
+      <!-- Real categories from GET /api/categories (hidden when none exist). -->
+      <nav class="ui-chips" id="category-chips" aria-label="Product categories"
+           style="margin-top: var(--space-5); margin-bottom: var(--space-8);"></nav>
+
+      <section aria-label="Products">
+        <div class="results-head">
+          <h2 class="ui-section-title" id="results-heading">All products</h2>
+          <p class="results-count" id="results-count" aria-live="polite"></p>
+        </div>
+        <div class="ui-product-grid" id="results"></div>
+      </section>
     </div>
   </main>
 
+  <div data-buyo-footer></div>
 
-
-
-  <script src="js/script.js"></script>
-  <script src="js/header.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/catalog.js"></script>
+  <script src="js/layout.js"></script>
   <script src="js/categories.js"></script>
 </body>
 </html>

@@ -111,6 +111,12 @@ ol[role="list"] {
 }
 
 /* ---------- Accessibility utilities ---------- */
+/* `hidden` must always win — author display rules (e.g. .ui-detail's
+ * display:grid) would otherwise override the UA's [hidden] default. */
+[hidden] {
+  display: none !important;
+}
+
 .visually-hidden {
   position: absolute !important;
   width: 1px;

@@ -1,9 +1,13 @@
-# BuyO Design System (Phase 7)
+# BuyO Design System (Phase 7, extended in Phase 8)
 
 Shared visual foundation for the storefront and admin redesign (Phases 8–10).
-**Adoption status:** the shell and design system are live on `products.html`
-only. All other pages keep the legacy `header.html` + `css/Header.css` header
-untouched and continue to work exactly as before. Rollout continues in Phase 8.
+**Adoption status (after Phase 8):** the shell and design system are live on
+`index.html`, `categories.html`, `product-details.html`, `products.html`, and
+the stub pages (`about`, `contact`, `services`, `profile`). Legacy `cart.html`
+and `wishlist.html` still use the old `header.html` + `css/Header.css` header —
+their flows are Phase 9. Font Awesome CDN remains **only** on those two legacy
+pages (plus the untouched `demo.html` prototype); every redesigned page uses
+inline SVG icons.
 
 Load order for any page adopting the system:
 
@@ -103,6 +107,12 @@ All classes are `ui-`-prefixed to coexist with legacy page styles.
 | Empty/error state | `.ui-empty`, `__icon/__title/__text` | Centered block; slot for one action button. |
 | Toast | `.ui-toast` + `--success/--error`, region `.ui-toast-region` | Created by JS (below). Fixed bottom-right; full width under 768px. |
 | Modal / drawer | `.ui-modal` (+ `--drawer`), `__overlay/__dialog/__title/__close` | Hidden by default; `[data-ui-modal-close]` closes; ESC + focus trap handled by JS. |
+| Hero | `.ui-hero` (+ `__eyebrow/__title/__text/__actions/__art`) | Homepage brand statement on a teal gradient; decorative CSS artwork is `aria-hidden`. Buttons use `.ui-btn--accent` / `.ui-btn--on-teal`-style variants. |
+| Category chips | `.ui-chips`, `.ui-chip` (+ `__count`), `[aria-pressed]` | Links (home) or filter buttons (categories page); selected state is teal. |
+| Section head | `.ui-section`, `.ui-section-head`, `.ui-section-title`, `.ui-section-link` | Standard "title + View all" pattern above product grids. |
+| Breadcrumb | `.ui-breadcrumb` | Product detail pages; muted links, `/` separators. |
+| Product detail | `.ui-detail` (+ `__media/__fallback/__discount/__category/__name/__price-row/__price/__mrp/__stock/__description/__actions/__auth-note`) | Two columns ≥1024px, stacked below; letter-tile fallback when no image. |
+| Footer social | `.buyo-footer__social`, `.buyo-footer__social-link` | Real owner profiles preserved from the legacy footer; inline SVG icons, `rel="noopener noreferrer"`. |
 
 ### JS helpers (`js/ui.js` → `window.BuyOUi`)
 
@@ -128,6 +138,21 @@ Modal markup contract:
 
 All toasts use `role="status"` + `aria-live="polite"` and are announced without
 stealing focus.
+
+### Catalog helpers (`js/catalog.js` → `window.BuyOCatalog`)
+
+Shared by the homepage, categories, and products pages so product cards look
+identical everywhere:
+
+```js
+BuyOCatalog.productCard(product)   // anchor card -> product-details.html?id=…
+BuyOCatalog.skeletonCards(8)       // loading placeholders
+BuyOCatalog.emptyState({ title, text, icon?, action? })
+BuyOCatalog.formatPrice(value)     // ₹ + en-IN grouping
+BuyOCatalog.discountPercent(mrp, selling) // derived, never stored
+BuyOCatalog.safeImageUrl(value)    // only /uploads/… or http(s):// pass
+BuyOCatalog.esc(value)             // HTML escaping for API strings
+```
 
 ## 5. Layout shell (`css/layout.css` + `js/layout.js`)
 
