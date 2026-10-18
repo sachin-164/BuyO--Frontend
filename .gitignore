@@ -1,9 +1,13 @@
 # Dependencies
 node_modules/
 
-# Secrets — never commit
+# Secrets — never commit (.env.example placeholders stay tracked)
 .env
+.env.*
 backend/.env
+backend/.env.*
+!.env.example
+!backend/.env.example
 
 # Uploaded product images
 uploads/
@@ -13,11 +17,17 @@ backend/uploads/
 backups/
 backend/backups/
 
-# Logs & OS noise
+# Logs, crash dumps & OS noise
 *.log
+*.tmp
+*.dmp
+*.stackdump
 Thumbs.db
 .DS_Store
 desktop.ini
 
 # Editor
 .vscode/
+
+# Vercel CLI local metadata (created by `vercel link`; machine-specific)
+.vercel/
