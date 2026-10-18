@@ -421,6 +421,55 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     );
   });
 
+  it("backup/restore round-trips MySQL JSON columns (regression: parsed objects re-serialized)", async () => {
+    // mysql2 returns JSON columns as parsed JS objects; the restore INSERT must
+    // re-serialize them or MySQL receives the invalid string "[object Object]"
+    // (real schema: orders.taxBreakdown/shippingAddress, products.imageMeta).
+    const JSON_SRC_DB = "buyoDB_ph3_json_src";
+    const JSON_DST_DB = "buyoDB_ph3_json_dst";
+    try {
+      await createDatabase(JSON_SRC_DB);
+      const connection = await mysql.createConnection(toMysql2Options(settingsFor(JSON_SRC_DB)));
+      try {
+        await connection.query(
+          "CREATE TABLE `orders` (`id` INT AUTO_INCREMENT PRIMARY KEY, `taxBreakdown` JSON NULL, `shippingAddress` JSON NOT NULL, `createdAt` DATETIME(3) NOT NULL, `updatedAt` DATETIME(3) NOT NULL)"
+        );
+        await connection.query(
+          "INSERT INTO `orders` (`taxBreakdown`,`shippingAddress`,`createdAt`,`updatedAt`) VALUES " +
+            "(?,? ,NOW(3),NOW(3)),(NULL,?,NOW(3),NOW(3))",
+          [
+            JSON.stringify({ total: 2.16, byCategory: [{ categoryId: 1, taxAmount: 2.16 }] }),
+            JSON.stringify({ fullName: 'Café "Owner" #7', city: "Bengaluru", pincode: "560038" }),
+            JSON.stringify({ fullName: "Plain", city: "Mumbai", pincode: "400001" })
+          ]
+        );
+      } finally {
+        await connection.end();
+      }
+
+      const backup = await createBackup({ settings: settingsFor(JSON_SRC_DB), outDir: TEST_BACKUPS_DIR });
+      await runRestore({ backupPath: backup.outPath, targetDatabase: JSON_DST_DB, settings: settingsFor(JSON_DST_DB), log: () => {} });
+
+      const restored = await queryDb(JSON_DST_DB, "SELECT id, taxBreakdown, shippingAddress FROM `orders` ORDER BY id");
+      assert.equal(restored.length, 2);
+      assert.deepEqual(restored[0].taxBreakdown, { total: 2.16, byCategory: [{ categoryId: 1, taxAmount: 2.16 }] });
+      assert.equal(restored[0].shippingAddress.fullName, 'Café "Owner" #7');
+      assert.equal(restored[0].shippingAddress.pincode, "560038");
+      assert.equal(restored[1].taxBreakdown, null, "NULL JSON must stay NULL");
+      assert.equal(restored[1].shippingAddress.city, "Mumbai");
+
+      // Spot-check the restored value is still valid JSON text.
+      const validRows = await queryDb(
+        JSON_DST_DB,
+        "SELECT JSON_VALID(`shippingAddress`) AS v FROM `orders` WHERE `id` = 1"
+      );
+      assert.equal(validRows[0].v, 1);
+    } finally {
+      await dropDatabase(JSON_SRC_DB).catch(() => {});
+      await dropDatabase(JSON_DST_DB).catch(() => {});
+    }
+  });
+
   it("sync-built schema (fresh dev DB) matches the migrated schema", async () => {
     await createDatabase(SYNC_DB);
 

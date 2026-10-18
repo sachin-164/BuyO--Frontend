@@ -34,18 +34,43 @@ const signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     // Public signup can ONLY create customers. Admins are granted exclusively via
     // the audited provisioning script (scripts/admin-role.js), never via this API.
-    await User.create({ name, email, password: hashedPassword, isVerified: false, role: "customer" });
 
     const token = signEmailVerificationToken(email);
     const verifyLink = `${process.env.BACKEND_URL}/api/auth/verify?token=${token}`;
 
-    await sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: "Verify Your Email",
-      html: `<p>Click <a href="${verifyLink}">here</a> to verify your email.</p>
-             <p>This link will expire in 24 hours.</p>`
-    });
+    let createdUser = null;
+    try {
+      createdUser = await User.create({ name, email, password: hashedPassword, isVerified: false, role: "customer" });
+
+      await sendMail({
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: "Verify Your Email",
+        html: `<p>Click <a href="${verifyLink}">here</a> to verify your email.</p>
+               <p>This link will expire in 24 hours.</p>`
+      });
+    } catch (createOrMailErr) {
+      // Phase 11: if anything fails AFTER the row was created (typically SMTP),
+      // remove the just-created account so the user isn't left locked out of an
+      // unverifiable account with no resend-verification endpoint. They can
+      // simply retry signup.
+      if (createdUser) {
+        try {
+          await createdUser.destroy();
+        } catch (cleanupErr) {
+          console.error("Signup cleanup failed (account may remain, unverified):", cleanupErr);
+        }
+      }
+      if (createOrMailErr.name === "SequelizeUniqueConstraintError") {
+        // Lost a race against a concurrent signup with the same email.
+        return res.status(400).json({ success: false, message: "User already exists" });
+      }
+      console.error("Signup mail failure (account rolled back):", createOrMailErr);
+      return res.status(503).json({
+        success: false,
+        message: "We couldn't send the verification email. Please try again in a moment."
+      });
+    }
 
     res.status(201).json({ success: true, message: "Signup successful! Check your email for verification." });
   } catch (err) {
@@ -68,7 +93,7 @@ const verify = async (req, res) => {
 
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
     } catch (error) {
       if (error.name === "TokenExpiredError") {
         return res.status(400).send("Verification link has expired. Please request a new one.");
@@ -89,14 +114,28 @@ const verify = async (req, res) => {
       return res.status(404).send("Verification failed: User not found.");
     }
 
+    // FRONTEND_URL guard (Phase 11): if it is unset/misconfigured, never emit a
+    // redirect to "undefined/...". Plain text keeps the outcome readable.
+    const redirectTo = (status) => {
+      const base = process.env.FRONTEND_URL;
+      if (!base) return null;
+      return `${base.replace(/\/+$/, "")}/login.html?status=${status}`;
+    };
+
     if (user.isVerified) {
-      return res.redirect(`${process.env.FRONTEND_URL}/login.html?status=already_verified`);
+      const target = redirectTo("already_verified");
+      return target
+        ? res.redirect(target)
+        : res.send("This email is already verified. You can sign in.");
     }
 
     await user.update({ isVerified: true });
     console.log(`✅ User ${email} verified`);
 
-    res.redirect(`${process.env.FRONTEND_URL}/login.html?status=success`);
+    const successTarget = redirectTo("success");
+    return successTarget
+      ? res.redirect(successTarget)
+      : res.send("Email verified successfully. You can now sign in.");
   } catch (err) {
     console.error("Verification error:", err);
     res.status(500).send("An unexpected error occurred during verification.");
@@ -177,7 +216,7 @@ const resetPassword = async (req, res) => {
 
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
     } catch {
       return invalidLink();
     }

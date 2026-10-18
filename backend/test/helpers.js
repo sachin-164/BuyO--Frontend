@@ -22,9 +22,10 @@ process.env.NODE_ENV = "test";
 process.env.MYSQL_DB = TEST_DB_NAME;
 process.env.FRONTEND_URL = "http://127.0.0.1:5503";
 process.env.BACKEND_URL = "http://127.0.0.1:5099";
-process.env.ADMIN_EMAILS = "admin.ph2@buyotest.local";
 process.env.RATE_LIMIT_GLOBAL_MAX = "100000";
 process.env.RATE_LIMIT_AUTH_MAX = "100000";
+// Phase 11: the ADMIN_EMAILS fallback was removed; admin comes ONLY from
+// Users.role (granted in createAdminUser via the audited script path).
 
 const { resolveMysqlSettings } = require("../config/dbConnectionOptions");
 
@@ -151,12 +152,19 @@ async function createVerifiedUser(baseUrl, overrides = {}) {
   return { name, email, password, token: login.json.token, user: login.json.user };
 }
 
-function createAdminUser(baseUrl) {
-  return createVerifiedUser(baseUrl, {
+async function createAdminUser(baseUrl) {
+  const admin = await createVerifiedUser(baseUrl, {
     email: "admin.ph2@buyotest.local",
     password: "AdminPass123!",
     name: "Ph2 Admin"
   });
+  // Admin comes from the DB role only (ADMIN_EMAILS fallback removed in
+  // Phase 11) — grant it through the same audited path the CLI script uses.
+  const { applyRoleChange } = require("../scripts/admin-role");
+  const { resolveMysqlSettings } = require("../config/dbConnectionOptions");
+  const grant = await applyRoleChange({ settings: resolveMysqlSettings(), email: admin.email, role: "admin" });
+  if (!grant.changed) throw new Error("failed to grant admin role in the test database");
+  return admin;
 }
 
 module.exports = {

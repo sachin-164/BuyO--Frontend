@@ -38,6 +38,10 @@ function reviveValue(value) {
   if (value && typeof value === "object") {
     if (value.__type === "Date") return new Date(value.iso);
     if (value.__type === "Buffer") return Buffer.from(value.base64, "base64");
+    // mysql2 returns JSON columns already parsed (object/array). Re-serialize so
+    // the INSERT sends valid JSON text — an object would reach MySQL as the
+    // invalid string "[object Object]" and fail the restore.
+    return JSON.stringify(value);
   }
   return value;
 }

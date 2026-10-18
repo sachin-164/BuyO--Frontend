@@ -1,7 +1,7 @@
 // routes/adminOrderRoutes.js — admin order management (Phase 6)
 // requireAdmin fails closed: fresh DB user reload per request, verified email
-// required, DB-backed `role = 'admin'` (ADMIN_EMAILS is a transitional
-// fallback only — docs/admin-provisioning.md).
+// required, DB-backed `role = 'admin'` (sole source of truth since Phase 11;
+// see docs/admin-provisioning.md).
 const express = require("express");
 const router = express.Router();
 const { listAdminOrders, getAdminOrder, updateOrderStatus } = require("../controllers/adminOrderController");

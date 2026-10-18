@@ -1,9 +1,25 @@
-# BuyO — Admin Provisioning (Phase 3)
+# BuyO — Admin Provisioning (Phase 3, fallback removed in Phase 11)
 
 Admin access is **database-backed** (`Users.role = 'admin'`) and granted
 exclusively through the audited `admin:role` script. Nothing in the public API
 can create an admin (`POST /api/auth/signup` always writes `role = 'customer'`;
 unknown body fields are dropped by the validation whitelist).
+
+> **Phase 11 change:** the Phase 2 `ADMIN_EMAILS` environment fallback has been
+> **removed**. `utils/roles.isAdminUser` now trusts only `Users.role = 'admin'`.
+> Setting `ADMIN_EMAILS` in `.env` has no effect. Rationale: an env-var edit
+> granted admin with no audit trail, and by Phase 11 every intended admin could
+> be (and the real database was verified to require) provisioning through the
+> audited script. If you relied on `ADMIN_EMAILS`, grant the role explicitly:
+>
+> ```bash
+> npm run admin:role -- --email you@example.com --role admin --confirm-local
+> ```
+>
+> **Lockout safety (verified before removal):** the real `buyoDB` contained no
+> `role='admin'` users and the real `.env` did not define `ADMIN_EMAILS`, so no
+> legitimate admin lost access. Admin routes fail closed (403) for every
+> account without the DB role; the admin UI redirects to its login page.
 
 ## Procedure (local dev)
 
@@ -37,31 +53,25 @@ controlled maintenance step (explicit `--allow-remote`-style gate will be added
 with the release-phase procedure). Do **not** hand-edit roles with ad-hoc SQL in
 production.
 
-## Transitional note (ADMIN_EMAILS)
+## Admin authorization mechanics (current, post-Phase 11)
 
-`utils/roles.js` still accepts the Phase 2 `ADMIN_EMAILS` env allowlist as a
-fallback so no existing admin loses access during the schema transition.
-
-**Exact mechanics.** On every request to an admin route, `requireAuth` reloads
-the user fresh from the database, then `requireAdmin` checks BOTH:
+On every request to an admin route, `requireAuth` reloads the user fresh from
+the database, then `requireAdmin` checks BOTH:
 
 1. `user.isVerified === true` (an unverified account is refused with 403 even
-   if it has `role = 'admin'` and/or is listed in `ADMIN_EMAILS`), and
-2. `isAdminUser(user)`: `user.role === 'admin'` **OR** the account's email is
-   in `ADMIN_EMAILS` (comma-separated env value, trimmed + lowercased).
+   if it has `role = 'admin'`), and
+2. `isAdminUser(user)`: `user.role === 'admin'` — the **sole** source of truth
+   since Phase 11 (the `ADMIN_EMAILS` env fallback has been removed; setting
+   that variable has no effect).
 
 Everything fails closed: no JWT → 401; missing/unverified user → 401/403; a
-role or allowlist miss → 403. Client input can never grant admin (signup
-whitelists `role` away; role changes only via the audited `admin:role` script).
-This behavior is pinned by tests in `test/orders.test.js` ("admin order
-endpoints fail closed").
+role miss → 403. Client input can never grant admin (signup whitelists `role`
+away; role changes only via the audited `admin:role` script). This behavior is
+pinned by tests in `test/orders.test.js` ("admin order endpoints fail closed")
+and `test/security.test.js` ("DB-backed admin role grants/revokes API access").
 
-**Removal plan (concrete).** The fallback stays only until every intended
-admin's DB role is provisioned with `npm run admin:role` on each environment
-(local now; the hosted environment during Phase 12 release preparation):
-
-1. Grant `role = 'admin'` to every intended admin via this script.
-2. Verify each with `GET /api/auth/me` (`isAdmin: true`) and `admin:role --list`.
-3. Remove `ADMIN_EMAILS` from `.env`.
-4. Delete the fallback from `utils/roles.js` (targeted for **Phase 12**, the
-   release phase — it is a release-checklist item, not optional).
+**Access-token session binding (Phase 11).** Access tokens carry a `pwv`
+(password-version) claim; `requireAuth` rejects any token whose `pwv` no longer
+matches the stored password hash. A password reset therefore immediately
+invalidates every previously issued session token, not just outstanding reset
+links.

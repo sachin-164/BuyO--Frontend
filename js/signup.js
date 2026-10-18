@@ -1,7 +1,9 @@
 // js/signup.js — BuyO account creation (Phase 9 rewrite)
 // Real API contract:
 //   POST /api/auth/signup { name, email, password } -> 201 on success,
-//   400 "User already exists", 500 fallback.
+//   400 "User already exists", 503 when the verification email could not be
+//   sent (the account is rolled back server-side, so retrying is safe),
+//   500 fallback.
 // Signup never signs the user in (the API returns no token) — success swaps
 // the form for an honest "check your email to verify" state instead of
 // pretending to log in.

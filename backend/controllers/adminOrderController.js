@@ -45,11 +45,16 @@ const listAdminOrders = async (req, res, next) => {
     const where = {};
     if (status) where.status = status;
 
+    // distinct:true counts DISTINCT Orders.id — without it the hasMany
+    // OrderItems include multiplies rows (1 order with 3 items counted as 3),
+    // inflating pagination.total and creating phantom trailing pages (P10-1,
+    // reproduced + regression-tested in Phase 11).
     const { count, rows } = await Order.findAndCountAll({
       where,
       order: [["createdAt", "DESC"], ["id", "DESC"]],
       limit,
       offset: (page - 1) * limit,
+      distinct: true,
       include: [...itemInclude, ...userInclude]
     });
 

@@ -466,32 +466,27 @@ describe("Orders & addresses (Phase 6)", () => {
     assert.equal((await api("/api/admin/orders", { token: user.token })).status, 403);
 
     const settings = { ...resolveMysqlSettings() };
-    const originalEmails = process.env.ADMIN_EMAILS;
     try {
-      // Baseline: access works through the transitional allowlist (role = customer)
+      // Baseline: the DB role (granted via the audited path in createAdminUser)
+      // is what grants access. Phase 11 removed the ADMIN_EMAILS fallback, so
+      // even setting that env var now must NOT restore access without the role.
       assert.equal((await adminListOrders()).status, 200);
 
-      // Database-backed role via the audited provisioning script path
-      const grant = await applyRoleChange({ settings, email: admin.email, role: "admin" });
-      assert.equal(grant.changed, true);
-      assert.equal((await adminListOrders()).status, 200);
-
-      // The DB role alone must be sufficient (allowlist removed)
-      process.env.ADMIN_EMAILS = "";
-      assert.equal((await adminListOrders()).status, 200, "DB-backed role must work without ADMIN_EMAILS");
-
-      // Removing the DB role fails closed even with no allowlist
+      // Removing the DB role fails closed — including while ADMIN_EMAILS is set
+      // (the fallback no longer exists; the env value is ignored).
       await applyRoleChange({ settings, email: admin.email, role: "customer" });
-      assert.equal((await adminListOrders()).status, 403, "no role + no allowlist must fail closed");
+      process.env.ADMIN_EMAILS = admin.email;
+      assert.equal((await adminListOrders()).status, 403, "no DB role must fail closed (fallback removed)");
       await applyRoleChange({ settings, email: admin.email, role: "admin" });
+      assert.equal((await adminListOrders()).status, 200, "restored DB role must work again");
 
-      // Unverified accounts can never reach admin routes, even with role + allowlist
+      // Unverified accounts can never reach admin routes, even with the role.
       await ctx.sequelize.models.User.update({ isVerified: false }, { where: { id: admin.user.id } });
       assert.equal((await adminListOrders()).status, 403, "unverified must fail closed");
       await ctx.sequelize.models.User.update({ isVerified: true }, { where: { id: admin.user.id } });
       assert.equal((await adminListOrders()).status, 200);
     } finally {
-      process.env.ADMIN_EMAILS = originalEmails;
+      delete process.env.ADMIN_EMAILS;
       await applyRoleChange({ settings, email: admin.email, role: "admin" });
       await ctx.sequelize.models.User.update({ isVerified: true }, { where: { id: admin.user.id } });
     }
@@ -593,5 +588,66 @@ describe("Orders & addresses (Phase 6)", () => {
     const all = await adminListOrders("?limit=100");
     assert.ok(all.json.pagination.total >= 4, "admin sees orders from every user");
     assert.equal((await api("/api/admin/orders", { token: otherUser.token })).status, 403);
+  });
+
+  // Regression (Phase 11 / P10-1): findAndCountAll with the hasMany OrderItems
+  // include used to count JOINED rows — an order with 3 items inflated
+  // pagination.total to 3 and created phantom trailing pages. Counts must
+  // always represent DISTINCT orders on both the admin and customer lists.
+  it("pagination totals count distinct orders even with multiple items per order (P10-1)", async () => {
+    // Snapshot the admin total BEFORE this buyer's order exists.
+    const before = await adminListOrders("?limit=100");
+    const totalBefore = before.json.pagination.total;
+
+    // A fresh buyer with exactly ONE order containing THREE items.
+    const buyer = await helpers.createVerifiedUser(ctx.baseUrl);
+    await clearCart(buyer.token);
+    const a = await seedProduct({ price: 100, stock: 5 });
+    const b = await seedProduct({ price: 200, stock: 5 });
+    const c = await seedProduct({ price: 300, stock: 5 });
+    const address = await addAddress(buyer.token, addressBody());
+    assert.equal((await cartAdd(buyer.token, { productId: a.productId, qty: 1 })).status, 201);
+    assert.equal((await cartAdd(buyer.token, { productId: b.productId, qty: 1 })).status, 201);
+    assert.equal((await cartAdd(buyer.token, { productId: c.productId, qty: 1 })).status, 201);
+    const placed = await checkout(buyer.token, { addressId: address.json.address.id, idempotencyKey: idemKey("p10-1") });
+    assert.equal(placed.status, 201, placed.text);
+    assert.equal(placed.json.order.items.length, 3, "fixture must have a 3-item order");
+
+    // Customer list: total is 1 distinct order, not 3 joined item rows.
+    const mine = await listOrders(buyer.token, "?limit=100");
+    assert.equal(mine.status, 200, mine.text);
+    assert.equal(mine.json.pagination.total, 1, "customer total must count orders, not items");
+    assert.equal(mine.json.count, 1);
+    assert.equal(mine.json.orders[0].items.length, 3, "the order still carries all 3 items");
+
+    // Admin list: total grew by exactly ONE (the new order), not by its 3 items.
+    const adminsView = await adminListOrders("?limit=100");
+    assert.equal(adminsView.json.pagination.total, totalBefore + 1, "admin total grows by 1 per order regardless of item count");
+    const buyerOrder = adminsView.json.orders.find((o) => o.id === placed.json.order.id);
+    assert.ok(buyerOrder && buyerOrder.items.length === 3, "admin row carries every item");
+
+    // Page boundaries: with limit=1 the last page index equals the distinct
+    // total; that page is populated and reports hasNext=false (no phantom
+    // trailing page — the exact defect the inflated count used to create).
+    const trueTotal = adminsView.json.pagination.total;
+    const boundary = await adminListOrders(`?limit=1&page=${trueTotal}`);
+    assert.equal(boundary.status, 200, boundary.text);
+    assert.equal(boundary.json.pagination.totalPages, trueTotal, "page math uses the distinct total");
+    assert.equal(boundary.json.count, 1, "last page has exactly one order");
+    assert.equal(boundary.json.pagination.hasNext, false, "no phantom page past the last one");
+    assert.equal(boundary.json.pagination.hasPrev, trueTotal > 1);
+
+    // Status filters count distinct orders too.
+    const placedFilter = await adminListOrders("?status=placed&limit=100");
+    assert.ok(placedFilter.json.orders.every((o) => o.status === "placed"));
+    assert.equal(placedFilter.json.pagination.total, placedFilter.json.count, "filtered total == filtered rows (distinct)");
+
+    // Empty result: a status no order has -> total 0, one (empty) page.
+    const none = await adminListOrders("?status=shipped&limit=100");
+    assert.equal(none.json.pagination.total, 0, "empty results report total 0");
+    assert.equal(none.json.pagination.totalPages, 1, "empty results keep totalPages at 1");
+    assert.equal(none.json.count, 0);
+    assert.equal(none.json.pagination.hasNext, false);
+    assert.equal(none.json.pagination.hasPrev, false);
   });
 });

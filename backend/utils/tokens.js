@@ -28,18 +28,28 @@ function sha256Hex(input) {
 }
 
 function signAccessToken(user) {
-  return jwt.sign({ id: user.id, purpose: "access" }, getSecret(), { expiresIn: ACCESS_TOKEN_TTL });
+  // pwv binds the session to the CURRENT password: changing the password
+  // (which a reset does) invalidates every previously issued access token —
+  // see requireAuth, which re-checks it against the freshly loaded user.
+  return jwt.sign(
+    { id: user.id, purpose: "access", pwv: sha256Hex(user.password) },
+    getSecret(),
+    { expiresIn: ACCESS_TOKEN_TTL, algorithm: "HS256" }
+  );
 }
 
 function signEmailVerificationToken(email) {
-  return jwt.sign({ email, purpose: "email_verify" }, getSecret(), { expiresIn: EMAIL_VERIFY_TOKEN_TTL });
+  return jwt.sign({ email, purpose: "email_verify" }, getSecret(), {
+    expiresIn: EMAIL_VERIFY_TOKEN_TTL,
+    algorithm: "HS256"
+  });
 }
 
 function signPasswordResetToken(user) {
   return jwt.sign(
     { sub: String(user.id), pwv: sha256Hex(user.password), purpose: "password_reset" },
     getSecret(),
-    { expiresIn: RESET_TOKEN_TTL }
+    { expiresIn: RESET_TOKEN_TTL, algorithm: "HS256" }
   );
 }
 

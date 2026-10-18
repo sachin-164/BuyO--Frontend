@@ -12,21 +12,24 @@ const LOCAL_DEV_ORIGINS = [
   "http://localhost:5500"
 ];
 
-// Allowed origins = local dev defaults + the origin of FRONTEND_URL + CORS_ALLOWED_ORIGINS.
-function getAllowedOrigins() {
-  const configured = String(process.env.CORS_ALLOWED_ORIGINS || "")
+// Allowed origins = local dev defaults (development/test only — a production
+// deployment must never accept localhost origins) + the origin of
+// FRONTEND_URL + CORS_ALLOWED_ORIGINS.
+function getAllowedOrigins(env = process.env) {
+  const configured = String(env.CORS_ALLOWED_ORIGINS || "")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
 
   let frontendOrigin = null;
   try {
-    if (process.env.FRONTEND_URL) frontendOrigin = new URL(process.env.FRONTEND_URL).origin;
+    if (env.FRONTEND_URL) frontendOrigin = new URL(env.FRONTEND_URL).origin;
   } catch {
     // Ignore malformed FRONTEND_URL — CORS decisions must not crash the server.
   }
 
-  return new Set([...LOCAL_DEV_ORIGINS, ...(frontendOrigin ? [frontendOrigin] : []), ...configured]);
+  const localDev = env.NODE_ENV === "production" ? [] : LOCAL_DEV_ORIGINS;
+  return new Set([...localDev, ...(frontendOrigin ? [frontendOrigin] : []), ...configured]);
 }
 
 function securityHeaders() {

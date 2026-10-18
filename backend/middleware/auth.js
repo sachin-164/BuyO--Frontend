@@ -6,12 +6,13 @@
 // attaches it as req.user.
 //
 // requireAdmin additionally requires the user to be verified and to have admin
-// role: DB-backed `user.role === 'admin'`, or (transitional) listed in the
-// server-side ADMIN_EMAILS allowlist — see utils/roles.js. Nothing about admin
-// status is ever trusted from the client.
+// role: DB-backed `user.role === 'admin'` (the only source of truth since the
+// Phase 11 removal of the ADMIN_EMAILS fallback — see utils/roles.js). Nothing
+// about admin status is ever trusted from the client.
 
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
+const { sha256Hex } = require("../utils/tokens");
 const { isAdminUser } = require("../utils/roles");
 
 function unauthorized(res, message = "Authentication required") {
@@ -30,7 +31,9 @@ async function requireAuth(req, res, next) {
 
     let payload;
     try {
-      payload = jwt.verify(token, process.env.JWT_SECRET);
+      // algorithms is pinned so a token can never be re-signed with a
+      // different algorithm than the HS256 we issue (defense in depth).
+      payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
     } catch {
       return unauthorized(res, "Invalid or expired session. Please sign in again.");
     }
@@ -43,6 +46,13 @@ async function requireAuth(req, res, next) {
 
     const user = await User.findByPk(payload.id);
     if (!user) return unauthorized(res, "Invalid or expired session. Please sign in again.");
+
+    // Session-to-password binding: tokens issued before a password change
+    // (reset) carry a stale pwv and are rejected immediately, so a stolen
+    // token cannot outlive a password reset (Phase 11).
+    if (payload.pwv !== sha256Hex(user.password)) {
+      return unauthorized(res, "Invalid or expired session. Please sign in again.");
+    }
 
     req.user = user;
     next();

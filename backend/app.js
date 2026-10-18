@@ -17,12 +17,47 @@ const addressRoutes = require("./routes/addressRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const adminOrderRoutes = require("./routes/adminOrderRoutes");
 
+// Parses TRUST_PROXY (see call site in createApp). Exported for unit tests.
+// Values are deliberately restricted: Express's trust-all (`true`) and the
+// function/everything forms are rejected because they let any client forge
+// X-Forwarded-For and defeat IP-based rate limiting.
+function resolveTrustProxy(env = process.env) {
+  const raw = String(env.TRUST_PROXY || "").trim();
+  if (!raw) return null; // not set -> Express default (trust no proxy)
+  if (raw === "true" || raw === "*" || raw === "yes") {
+    throw new Error(
+      'TRUST_PROXY must not be trust-all. Use a hop count (e.g. "1"), "loopback", "uniquelocal", or explicit IPs/CIDRs.'
+    );
+  }
+  if (/^\d+$/.test(raw)) return Number(raw); // hop count
+  if (raw === "loopback" || raw === "uniquelocal") return raw;
+  // Comma-separated IPs / CIDRs / names accepted by Express.
+  if (/^[a-zA-Z0-9.,:/ _-]+$/.test(raw)) {
+    return raw.split(",").map((part) => part.trim()).filter(Boolean);
+  }
+  throw new Error(`Invalid TRUST_PROXY value: "${raw}"`);
+}
+
+function applyTrustProxy(app, env = process.env) {
+  const value = resolveTrustProxy(env);
+  if (value !== null) app.set("trust proxy", value);
+  return value;
+}
+
 function createApp() {
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET is required (see backend/.env.example)");
   }
 
   const app = express();
+
+  // Proxy trust (Phase 11): ONLY enable when this app actually runs behind a
+  // reverse proxy / load balancer — otherwise req.ip would be the proxy's IP
+  // and every user would share one rate-limit bucket. Accepted values: a hop
+  // count ("1"), "loopback", "uniquelocal", or a comma-separated list of
+  // IPs/CIDRs. The trust-all value `true` is REFUSED: it would let any client
+  // spoof X-Forwarded-For and bypass IP rate limiting entirely.
+  applyTrustProxy(app);
 
   // Security headers + CORS allowlist
   app.use(securityHeaders());
@@ -31,8 +66,9 @@ function createApp() {
   // Body parsing (bounded)
   app.use(express.json({ limit: "100kb" }));
 
-  // Static: uploaded product images
-  app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+  // Static: uploaded product images (Phase 11: also rate-limited — the global
+  // API limiter alone left /uploads unlimited, a free bandwidth-DoS vector).
+  app.use("/uploads", globalLimiter, express.static(path.join(__dirname, "uploads")));
 
   // Rate limiting for all API traffic
   app.use("/api", globalLimiter);
@@ -56,4 +92,4 @@ function createApp() {
   return app;
 }
 
-module.exports = { createApp };
+module.exports = { createApp, resolveTrustProxy };

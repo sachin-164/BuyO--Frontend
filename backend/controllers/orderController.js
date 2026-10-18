@@ -307,11 +307,15 @@ const listOrders = async (req, res, next) => {
     const where = { userId: req.user.id };
     if (status) where.status = status;
 
+    // distinct:true counts DISTINCT Orders.id — the hasMany OrderItems include
+    // would otherwise inflate the total by the number of item rows per order
+    // (same P10-1 defect fixed on the admin list in Phase 11).
     const { count, rows } = await Order.findAndCountAll({
       where,
       order: [["createdAt", "DESC"], ["id", "DESC"]],
       limit,
       offset: (page - 1) * limit,
+      distinct: true,
       include: itemInclude
     });
 

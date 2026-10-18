@@ -44,6 +44,37 @@ describe("Auth regression (signup / verify / login / password reset)", () => {
     assert.match(outbox[0].html, /\/api\/auth\/verify\?token=/);
   });
 
+  // Phase 11: a mail failure after the account row was created must NOT leave an
+  // unverifiable account behind (that would silently lock the user out — there
+  // is no resend-verification endpoint). The account is rolled back so the
+  // user can simply retry signup.
+  it("signup rolls back the account when the verification email fails (retry works)", async () => {
+    const email = helpers.uniqueEmail("signup-mailfail");
+    process.env.MAIL_TRANSPORT = "fail"; // test-only forced failure (utils/mailer.js)
+    try {
+      const fail = await helpers.api(ctx.baseUrl, "/api/auth/signup", {
+        method: "POST",
+        body: { name: "Mail Fail", email, password: "Password123!" }
+      });
+      assert.equal(fail.status, 503, fail.text);
+      assert.equal(fail.json.success, false);
+      assert.ok(!/stack|sql|errno/i.test(fail.json.message), "no internals in the response");
+
+      // The half-created account must have been removed, not left unverifiable.
+      const leftover = await User.findOne({ where: { email } });
+      assert.equal(leftover, null, "failed-mail signup must not leave an account behind");
+    } finally {
+      delete process.env.MAIL_TRANSPORT;
+    }
+
+    // Retrying the same email now succeeds (no "User already exists" lockout).
+    const retry = await helpers.api(ctx.baseUrl, "/api/auth/signup", {
+      method: "POST",
+      body: { name: "Mail Fail Retry", email, password: "Password123!" }
+    });
+    assert.equal(retry.status, 201, retry.text);
+  });
+
   it("signup rejects invalid payloads with 400", async () => {
     const cases = [
       [{ email: "a@b.co", password: "Password123!" }, "missing name"],
@@ -233,6 +264,11 @@ describe("Auth regression (signup / verify / login / password reset)", () => {
     });
     assert.equal(reset.status, 200);
 
+    // Phase 11: a password reset must ALSO invalidate every access token
+    // issued before it (sessions are bound to the password version via pwv).
+    const staleSession = await helpers.api(ctx.baseUrl, "/api/auth/me", { token: user.token });
+    assert.equal(staleSession.status, 401, "pre-reset access token must be rejected after the reset");
+
     const oldLogin = await helpers.api(ctx.baseUrl, "/api/auth/login", {
       method: "POST",
       body: { email: user.email, password: user.password }
@@ -244,6 +280,10 @@ describe("Auth regression (signup / verify / login / password reset)", () => {
       body: { email: user.email, password: "NewPassword456!" }
     });
     assert.equal(newLogin.status, 200, "new password must work");
+
+    // ...and the freshly issued token must be immediately usable.
+    const freshSession = await helpers.api(ctx.baseUrl, "/api/auth/me", { token: newLogin.json.token });
+    assert.equal(freshSession.status, 200, "post-reset token must authenticate");
 
     const reuse = await helpers.api(ctx.baseUrl, "/api/auth/reset-password", {
       method: "POST",

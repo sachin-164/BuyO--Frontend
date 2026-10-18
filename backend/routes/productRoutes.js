@@ -5,6 +5,7 @@ const express = require("express");
 const router = express.Router();
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const multer = require("multer");
 const {
   addProduct,
@@ -22,16 +23,72 @@ const { isValidSlug } = require("../utils/slugify");
 const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// Multer config (store files in /uploads with timestamped original name)
+// Multer config (store files in /uploads with a server-generated name).
+// SECURITY (Phase 11): the stored filename NEVER contains the client-supplied
+// original name — it is timestamp + random hex + an extension derived from an
+// allowlisted image mimetype. Combined with the magic-byte check below, a file
+// that is not a real image can never land in /uploads (which is served
+// statically), closing the stored-content/extension-spoofing vector.
+const ALLOWED_IMAGE_TYPES = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/gif": ".gif",
+  "image/webp": ".webp"
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname.replace(/\s+/g, "-"))
+  filename: (req, file, cb) => {
+    const ext = ALLOWED_IMAGE_TYPES[file.mimetype] || ".img";
+    cb(null, `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${ext}`);
+  }
 });
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
-  fileFilter: (req, file, cb) => cb(null, file.mimetype.startsWith("image/"))
+  fileFilter: (req, file, cb) => cb(null, Boolean(ALLOWED_IMAGE_TYPES[file.mimetype]))
 });
+
+// Magic-byte verification (runs after multer stored the file): the first bytes
+// must match the declared image type, otherwise the file is deleted and the
+// request rejected with 400. Minimum discriminating prefixes are used so tiny
+// synthetic test fixtures (e.g. a 4-byte PNG header) still validate.
+const IMAGE_SIGNATURES = {
+  "image/png": (bytes) => bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47,
+  "image/jpeg": (bytes) => bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
+  "image/gif": (bytes) => bytes.length >= 4 && bytes.toString("ascii", 0, 4).startsWith("GIF8"),
+  "image/webp": (bytes) =>
+    bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP"
+};
+
+function verifyImageFile(req, res, next) {
+  if (!req.file) return next();
+  const matches = IMAGE_SIGNATURES[req.file.mimetype];
+  const fail = () => {
+    // Synchronous removal: the file must be gone before the 400 response is
+    // sent (an async unlink races with any immediate directory check).
+    fs.rmSync(req.file.path, { force: true });
+    return res.status(400).json({
+      success: false,
+      message: "Validation failed",
+      errors: ["Uploaded file is not a valid image (content does not match its type)"]
+    });
+  };
+  let buffer = Buffer.alloc(12);
+  let read = 0;
+  try {
+    const fd = fs.openSync(req.file.path, "r");
+    try {
+      read = fs.readSync(fd, buffer, 0, 12, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return fail();
+  }
+  if (!matches || read < 4 || !matches(buffer.subarray(0, read))) return fail();
+  next();
+}
 
 // ---------- validation schemas ----------
 const VALID_SORTS = ["newest", "oldest", "price_asc", "price_desc", "name_asc", "name_desc"];
@@ -112,6 +169,7 @@ router.post(
   requireAuth,
   requireAdmin,
   upload.single("image"),
+  verifyImageFile,
   validateBody(createProductSchema),
   addProduct
 );
