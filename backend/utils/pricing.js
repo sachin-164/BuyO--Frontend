@@ -57,4 +57,54 @@ function buildTotals(lines) {
   };
 }
 
-module.exports = { toMoney, buildTotals };
+// ---------- Order totals (Phase 6) ----------
+// Same rules as buildTotals (tax-exclusive, per-category, round-half-up to
+// 2dp), plus per-line tax amounts with penny allocation: the last line of
+// each category group absorbs the ±0.01 rounding difference so that
+// SUM(OrderItems.taxAmount) always equals the order's taxTotal exactly.
+function buildOrderTotals(lines) {
+  const totals = buildTotals(lines);
+  const groupTaxByCategory = new Map(
+    totals.tax.byCategory.map((group) => [group.categoryId === null ? "none" : String(group.categoryId), group.taxAmount])
+  );
+
+  const provisional = lines.map((line) => {
+    const lineTotal = toMoney(toMoney(line.unitPrice) * line.qty);
+    const taxRate = Number(line.taxRate) || 0;
+    return { ...line, lineTotal, taxRate, lineTax: toMoney((lineTotal * taxRate) / 100) };
+  });
+
+  const groups = new Map();
+  for (const row of provisional) {
+    const key = row.categoryId === null || row.categoryId === undefined ? "none" : String(row.categoryId);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  for (const [key, rows] of groups) {
+    const target = groupTaxByCategory.get(key) || 0;
+    const sum = toMoney(rows.reduce((acc, row) => acc + row.lineTax, 0));
+    const diff = toMoney(target - sum);
+    if (diff !== 0) {
+      const last = rows[rows.length - 1];
+      last.lineTax = toMoney(last.lineTax + diff);
+    }
+  }
+
+  return {
+    subtotal: totals.subtotal,
+    taxTotal: totals.tax.total,
+    grandTotal: totals.grandTotal,
+    taxBreakdown: totals.tax.byCategory,
+    lines: provisional.map((row) => ({
+      unitPrice: toMoney(row.unitPrice),
+      qty: row.qty,
+      lineTotal: row.lineTotal,
+      taxRate: row.taxRate,
+      taxAmount: row.lineTax,
+      categoryId: row.categoryId ?? null,
+      categoryName: row.categoryName ?? null
+    }))
+  };
+}
+
+module.exports = { toMoney, buildTotals, buildOrderTotals };

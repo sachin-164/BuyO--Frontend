@@ -278,7 +278,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     assert.deepEqual(result.applied, [
       "001_add_users_role.sql",
       "002_create_categories.sql",
-      "003_products_catalog_fields.sql"
+      "003_products_catalog_fields.sql",
+      "004_orders_addresses.sql"
     ]);
 
     // role column: additive; existing users default to customer (admins keep the allowlist fallback)
@@ -304,7 +305,7 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     assert.deepEqual(products.map((p) => p.categoryId), [1, 1, 2]);
 
     const applied = await queryDb(LEGACY_DB, "SELECT id FROM `schema_migrations` ORDER BY id");
-    assert.equal(applied.length, 3);
+    assert.equal(applied.length, 4);
   });
 
   it("constraints are enforced (unique, FK set-null, enum, NOT NULL)", async () => {
@@ -429,6 +430,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     require("../models/product");
     require("../models/cart");
     require("../models/wishlist");
+    require("../models/address");
+    require("../models/order"); // pulls in orderItem + orderStatusEvent
     await seq.sync();
     sequelize = seq;
 
@@ -437,7 +440,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     assert.deepEqual(first.applied, [
       "001_add_users_role.sql",
       "002_create_categories.sql",
-      "003_products_catalog_fields.sql"
+      "003_products_catalog_fields.sql",
+      "004_orders_addresses.sql"
     ]);
     const second = await runMigrations({ settings: settingsFor(SYNC_DB), quiet: true });
     assert.equal(second.applied.length, 0);
@@ -445,6 +449,121 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     const migratedShape = await fetchSchemaShape(LEGACY_DB);
     const syncedShape = await fetchSchemaShape(SYNC_DB);
     assert.deepEqual(syncedShape, migratedShape, "Sequelize-sync schema must match the migration-built schema");
+  });
+
+  it("004 orders schema: composite idempotency key, unique order number, FK rules, enum", async () => {
+    const insertOrder = (userId, orderNumber, key, status = "placed", addressId = null) =>
+      queryDb(
+        LEGACY_DB,
+        "INSERT INTO `Orders` (`userId`,`orderNumber`,`idempotencyKey`,`status`,`paymentMethod`,`subtotal`,`taxTotal`,`grandTotal`,`taxBreakdown`,`shippingAddress`,`addressId`,`createdAt`,`updatedAt`) VALUES (?,?,?,?,'cod',100.00,0.00,100.00,NULL,'{}',?,NOW(),NOW())",
+        [userId, orderNumber, key, status, addressId]
+      );
+
+    // Baseline rows
+    assert.equal((await insertOrder(1, "BO-T1", "idem-a")).affectedRows, 1);
+
+    // Composite idempotency: same user + same key is rejected...
+    await assert.rejects(insertOrder(1, "BO-T2", "idem-a"), /Duplicate entry/);
+    // ...but the same key for a DIFFERENT user is fine (key is user-scoped).
+    assert.equal((await insertOrder(2, "BO-T3", "idem-a")).affectedRows, 1);
+
+    // Order number is globally unique per table
+    await assert.rejects(insertOrder(2, "BO-T1", "idem-b"), /Duplicate entry/);
+
+    // Status enum is constrained
+    await assert.rejects(insertOrder(1, "BO-T4", "idem-c", "weird-status"), /Data truncated|Incorrect enum/i);
+
+    // addressId is a real FK
+    await assert.rejects(insertOrder(1, "BO-T5", "idem-d", "placed", 99999), /foreign key constraint/);
+
+    // ON DELETE SET NULL on Addresses -> Orders.addressId
+    await queryDb(
+      LEGACY_DB,
+      "INSERT INTO `Addresses` (`id`,`userId`,`fullName`,`phone`,`line1`,`city`,`state`,`pincode`,`isDefault`,`createdAt`,`updatedAt`) VALUES (9001,1,'Legacy User','9999999999','1 Test St','Mumbai','Maharashtra','400001',1,NOW(),NOW())"
+    );
+    assert.equal((await insertOrder(1, "BO-T6", "idem-e", "placed", 9001)).affectedRows, 1);
+    await queryDb(LEGACY_DB, "DELETE FROM `Addresses` WHERE `id` = 9001");
+    const withNullAddress = await queryDb(LEGACY_DB, "SELECT `addressId` FROM `Orders` WHERE `orderNumber` = 'BO-T6'");
+    assert.equal(withNullAddress[0].addressId, null);
+
+    // ON DELETE SET NULL on Products -> OrderItems.productId (history outlives products)
+    const t1 = await queryDb(LEGACY_DB, "SELECT `id` FROM `Orders` WHERE `orderNumber` = 'BO-T1'");
+    await queryDb(
+      LEGACY_DB,
+      "INSERT INTO `OrderItems` (`orderId`,`productId`,`name`,`unitPrice`,`qty`,`lineTotal`,`createdAt`,`updatedAt`) VALUES (?,1,'Gold Table Lamp',2999.00,1,2999.00,NOW(),NOW())",
+      [t1[0].id]
+    );
+    await queryDb(LEGACY_DB, "DELETE FROM `Products` WHERE `id` = 1");
+    const orphanItem = await queryDb(LEGACY_DB, "SELECT `productId` FROM `OrderItems` WHERE `orderId` = ?", [t1[0].id]);
+    assert.equal(orphanItem[0].productId, null);
+
+    // Amendment 1: status history has NO uniqueness on (orderId, toStatus) —
+    // repeated statuses stay representable; duplicate-cancellation protection
+    // lives in the locked order row + transitions + one transaction instead.
+    await queryDb(
+      LEGACY_DB,
+      "INSERT INTO `OrderStatusEvents` (`orderId`,`fromStatus`,`toStatus`,`createdAt`,`updatedAt`) VALUES (?,'placed','cancelled',NOW(),NOW())",
+      [t1[0].id]
+    );
+    await queryDb(
+      LEGACY_DB,
+      "INSERT INTO `OrderStatusEvents` (`orderId`,`fromStatus`,`toStatus`,`createdAt`,`updatedAt`) VALUES (?,'placed','cancelled',NOW(),NOW())",
+      [t1[0].id]
+    );
+    const events = await queryDb(LEGACY_DB, "SELECT COUNT(*) AS c FROM `OrderStatusEvents` WHERE `orderId` = ?", [t1[0].id]);
+    assert.equal(Number(events[0].c), 2, "duplicate (orderId, toStatus) rows must be allowed");
+
+    const backstopIndex = await queryDb(
+      LEGACY_DB,
+      "SELECT `INDEX_NAME` FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'orderstatusevents' AND `INDEX_NAME` = 'uq_status_events_order_to_status'",
+      [LEGACY_DB]
+    );
+    assert.equal(backstopIndex.length, 0, "the removed backstop index must not exist");
+  });
+
+  it("re-running 004 after a simulated lost bookkeeping row stays guarded (tables exist)", async () => {
+    await queryDb(LEGACY_DB, "DELETE FROM `schema_migrations` WHERE `id` = '004_orders_addresses.sql'");
+    const rerun = await runMigrations({ settings: settingsFor(LEGACY_DB), quiet: true });
+    assert.deepEqual(rerun.applied, ["004_orders_addresses.sql"]);
+    const again = await runMigrations({ settings: settingsFor(LEGACY_DB), quiet: true });
+    assert.equal(again.applied.length, 0);
+    const orders = await queryDb(LEGACY_DB, "SELECT COUNT(*) AS c FROM `Orders`");
+    assert.equal(Number(orders[0].c), 3, "the guarded re-run must not touch existing order rows");
+  });
+
+  it("004 parity: index columns/uniqueness and FK delete rules match between sync-built and migrated DBs", async () => {
+    const orderTables = ["addresses", "orders", "orderitems", "orderstatusevents"];
+
+    const indexShape = async (database) => {
+      const rows = await queryDb(
+        database,
+        "SELECT TABLE_NAME AS t, INDEX_NAME AS i, COLUMN_NAME AS c, NON_UNIQUE AS n FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN ('addresses','orders','orderitems','orderstatusevents') ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX",
+        [database]
+      );
+      return rows.map((r) => `${r.t}|${r.i}|${r.c}|${r.n}`);
+    };
+
+    const fkShape = async (database) => {
+      const rows = await queryDb(
+        database,
+        "SELECT k.TABLE_NAME AS t, k.COLUMN_NAME AS c, k.REFERENCED_TABLE_NAME AS rt, r.DELETE_RULE AS dr FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND r.TABLE_NAME = k.TABLE_NAME WHERE k.TABLE_SCHEMA = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL AND k.TABLE_NAME IN ('addresses','orders','orderitems','orderstatusevents') ORDER BY k.TABLE_NAME, k.COLUMN_NAME",
+        [database]
+      );
+      return rows.map((r) => `${r.t}|${r.c}|${r.rt}|${r.dr}`);
+    };
+
+    const syncedIndexes = await indexShape(SYNC_DB);
+    const migratedIndexes = await indexShape(LEGACY_DB);
+    assert.deepEqual(syncedIndexes, migratedIndexes, "index columns/uniqueness must match");
+
+    // Both sides must actually cover the four new tables (empty==empty would pass otherwise)
+    const syncedTables = new Set(syncedIndexes.map((row) => row.split("|")[0]));
+    assert.deepEqual([...syncedTables].sort(), orderTables.slice().sort());
+
+    const syncedFks = await fkShape(SYNC_DB);
+    const migratedFks = await fkShape(LEGACY_DB);
+    assert.deepEqual(syncedFks, migratedFks, "FK columns/targets/delete rules must match");
+    assert.ok(syncedFks.some((row) => row.includes("|Orders") || row.includes("|orders")), "Orders FKs must exist");
   });
 
   it("admin provisioning: grant/revoke/list via the audited script path", async () => {

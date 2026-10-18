@@ -13,6 +13,9 @@ const categoryRoutes = require("./routes/categoryRoutes");
 const productRoutes = require("./routes/productRoutes");
 const cartRoutes = require("./routes/cartRoutes");
 const wishlistRoutes = require("./routes/wishlistRoutes");
+const addressRoutes = require("./routes/addressRoutes");
+const orderRoutes = require("./routes/orderRoutes");
+const adminOrderRoutes = require("./routes/adminOrderRoutes");
 
 function createApp() {
   if (!process.env.JWT_SECRET) {
@@ -40,6 +43,9 @@ function createApp() {
   app.use("/api/products", productRoutes);
   app.use("/api/cart", cartRoutes);
   app.use("/api/wishlist", wishlistRoutes);
+  app.use("/api/addresses", addressRoutes);
+  app.use("/api/orders", orderRoutes);
+  app.use("/api/admin/orders", adminOrderRoutes);
 
   // 404 for unknown API routes (clean JSON instead of HTML errors)
   app.use(notFoundHandler);

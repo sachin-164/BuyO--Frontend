@@ -55,6 +55,8 @@ async function startTestApp() {
   require("../models/product");
   require("../models/cart");
   require("../models/wishlist");
+  require("../models/address");
+  require("../models/order"); // pulls in orderItem + orderStatusEvent
   await sequelize.sync(); // creates tables in the scratch test DB only
 
   const app = createApp();

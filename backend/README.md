@@ -62,7 +62,7 @@ See `docs/admin-provisioning.md`. Public signup always creates `role = 'customer
 ## Tests
 
 ```bash
-npm test    # auth + security + migrations + catalog + cart/wishlist suites; scratch DBs only (buyoDB_ph2_test / buyoDB_ph3_*)
+npm test    # auth + security + migrations + catalog + cart/wishlist + orders suites; scratch DBs only (buyoDB_ph2_test / buyoDB_ph3_*)
 ```
 
 ## API
@@ -93,6 +93,17 @@ npm test    # auth + security + migrations + catalog + cart/wishlist suites; scr
 | POST | `/api/wishlist/toggle` | Toggle membership (JWT; `productId`) |
 | GET  | `/api/wishlist/products/:productId` | Membership check (JWT) |
 | DELETE | `/api/wishlist/:productId` | Remove from wishlist (JWT) |
+| GET  | `/api/addresses` | Own address book (JWT), default first |
+| POST | `/api/addresses` | Save address (JWT; validated name/phone/line1/city/state + Indian PIN code); first address (or explicit `isDefault`) becomes the default |
+| PUT  | `/api/addresses/:id` | Update own address (JWT) — foreign/missing 404 |
+| DELETE | `/api/addresses/:id` | Delete own address (JWT); deleting the default promotes the next-oldest |
+| PUT  | `/api/addresses/:id/default` | Set the default address (JWT) |
+| GET  | `/api/orders` | Own orders (JWT; `?status=`, `?page=`, `?limit=`) |
+| POST | `/api/orders` | **Checkout — Cash on Delivery** (JWT; `addressId`, `idempotencyKey`, `notes?`): server-authoritative prices/tax/stock, single transaction, idempotent (retry returns the same order) |
+| GET  | `/api/orders/:id` | Own order detail with items + status history (JWT) |
+| GET  | `/api/admin/orders` | All buyers' orders (admin; `?status=`, pagination) |
+| GET  | `/api/admin/orders/:id` | Order detail incl. buyer identity (admin) |
+| PUT  | `/api/admin/orders/:id/status` | Change status (admin; validated transitions; cancellation restocks exactly once) |
 
 Cart totals are **preview-only**: prices come from the live Products table and
 taxes from per-category `taxRate`; checkout recomputes final totals server-side

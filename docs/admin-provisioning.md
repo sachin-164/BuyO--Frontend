@@ -41,10 +41,27 @@ production.
 
 `utils/roles.js` still accepts the Phase 2 `ADMIN_EMAILS` env allowlist as a
 fallback so no existing admin loses access during the schema transition.
-Sunset plan:
+
+**Exact mechanics.** On every request to an admin route, `requireAuth` reloads
+the user fresh from the database, then `requireAdmin` checks BOTH:
+
+1. `user.isVerified === true` (an unverified account is refused with 403 even
+   if it has `role = 'admin'` and/or is listed in `ADMIN_EMAILS`), and
+2. `isAdminUser(user)`: `user.role === 'admin'` **OR** the account's email is
+   in `ADMIN_EMAILS` (comma-separated env value, trimmed + lowercased).
+
+Everything fails closed: no JWT → 401; missing/unverified user → 401/403; a
+role or allowlist miss → 403. Client input can never grant admin (signup
+whitelists `role` away; role changes only via the audited `admin:role` script).
+This behavior is pinned by tests in `test/orders.test.js` ("admin order
+endpoints fail closed").
+
+**Removal plan (concrete).** The fallback stays only until every intended
+admin's DB role is provisioned with `npm run admin:role` on each environment
+(local now; the hosted environment during Phase 12 release preparation):
 
 1. Grant `role = 'admin'` to every intended admin via this script.
-2. Verify each with `GET /api/auth/me` (`isAdmin: true`).
-3. Remove `ADMIN_EMAILS` from `.env` and delete the fallback from
-   `utils/roles.js` in a later phase (breaking change will be noted in the
-   phase report).
+2. Verify each with `GET /api/auth/me` (`isAdmin: true`) and `admin:role --list`.
+3. Remove `ADMIN_EMAILS` from `.env`.
+4. Delete the fallback from `utils/roles.js` (targeted for **Phase 12**, the
+   release phase — it is a release-checklist item, not optional).
