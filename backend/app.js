@@ -9,6 +9,7 @@ const { globalLimiter } = require("./middleware/rateLimiters");
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
 const authRoutes = require("./routes/authRoutes");
+const categoryRoutes = require("./routes/categoryRoutes");
 const productRoutes = require("./routes/productRoutes");
 const cartRoutes = require("./routes/cartRoutes");
 const wishlistRoutes = require("./routes/wishlistRoutes");
@@ -35,6 +36,7 @@ function createApp() {
 
   // Routes
   app.use("/api/auth", authRoutes);
+  app.use("/api/categories", categoryRoutes);
   app.use("/api/products", productRoutes);
   app.use("/api/cart", cartRoutes);
   app.use("/api/wishlist", wishlistRoutes);

@@ -1,39 +1,51 @@
 // middleware/validate.js
-// Small dependency-free request-body validation middleware.
+// Small dependency-free request validation middleware.
 //
-// Usage: validateBody({ email: { required: true, type: "email" }, ... })
+// Usage:
+//   validateBody({ email: { required: true, type: "email" }, ... })   -> req.body
+//   validateQuery({ page: { type: "integer", min: 1 }, ... })         -> req.query
 //
 // Supported rules per field:
 //   required   — value must be present and non-empty
-//   type       — "string" | "email" | "password" | "number"
+//   type       — "string" | "email" | "password" | "number" | "integer"
+//                | "boolean" | "object"
 //                ("password" = raw string: never trimmed, byte-length capped;
 //                 "email" = trimmed, lowercased, format-checked;
-//                 "number" = coerced with Number(), NaN rejected)
+//                 "number" = coerced with Number(), NaN rejected;
+//                 "integer" = number/number-string that must be a whole number;
+//                 "boolean" = true/false or "true"/"false"/"1"/"0" -> boolean;
+//                 "object" = plain JSON object, arrays rejected)
 //   minLength / maxLength — for string/email/password
-//   min / max             — for number
+//   min / max             — for number/integer
+//   nullable              — keep an explicit JSON null (e.g. clearing a FK)
+//   validate              — custom check: (value) => error string | null
 //
 // On failure: 400 { success: false, message: "Validation failed", errors }.
-// On success: field values are sanitized (trim/lowercase/coerce) and req.body
-// is REPLACED with only the schema-defined fields (whitelist) — unknown fields
-// are dropped. Sensitive values are never echoed back.
+// On success: the target (req.body or req.query) is REPLACED with only the
+// schema-defined, sanitized fields (whitelist) — unknown fields are dropped.
+// Sensitive values are never echoed back.
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-function validateBody(schema) {
+function makeValidator(target, schema) {
   return (req, res, next) => {
-    const body = req.body || {};
+    const source = req[target] || {};
     const errors = [];
     const cleaned = {};
 
     for (const [field, rules] of Object.entries(schema)) {
-      let value = body[field];
+      let value = source[field];
 
       const isEmptyString = typeof value === "string" && value.trim() === "";
       if (rules.required && (value === undefined || value === null || isEmptyString)) {
         errors.push(`${field} is required`);
         continue;
       }
-      if (value === undefined || value === null) continue;
+      if (value === undefined) continue;
+      if (value === null) {
+        if (rules.nullable) cleaned[field] = null;
+        continue;
+      }
       if (value === "") {
         // Optional string fields keep "" (preserves existing API behavior);
         // any other type treats "" as absent.
@@ -79,10 +91,10 @@ function validateBody(schema) {
           errors.push(`${field} is too long (max 72 bytes)`);
           continue;
         }
-      } else if (rules.type === "number") {
+      } else if (rules.type === "number" || rules.type === "integer") {
         const num = typeof value === "number" ? value : Number(String(value).trim());
-        if (!Number.isFinite(num)) {
-          errors.push(`${field} must be a number`);
+        if (!Number.isFinite(num) || (rules.type === "integer" && !Number.isInteger(num))) {
+          errors.push(rules.type === "integer" ? `${field} must be an integer` : `${field} must be a number`);
           continue;
         }
         if (rules.min !== undefined && num < rules.min) {
@@ -94,6 +106,34 @@ function validateBody(schema) {
           continue;
         }
         value = num;
+      } else if (rules.type === "boolean") {
+        if (typeof value === "boolean") {
+          // keep as-is
+        } else if (typeof value === "string") {
+          const normalized = value.trim().toLowerCase();
+          if (normalized === "true" || normalized === "1") value = true;
+          else if (normalized === "false" || normalized === "0") value = false;
+          else {
+            errors.push(`${field} must be a boolean`);
+            continue;
+          }
+        } else {
+          errors.push(`${field} must be a boolean`);
+          continue;
+        }
+      } else if (rules.type === "object") {
+        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+          errors.push(`${field} must be an object`);
+          continue;
+        }
+      }
+
+      if (typeof rules.validate === "function") {
+        const customError = rules.validate(value);
+        if (customError) {
+          errors.push(customError);
+          continue;
+        }
       }
 
       cleaned[field] = value;
@@ -105,9 +145,28 @@ function validateBody(schema) {
 
     // Whitelist: only schema-defined, validated fields survive. Unknown fields
     // (e.g. someone POSTing `role: "admin"` to signup) are dropped here.
-    req.body = cleaned;
+    if (target === "query") {
+      // Express defines req.query as a prototype getter — shadow it with the
+      // validated object via an own data property (assignment would be ignored).
+      Object.defineProperty(req, "query", {
+        value: cleaned,
+        writable: true,
+        enumerable: true,
+        configurable: true
+      });
+    } else {
+      req.body = cleaned;
+    }
     next();
   };
 }
 
-module.exports = { validateBody };
+function validateBody(schema) {
+  return makeValidator("body", schema);
+}
+
+function validateQuery(schema) {
+  return makeValidator("query", schema);
+}
+
+module.exports = { validateBody, validateQuery };

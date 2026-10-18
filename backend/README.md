@@ -62,7 +62,7 @@ See `docs/admin-provisioning.md`. Public signup always creates `role = 'customer
 ## Tests
 
 ```bash
-npm test    # auth + security + migrations suites; scratch DBs only (buyoDB_ph2_test / buyoDB_ph3_*)
+npm test    # auth + security + migrations + catalog suites; scratch DBs only (buyoDB_ph2_test / buyoDB_ph3_*)
 ```
 
 ## API
@@ -75,15 +75,23 @@ npm test    # auth + security + migrations suites; scratch DBs only (buyoDB_ph2_
 | POST | `/api/auth/forgot-password` | Emails a single-use reset link (generic response) |
 | POST | `/api/auth/reset-password` | Resets password via emailed token |
 | GET  | `/api/auth/me` | Current user (JWT required) |
-| GET  | `/api/products` | All products |
-| GET  | `/api/products/:id` | Single product |
+| GET  | `/api/categories` | All categories (public, includes `productCount`) |
+| POST | `/api/categories` | Create category — **admin only** |
+| PUT  | `/api/categories/:id` | Update category (name/slug/description/taxRate) — **admin only** |
+| DELETE | `/api/categories/:id` | Delete category — **admin only** (products survive: FK `SET NULL`, legacy `category` string kept) |
+| GET  | `/api/products` | Product list (public) — `?q=` search, `?category=` slug/id/legacy name, `?minPrice=`/`?maxPrice=`, `?inStock=`, `?sort=newest\|oldest\|price_asc\|price_desc\|name_asc\|name_desc`, `?page=`, `?limit=` (max 100); returns `products`, `count`, `pagination` |
+| GET  | `/api/products/:identifier` | Single product by numeric id **or slug** (public) |
 | POST | `/api/products` | Add product — **admin only** (JWT + DB `role = 'admin'`, `ADMIN_EMAILS` fallback); multipart field `image` |
-| GET  | `/api/cart` | Cart items *(stub — real logic pending)* |
+| PUT  | `/api/products/:id` | Update product (partial) — **admin only** (`categoryId: null` unlinks; legacy `category` string edits re-link by name) |
+| DELETE | `/api/products/:id` | Delete product — **admin only** |
+| GET  | `/api/cart` | Cart items *(stub — Phase 5)* |
 | POST | `/api/cart` | Add to cart *(stub)* |
 | DELETE | `/api/cart/:id` | Remove from cart *(stub)* |
-| GET/POST/DELETE | `/api/wishlist`, `/api/wishlist/:id` | Wishlist *(stub)* |
+| GET/POST/DELETE | `/api/wishlist`, `/api/wishlist/:id` | Wishlist *(stub — Phase 5)* |
 
-`POST /api/products` body (JSON or multipart): `name`, `category`, `description`, `mrpPrice`, `sellingPrice`, optional `image` (URL) or `image` file upload. Uploaded files land in `backend/uploads/` and are served at `/uploads/<file>`.
+`POST /api/products` body (JSON or multipart): `name`, `category` (legacy free-text, kept in sync with `categoryId`), `description`, `mrpPrice`, `sellingPrice`, optional `image` (URL) or `image` file upload, `slug` (auto-generated from name when omitted), `stock` (integer ≥ 0, default 0), `imageMeta` `{ alt?, width?, height? }`, `categoryId` (auto-links when the legacy name matches an existing category). Uploaded files land in `backend/uploads/` and are served at `/uploads/<file>`.
+
+Categories support per-category `taxRate` (percent, `DECIMAL(5,2)`) for configurable GST — consumed by checkout in a later phase.
 
 ## Security (Phase 2 + Phase 3)
 
