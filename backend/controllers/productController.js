@@ -7,6 +7,7 @@
 const { Op } = require("sequelize");
 const Product = require("../models/product");
 const Category = require("../models/category");
+const { resolveDialect } = require("../config/dbConnectionOptions");
 const { slugify, uniqueSlug } = require("../utils/slugify");
 const { uniqueConflictMessage } = require("../utils/uniqueErrors");
 
@@ -141,7 +142,11 @@ const getProducts = async (req, res) => {
     const conditions = [];
     if (q) {
       const like = `%${escapeLike(q)}%`;
-      conditions.push({ [Op.or]: [{ name: { [Op.like]: like } }, { description: { [Op.like]: like } }] });
+      // MySQL's default utf8mb4 collation makes LIKE case-insensitive, while
+      // PostgreSQL LIKE is case-sensitive. The public API contract is
+      // case-insensitive substring search on both dialects, so PG uses ILIKE.
+      const searchOp = resolveDialect() === "postgres" ? Op.iLike : Op.like;
+      conditions.push({ [Op.or]: [{ name: { [searchOp]: like } }, { description: { [searchOp]: like } }] });
     }
     if (minPrice !== undefined || maxPrice !== undefined) {
       const price = {};

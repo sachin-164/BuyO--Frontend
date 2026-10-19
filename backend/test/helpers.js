@@ -6,10 +6,11 @@
 // is dropped + recreated before each test run.
 //
 // DUAL-DIALECT (migration Phase 1): MySQL is the default. Setting
-// DB_DIALECT=postgres (see npm run test:pg) points the SAME harness at the
-// local PostgreSQL scratch database — same name, same _test enforcement, same
-// drop/recreate-per-run rule. The PostgreSQL path only ever talks to the
-// loopback scratch cluster started by test/pgSmoke.test.js.
+// DB_DIALECT=postgres (see npm run test:pg and test:pg:catalog) points the
+// SAME harness at the local PostgreSQL scratch database — same name, same
+// _test enforcement, same drop/recreate-per-run rule. The PostgreSQL path
+// only ever talks to the loopback scratch cluster started by
+// test/pgSmoke.test.js or test/pgSuite.js.
 //
 // Requires helpers BEFORE any app module so the test environment is in place.
 
@@ -204,6 +205,16 @@ async function createAdminUser(baseUrl) {
   });
   // Admin comes from the DB role only (ADMIN_EMAILS fallback removed in
   // Phase 11) — grant it through the same audited path the CLI script uses.
+  if (resolveDialect() === "postgres") {
+    // Migration Phase 2: the audited CLI script (scripts/admin-role.js) uses
+    // raw mysql2 and stays MySQL-only until the tooling phase. For the local
+    // PG scratch harness, grant the role through the model instead — same
+    // source of truth (Users.role), same scratch database, no CLI involved.
+    const User = require("../models/user");
+    const [count] = await User.update({ role: "admin" }, { where: { email: admin.email } });
+    if (!count) throw new Error("failed to grant admin role in the test database");
+    return admin;
+  }
   const { applyRoleChange } = require("../scripts/admin-role");
   const { resolveMysqlSettings } = require("../config/dbConnectionOptions");
   const grant = await applyRoleChange({ settings: resolveMysqlSettings(), email: admin.email, role: "admin" });

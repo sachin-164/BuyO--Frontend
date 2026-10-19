@@ -3,15 +3,31 @@
 // Admin: create / update / delete (routed with requireAuth + requireAdmin).
 // Deleting a category never deletes products: the FK is ON DELETE SET NULL and
 // the legacy free-text Products.category string is preserved.
-const { Op, fn, col } = require("sequelize");
+const { Op, fn, col, where } = require("sequelize");
 const Category = require("../models/category");
 const Product = require("../models/product");
+const { resolveDialect } = require("../config/dbConnectionOptions");
 const { slugify, uniqueSlug } = require("../utils/slugify");
 const { uniqueConflictMessage } = require("../utils/uniqueErrors");
 
 function isValidId(value) {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 && id <= 2147483647;
+}
+
+// Case-insensitive category-name lookup. MySQL's default collation already
+// compares names case-insensitively (the plain { name } query is kept there,
+// byte-identical), while PostgreSQL compares case-sensitively. The public
+// contract — duplicate name -> 409 regardless of case — must hold on both,
+// so PG uses an explicit LOWER() comparison.
+async function findCategoryByName(name) {
+  if (resolveDialect() === "postgres") {
+    return Category.findOne({
+      where: where(fn("LOWER", col("name")), String(name).toLowerCase()),
+      attributes: ["id"]
+    });
+  }
+  return Category.findOne({ where: { name }, attributes: ["id"] });
 }
 
 // ---------- List Categories (GET /api/categories, public) ----------
@@ -49,7 +65,7 @@ const createCategory = async (req, res) => {
 
     const categorySlug = slug || await uniqueSlug(Category, slugify(name), "category");
 
-    const nameExists = await Category.findOne({ where: { name }, attributes: ["id"] });
+    const nameExists = await findCategoryByName(name);
     if (nameExists) {
       return res.status(409).json({ success: false, message: "A category with that name already exists" });
     }
@@ -100,7 +116,7 @@ const updateCategory = async (req, res) => {
     }
 
     if (updates.name !== undefined) {
-      const clash = await Category.findOne({ where: { name: updates.name }, attributes: ["id"] });
+      const clash = await findCategoryByName(updates.name);
       if (clash && clash.id !== category.id) {
         return res.status(409).json({ success: false, message: "A category with that name already exists" });
       }
