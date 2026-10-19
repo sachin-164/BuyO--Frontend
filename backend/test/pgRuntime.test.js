@@ -17,6 +17,7 @@ const {
   getSequelizeOptions,
   intFromEnvSetting
 } = require("../config/dbConnectionOptions");
+const { pgClientOptions } = require("../scripts/lib/pgClientOptions");
 
 // ---------- TLS defaults (auto rule) ----------
 
@@ -148,4 +149,29 @@ test("intFromEnvSetting: defaults, ranges and strict validation", () => {
   assert.throws(() => intFromEnvSetting({ X_TIMEOUT_MS: "30001" }, "X_TIMEOUT_MS", 2000, 100, 30000), /X_TIMEOUT_MS/);
   assert.throws(() => intFromEnvSetting({ X_TIMEOUT_MS: "abc" }, "X_TIMEOUT_MS", 2000, 100, 30000), /X_TIMEOUT_MS/);
   assert.throws(() => intFromEnvSetting({ X_TIMEOUT_MS: "1.5" }, "X_TIMEOUT_MS", 2000, 100, 30000), /X_TIMEOUT_MS/);
+});
+
+// ---------- Phase 10: CLI client options (TLS threading) ----------
+
+test("pgClientOptions: hosted targets get verified TLS; loopback stays byte-identical (no ssl key)", () => {
+  const loopback = pgClientOptions({
+    host: "127.0.0.1", port: 5433, username: "postgres", password: "x", database: "buyoDB"
+  });
+  assert.deepEqual(loopback, {
+    host: "127.0.0.1", port: 5433, user: "postgres", password: "x", database: "buyoDB"
+  });
+  assert.equal("ssl" in loopback, false, "loopback plaintext — embedded-PostgreSQL behavior unchanged");
+
+  const hosted = pgClientOptions({
+    host: "db.example.co", port: 5432, username: "u", password: "p", database: "d", ssl: true
+  });
+  assert.deepEqual(hosted.ssl, { rejectUnauthorized: true }, "verification always on — no bypass exists");
+
+  // explicit override of the target database (maintenance connections)
+  const maintenance = pgClientOptions(
+    { host: "db.example.co", port: 5432, username: "u", password: "p", database: "d", ssl: true },
+    "postgres"
+  );
+  assert.equal(maintenance.database, "postgres");
+  assert.deepEqual(maintenance.ssl, { rejectUnauthorized: true });
 });

@@ -33,6 +33,8 @@ const {
   toMysql2Options
 } = require("../config/dbConnectionOptions");
 const { getAllowedDatabases, collectLocalGuardReasons, refuseLocal } = require("./lib/localDbGuard");
+const { enforceRemoteGateOrExit } = require("./lib/remoteTargetGate");
+const { pgClientOptions } = require("./lib/pgClientOptions");
 
 const VALID_ROLES = ["customer", "admin"];
 const DEFAULT_ALLOWED_DATABASES = ["buyoDB"];
@@ -48,20 +50,14 @@ async function connect(settings) {
   return mysql.createConnection(toMysql2Options(settings));
 }
 
-// Migration Phase 7: raw `pg` connection for the PostgreSQL path. Loopback-only
-// by design — same boundary as the rest of the PG harness (no SSL, no
-// DATABASE_URL, no remote Supabase).
+// Migration Phase 7: raw `pg` connection for the PostgreSQL path. Loopback
+// keeps the pre-Phase-10 behavior; a non-loopback target can only reach this
+// point after the Phase 10 remote gate approved it in main() — TLS is
+// threaded from the resolved settings (verification always on).
 function connectPg(database) {
   const settings = resolvePostgresSettings();
   const { Client } = require("pg");
-  return new Client({
-    host: settings.host,
-    port: settings.port,
-    user: settings.username,
-    password: settings.password,
-    database: database || settings.database
-    // No SSL: this path is loopback-only by design.
-  });
+  return new Client(pgClientOptions(settings, database));
 }
 
 async function getUserByEmail(connection, email) {
@@ -168,20 +164,35 @@ async function main() {
   const flags = new Set(process.argv.slice(2));
   const dialect = resolveDialect();
   const settings = dialect === "postgres" ? resolvePostgresSettings() : resolveMysqlSettings();
+
+  // Phase 10: non-loopback POSTGRESQL targets must pass the remote approval
+  // gate (refuses BEFORE any connection); loopback + MySQL unchanged below.
+  let mode = "local";
+  if (dialect === "postgres") {
+    mode = enforceRemoteGateOrExit({
+      scriptLabel: "admin:role",
+      usage: "npm run admin:role -- --list | --email <email> --role admin|customer --confirm-local",
+      settings,
+      flags
+    });
+  }
+
   const allowed = getAllowedDatabases("DB_ADMIN_ALLOWED_DATABASES", DEFAULT_ALLOWED_DATABASES);
 
-  const reasons = collectLocalGuardReasons({
-    flags,
-    settings,
-    allowed,
-    allowedEnvVar: "DB_ADMIN_ALLOWED_DATABASES"
-  });
-  if (reasons.length) {
-    refuseLocal(
-      "admin:role",
-      "npm run admin:role -- --list | --email <email> --role admin|customer --confirm-local",
-      reasons
-    );
+  if (mode === "local") {
+    const reasons = collectLocalGuardReasons({
+      flags,
+      settings,
+      allowed,
+      allowedEnvVar: "DB_ADMIN_ALLOWED_DATABASES"
+    });
+    if (reasons.length) {
+      refuseLocal(
+        "admin:role",
+        "npm run admin:role -- --list | --email <email> --role admin|customer --confirm-local",
+        reasons
+      );
+    }
   }
 
   if (flags.has("--list")) {

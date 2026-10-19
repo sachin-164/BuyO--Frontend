@@ -26,6 +26,17 @@ Phase 9 (production-readiness code) added, all verified locally:
 - the tested remote-migration approval contract (`docs/migration-remote.md`) —
   still disabled by default; every script remains loopback-only.
 
+Phase 10 (remote-gate integration) added, all verified locally:
+
+- the approval gate is now ENFORCED: `db:migrate`, `admin:role`, `db-restore`
+  and `db:backup` (which additionally keeps `--allow-remote`) refuse any
+  non-loopback target BEFORE a connection unless all eight approval
+  conditions hold; `db:sync` has no remote path at all (`docs/migration-remote.md` §1),
+- TLS threaded through all four CLI `pg` clients (verification always on,
+  loopback byte-identical),
+- a sandbox-first runbook (`docs/migration-remote.md` §5) — no hosted service
+  was contacted and no remote resource exists.
+
 ---
 
 ## 1. Target architecture

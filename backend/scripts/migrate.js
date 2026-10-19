@@ -53,6 +53,8 @@ dotenv.config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 const mysql = require("mysql2/promise");
 const { resolveDialect, resolveMysqlSettings, resolvePostgresSettings, toMysql2Options } = require("../config/dbConnectionOptions");
 const { getAllowedDatabases, collectLocalGuardReasons, refuseLocal } = require("./lib/localDbGuard");
+const { enforceRemoteGateOrExit } = require("./lib/remoteTargetGate");
+const { pgClientOptions } = require("./lib/pgClientOptions");
 
 const MIGRATIONS_DIR = path.resolve(__dirname, "..", "migrations");
 const BOOKKEEPING_TABLE = "schema_migrations";
@@ -336,16 +338,15 @@ async function executePgStatement(client, statement) {
 async function runPostgresMigrations({ quiet = false, statusOnly = false } = {}) {
   const log = quiet ? () => {} : (...args) => console.log(...args);
   const settings = resolvePostgresSettings();
+  // Phase 10 (runbook §5.3): print the exact target identity — host, port,
+  // database and TLS mode only. Never username, password or any URL, so an
+  // operator can verify it against the dashboard without disclosing secrets.
+  log(`Target: ${settings.database} @ ${settings.host}:${settings.port} [${settings.ssl ? "TLS verified" : "plaintext"}]`);
   const files = discoverPgMigrationFiles();
   const { Client } = require("pg");
-  const client = new Client({
-    host: settings.host,
-    port: settings.port,
-    user: settings.username,
-    password: settings.password,
-    database: settings.database
-    // No SSL: this path is loopback-only by design (migration Phase 1).
-  });
+  // Phase 10: TLS threaded from the resolved settings (verification always on
+  // for hosted targets; loopback stays plaintext).
+  const client = new Client(pgClientOptions(settings));
   await client.connect();
 
   try {
@@ -433,16 +434,32 @@ async function main() {
   const flags = new Set(process.argv.slice(2));
   const dialect = resolveDialect();
   const settings = dialect === "postgres" ? resolvePostgresSettings() : resolveMysqlSettings();
+
+  // Phase 10: a non-loopback POSTGRESQL target may only proceed through the
+  // remote approval gate (refuses BEFORE any connection). Loopback and the
+  // entire MySQL path keep the exact local-guard flow below.
+  let mode = "local";
+  if (dialect === "postgres") {
+    mode = enforceRemoteGateOrExit({
+      scriptLabel: "db:migrate",
+      usage: "npm run db:migrate -- --confirm-local [--status]",
+      settings,
+      flags
+    });
+  }
+
   const allowed = getAllowedDatabases("DB_MIGRATE_ALLOWED_DATABASES", DEFAULT_ALLOWED_DATABASES);
 
-  const reasons = collectLocalGuardReasons({
-    flags,
-    settings,
-    allowed,
-    allowedEnvVar: "DB_MIGRATE_ALLOWED_DATABASES"
-  });
-  if (reasons.length) {
-    refuseLocal("db:migrate", "npm run db:migrate -- --confirm-local [--status]", reasons);
+  if (mode === "local") {
+    const reasons = collectLocalGuardReasons({
+      flags,
+      settings,
+      allowed,
+      allowedEnvVar: "DB_MIGRATE_ALLOWED_DATABASES"
+    });
+    if (reasons.length) {
+      refuseLocal("db:migrate", "npm run db:migrate -- --confirm-local [--status]", reasons);
+    }
   }
 
   const statusOnly = flags.has("--status");

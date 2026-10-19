@@ -37,6 +37,8 @@ const {
   toMysql2Options
 } = require("../config/dbConnectionOptions");
 const { getAllowedDatabases, collectLocalGuardReasons, refuseLocal } = require("./lib/localDbGuard");
+const { enforceRemoteGateOrExit } = require("./lib/remoteTargetGate");
+const { pgClientOptions } = require("./lib/pgClientOptions");
 
 const BACKUP_DIR = path.resolve(__dirname, "..", "backups");
 const SCRATCH_DATABASE_PATTERN = /^buyodb_[a-z0-9_]+$/i;
@@ -213,15 +215,9 @@ function setvalStatementPg(table, column) {
 async function runRestorePg({ backup, database, backupPath, log }) {
   const settings = resolvePostgresSettings();
   const { Client } = require("pg");
-  const connect = (dbName) =>
-    new Client({
-      host: settings.host,
-      port: settings.port,
-      user: settings.username,
-      password: settings.password,
-      database: dbName
-      // No SSL: this path is loopback-only by design.
-    });
+  // Phase 10: TLS threaded from the resolved settings (verification always on
+  // for hosted targets; loopback stays plaintext).
+  const connect = (dbName) => new Client(pgClientOptions(settings, dbName));
 
   // Create the target — it must not exist yet.
   const admin = connect("postgres");
@@ -307,24 +303,40 @@ async function main() {
   const flags = new Set(process.argv.slice(2));
   const dialect = resolveDialect();
   const settings = dialect === "postgres" ? resolvePostgresSettings() : resolveMysqlSettings();
-  const allowed = getAllowedDatabases("DB_RESTORE_ALLOWED_DATABASES", []);
 
-  const reasons = collectLocalGuardReasons({
-    flags,
-    settings,
-    allowed,
-    allowedEnvVar: "DB_RESTORE_ALLOWED_DATABASES"
-  });
-  // The scratch-pattern exception (buyoDB_*) is handled inside runRestore; the
-  // generic guard still requires a confirm flag, loopback host and non-prod.
+  // Phase 10: non-loopback POSTGRESQL targets must pass the remote approval
+  // gate (refuses BEFORE any connection); loopback + MySQL keep the exact
+  // local-guard flow (with the scratch-name allowlist exception) below.
+  let mode = "local";
+  if (dialect === "postgres") {
+    mode = enforceRemoteGateOrExit({
+      scriptLabel: "db:restore",
+      usage: "npm run db:restore -- --target <buyoDB_scratch> --confirm-local [--file <backup.json>]",
+      settings,
+      flags
+    });
+  }
+
+  const allowed = getAllowedDatabases("DB_RESTORE_ALLOWED_DATABASES", []);
   const targetIndex = [...flags].indexOf("--target");
   const target = targetIndex >= 0 ? [...flags][targetIndex + 1] : undefined;
-  const allowListReason = reasons.find((r) => r.includes("DB_RESTORE_ALLOWED_DATABASES"));
-  if (allowListReason && target && SCRATCH_DATABASE_PATTERN.test(target)) {
-    reasons.splice(reasons.indexOf(allowListReason), 1);
-  }
-  if (reasons.length) {
-    refuseLocal("db:restore", "npm run db:restore -- --target <buyoDB_scratch> --confirm-local [--file <backup.json>]", reasons);
+
+  if (mode === "local") {
+    const reasons = collectLocalGuardReasons({
+      flags,
+      settings,
+      allowed,
+      allowedEnvVar: "DB_RESTORE_ALLOWED_DATABASES"
+    });
+    // The scratch-pattern exception (buyoDB_*) is handled inside runRestore; the
+    // generic guard still requires a confirm flag, loopback host and non-prod.
+    const allowListReason = reasons.find((r) => r.includes("DB_RESTORE_ALLOWED_DATABASES"));
+    if (allowListReason && target && SCRATCH_DATABASE_PATTERN.test(target)) {
+      reasons.splice(reasons.indexOf(allowListReason), 1);
+    }
+    if (reasons.length) {
+      refuseLocal("db:restore", "npm run db:restore -- --target <buyoDB_scratch> --confirm-local [--file <backup.json>]", reasons);
+    }
   }
 
   if (!target) {

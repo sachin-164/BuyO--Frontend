@@ -42,8 +42,8 @@ Related: `docs/deployment.md` (where each is set at deploy), `backend/.env.examp
 | `DB_ADMIN_ALLOWED_DATABASES` | `admin:role` targets | `buyoDB` |
 | `DB_RESTORE_ALLOWED_DATABASES` | extra `db:restore` targets | scratch names `buyoDB_*` work by default |
 | `DB_TEST_USER_ALLOWED_DATABASES` | `test:user` targets | `buyoDB` |
-| `PG_REMOTE_MIGRATION_APPROVED` | Future remote-migration approval token (must equal `phase-cutover-approval`) | **unset = remote migration disabled** (contract: `docs/migration-remote.md`) |
-| `PG_REMOTE_ALLOWED_HOSTS` `PG_REMOTE_ALLOWED_DATABASES` | Future exact `host:port` / database allowlists for the remote-migration gate | empty = nothing approved |
+| `PG_REMOTE_MIGRATION_APPROVED` | Remote approval token (must equal `phase-cutover-approval`); enforced by the CLI tools since Phase 10 | **unset = remote execution disabled** (runbook: `docs/migration-remote.md`) |
+| `PG_REMOTE_ALLOWED_HOSTS` `PG_REMOTE_ALLOWED_DATABASES` | Exact `host:port` / database allowlists for the remote gate (`db:migrate`, `admin:role`, `db:backup`+`--allow-remote`, `db-restore`) | empty = nothing approved |
 | `TEST_USER_EMAIL` `TEST_USER_PASSWORD` | `test:user` CLI inputs | — |
 
 All guarded scripts additionally refuse: non-loopback hosts, `NODE_ENV=production`,

@@ -1,11 +1,14 @@
-// scripts/lib/remoteTargetGate.js — FUTURE-USE approval contract (Phase 9).
+// scripts/lib/remoteTargetGate.js — remote-target approval gate
+// (contract: Phase 9; CLI integration: Phase 10).
 //
-// STATUS: design + tested contract ONLY. Nothing in the migration runner
-// consumes this module yet: scripts/migrate.js stays loopback-only through
-// scripts/lib/localDbGuard.js, which refuses any non-loopback host before a
-// connection is attempted. Wiring this gate into a real remote run happens
-// only in the (separately approved) cutover phase, together with actual
-// project details — see docs/migration-remote.md for the exact prerequisites.
+// STATUS (Phase 10): the gate is now ENFORCED by the PostgreSQL CLI tools —
+// scripts/migrate.js, scripts/admin-role.js, scripts/db-backup.js and
+// scripts/db-restore.js route every NON-loopback target through it (loopback
+// keeps the unchanged --confirm-local flow). Remote execution stays disabled
+// by default: without every condition below, the tools refuse BEFORE any
+// connection or DNS lookup is attempted. db:sync and test:user never grow a
+// remote path at all (local-dev tools by design). See docs/migration-remote.md
+// for the sandbox-first runbook that accompanies an approved remote run.
 //
 // The contract: a remote target may be considered "approved" ONLY when ALL of
 // the following hold at the same time —
@@ -40,7 +43,7 @@ function parseList(raw) {
   return String(raw || "").split(",").map((entry) => entry.trim()).filter(Boolean);
 }
 
-// Pure function: { allowed: boolean, reasons: string[] } ([] reasons = allowed).
+// Pure function: returns { allowed: boolean, reasons: string[] } ([] reasons = allowed).
 // `settings` is the resolved PG settings object (host/port/database are the
 // only fields consulted; username/password are deliberately ignored).
 function evaluateRemoteTarget({ env = process.env, flags = new Set(), settings } = {}) {
@@ -97,8 +100,40 @@ function evaluateRemoteTarget({ env = process.env, flags = new Set(), settings }
   return { allowed: reasons.length === 0, reasons };
 }
 
+// Throwing variant for library-style call sites (db:backup's createBackup):
+// returns normally when approved; throws an error carrying `refusedRemote`
+// (so db-backup's existing refusal handler formats it) with the credential-
+// free reasons attached. Loopback targets are not this gate's business.
+function assertRemoteGateApproved({ scriptLabel, settings, env = process.env, flags = new Set() }) {
+  if (settings && isLoopbackHost(settings.host)) return;
+  const verdict = evaluateRemoteTarget({ env, flags, settings });
+  if (verdict.allowed) return;
+  const err = new Error(`${scriptLabel}: remote target "${settings && settings.host}" is not approved.`);
+  err.refusedRemote = true;
+  err.remoteGate = true;
+  err.remoteGateReasons = verdict.reasons;
+  throw err;
+}
+
+// Exit variant for CLI main()s: returns "local" for loopback targets (the
+// caller then applies the unchanged --confirm-local guard) or "remote-approved"
+// when every gate condition holds; otherwise prints a credential-free refusal
+// and exits 1 BEFORE any connection is created.
+function enforceRemoteGateOrExit({ scriptLabel, usage, settings, env = process.env, flags = new Set() }) {
+  if (settings && isLoopbackHost(settings.host)) return "local";
+  const verdict = evaluateRemoteTarget({ env, flags, settings });
+  if (verdict.allowed) return "remote-approved";
+  console.error(`❌ REFUSED: ${scriptLabel} only runs against a LOCAL database or a fully APPROVED remote target.`);
+  for (const reason of verdict.reasons) console.error(`   - ${reason}`);
+  console.error("   Remote targets stay disabled unless every approval condition holds (docs/migration-remote.md).");
+  console.error(`   Usage: ${usage}`);
+  process.exit(1);
+}
+
 module.exports = {
   evaluateRemoteTarget,
+  assertRemoteGateApproved,
+  enforceRemoteGateOrExit,
   APPROVAL_ENV,
   APPROVAL_TOKEN,
   HOSTS_ENV,

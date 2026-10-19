@@ -26,6 +26,11 @@
 // unchanged, so a PostgreSQL scratch database still needs an explicit
 // DB_SYNC_ALLOWED_DATABASES entry.
 //
+// Phase 10: db:sync deliberately has NO remote path at all — not even with
+// the remote approval gate (which migrate/admin-role/backup/restore honor).
+// Model-based sync is a local-development convenience; hosted schema comes
+// ONLY from the numbered migrations.
+//
 // Production schema changes are NOT possible through this script.
 
 const path = require("path");

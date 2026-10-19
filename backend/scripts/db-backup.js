@@ -42,6 +42,8 @@ const {
   isLoopbackHost,
   toMysql2Options
 } = require("../config/dbConnectionOptions");
+const { assertRemoteGateApproved } = require("./lib/remoteTargetGate");
+const { pgClientOptions } = require("./lib/pgClientOptions");
 
 const BACKUP_DIR = path.resolve(__dirname, "..", "backups");
 
@@ -234,14 +236,9 @@ async function describeTablePg(client, table) {
 
 async function buildPgDump(settings) {
   const { Client } = require("pg");
-  const client = new Client({
-    host: settings.host,
-    port: settings.port,
-    user: settings.username,
-    password: settings.password,
-    database: settings.database
-    // No SSL: this path is loopback-only by design.
-  });
+  // Phase 10: TLS threaded from the resolved settings (verification always on
+  // for hosted targets; loopback stays plaintext).
+  const client = new Client(pgClientOptions(settings));
   await client.connect();
 
   const dump = {
@@ -300,6 +297,13 @@ async function createBackup(options = {}) {
     if (explicitSettings) throw new Error(PG_ENV_ONLY);
     const settings = resolvePostgresSettings();
     assertBackupTargetAllowed(settings, flags, "PG_DB");
+    // Phase 10: for a POSTGRESQL target, --allow-remote alone is no longer
+    // sufficient — the full remote approval gate must pass too (throws a
+    // credential-free, refusal-flagged error BEFORE any connection). The
+    // MySQL path keeps its exact --allow-remote behavior, unchanged.
+    if (!isLoopbackHost(settings.host)) {
+      assertRemoteGateApproved({ scriptLabel: "db:backup", settings, flags });
+    }
     database = settings.database;
     dump = await buildPgDump(settings);
   } else {
@@ -331,7 +335,14 @@ async function main() {
   } catch (err) {
     if (err.refusedRemote) {
       console.error(`❌ REFUSED: ${err.message}`);
-      console.error("   Pass --allow-remote only when you intend to back up a hosted database.");
+      if (err.remoteGate) {
+        // Phase 10 gate failure — print every (credential-free) reason.
+        for (const reason of err.remoteGateReasons || []) console.error(`   - ${reason}`);
+        console.error("   A PostgreSQL remote backup needs BOTH --allow-remote AND every approval gate condition");
+        console.error("   (docs/migration-remote.md).");
+      } else {
+        console.error("   Pass --allow-remote only when you intend to back up a hosted database.");
+      }
       process.exit(1);
     }
     throw err;

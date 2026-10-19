@@ -162,7 +162,7 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
 
   // ------------------------------------------------------------------ tests
 
-  it("admin:role CLI guards apply to the PostgreSQL path (flag, allowlist, loopback)", async () => {
+  it("admin:role CLI guards apply to the PostgreSQL path (flag, allowlist, remote gate)", async () => {
     const noFlag = await runCli("scripts/admin-role.js", ["--list"], {
       DB_ADMIN_ALLOWED_DATABASES: helpers.TEST_DB_NAME
     });
@@ -175,12 +175,22 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
     assert.equal(notAllowed.code, 1);
     assert.match(notAllowed.stderr, /is not in DB_ADMIN_ALLOWED_DATABASES/);
 
+    // Phase 10: a non-loopback host now refuses through the REMOTE APPROVAL
+    // GATE (strict superset of the old "not loopback" refusal) — still before
+    // any connection is attempted.
     const remote = await runCli("scripts/admin-role.js", ["--list", "--confirm-local"], {
       DB_ADMIN_ALLOWED_DATABASES: helpers.TEST_DB_NAME,
       PG_HOST: "10.255.255.1"
     });
     assert.equal(remote.code, 1);
-    assert.match(remote.stderr, /not loopback/);
+    assert.match(remote.stderr, /REFUSED:/);
+    assert.match(remote.stderr, /PG_REMOTE_MIGRATION_APPROVED/);
+    assert.match(remote.stderr, /migration-remote\.md/);
+    assert.doesNotMatch(
+      remote.stderr,
+      /ECONNREFUSED|getaddrinfo|ENOTFOUND|timed out/i,
+      "refusal must happen before any connection attempt"
+    );
   });
 
   it("admin:role CLI grants, lists and revokes end-to-end on PostgreSQL (audit line)", async () => {
