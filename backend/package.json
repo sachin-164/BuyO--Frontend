@@ -45,7 +45,9 @@
     "sequelize": "^6.37.3"
   },
   "devDependencies": {
-    "@embedded-postgres/windows-x64": "^18.4.0-beta.17",
     "embedded-postgres": "^18.4.0-beta.17"
+  },
+  "optionalDependencies": {
+    "@embedded-postgres/windows-x64": "^18.4.0-beta.17"
   }
 }

@@ -24,17 +24,36 @@ test("package.json: pg is a production dependency; test tooling intact", () => {
   assert.ok(!pkg.devDependencies || !pkg.devDependencies.pg, "pg must not remain in devDependencies");
   assert.ok(pkg.dependencies.mysql2, "MySQL dependency preserved until cutover/rollback no longer needs it");
   assert.ok(pkg.devDependencies["embedded-postgres"], "embedded-postgres stays a devDependency");
-  assert.ok(pkg.devDependencies["@embedded-postgres/windows-x64"], "platform binary stays a devDependency");
+  // The win32 platform binary must be OPTIONAL, never a hard dev/prod
+  // dependency: a non-optional dep with "os": ["win32"] hard-fails every
+  // non-win32 install (npm EBADPLATFORM) — which is exactly how the Vercel
+  // linux/x64 builder died whenever a dev-inclusive `npm install` ran (the
+  // dashboard/redeploy path ignored the pinned installCommand). As an
+  // optionalDependency npm SKIPS it with a warning on other platforms, so
+  // `npm install` and `npm ci` now succeed everywhere; on Windows it still
+  // installs for the local PG test suites.
+  assert.ok(
+    pkg.optionalDependencies && pkg.optionalDependencies["@embedded-postgres/windows-x64"],
+    "win32 platform binary must be pinned in optionalDependencies (platform-tolerant installs)"
+  );
+  assert.ok(
+    !pkg.devDependencies || !pkg.devDependencies["@embedded-postgres/windows-x64"],
+    "win32 platform binary must not be a hard devDependency (EBADPLATFORM on linux builders)"
+  );
+  assert.ok(
+    !pkg.dependencies || !pkg.dependencies["@embedded-postgres/windows-x64"],
+    "win32 platform binary must not be a hard production dependency"
+  );
   assert.ok(!pkg.dependencies["embedded-postgres"], "test-only tooling must not ship to production");
 });
 
 test("vercel.json: builder install omits devDependencies (linux/x64)", () => {
-  // Vercel installs at the repo root and npm workspaces pull backend's
-  // devDependencies. @embedded-postgres/windows-x64 is win32-only and
-  // NON-optional, so a dev-inclusive install dies with EBADPLATFORM on the
-  // linux/x64 builder. Pinning the install to production deps only keeps the
-  // builder from ever resolving that package (production code never requires
-  // it — only the embedded-PG test suites do).
+  // Defense layer 1: Vercel installs at the repo root and npm workspaces pull
+  // backend's devDependencies, so pin the builder install to production deps
+  // only. Defense layer 2 (backend/package.json): the win32-only embedded-PG
+  // binary is an optionalDependency, so even a dev-inclusive `npm install`
+  // (the path the dashboard/redeploy builds actually took) skips it on
+  // non-win32 platforms instead of dying with EBADPLATFORM.
   const vercel = require("../../vercel.json");
   assert.ok(
     typeof vercel.installCommand === "string" && vercel.installCommand.includes("--omit=dev"),
