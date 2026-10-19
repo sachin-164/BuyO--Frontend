@@ -46,7 +46,7 @@ Phase 10 (remote-gate integration) added, all verified locally:
         |  CONFIG.API_URL resolved by js/config.js:
         |    production host -> same-origin "/api"  (override: window.BUYO_API_URL)
         v
-[Serverless API]    api/index.js -> backend/app.js createApp() (Vercel function)
+[Serverless API]    api/[...path].js -> backend/app.js createApp() (Vercel function)
         |                        |  product images: LOCAL DISK today -> Supabase
         v                        v    Storage at cutover (docs/storage-supabase.md)
 [Supabase PostgreSQL]   reached via DB_DIALECT=postgres + PG_* settings
@@ -117,7 +117,7 @@ variable needed for the same-origin design.
 | Area | Status | Detail |
 |---|---|---|
 | App factory | ✅ ready | `createApp()` (backend/app.js) is listen-free; `server.js` stays the long-running entry for local dev |
-| Candidate entry | ✅ prepared (unverified on Vercel) | `api/index.js` exports the handler; `vercel.json` rewrites `/api/:path*` → `/api`; `restoreApiPrefix()` normalizes full/stripped/function-name URL deliveries — unit + real-HTTP round-trip tested (`backend/test/deployReadiness.test.js`) |
+| Candidate entry | ✅ deployed (verified live) | `api/[...path].js` exports the handler as a Vercel catch-all function matching all `/api/*` (a plain `api/index.js` matches only the exact `/api/index` path — subpaths edge-404, verified live; the old rewrite could therefore never route); `restoreApiPrefix()` normalizes full/stripped/function-name URL deliveries — unit + real-HTTP round-trip tested (`backend/test/deployReadiness.test.js`) |
 | Auth statelessness | ✅ ready | Bearer JWT, no cookies/sessions; DB-backed role check per request |
 | Idempotency/stock | ✅ ready | DB row locks — multi-instance safe by design |
 | Body limits | ✅ ready | JSON 100 kB; 413/400 error paths tested |

@@ -8,7 +8,7 @@ const { resolveDialect, resolveSettings, getSequelizeOptions } = require("./dbCo
 //
 // Phase 9: NO connection is attempted at module load. Sequelize connects
 // lazily on first use — server.js authenticates explicitly at startup (with
-// real error handling), and the serverless entry (api/index.js) performs no
+// real error handling), and the serverless entry (api/[...path].js) performs no
 // database work at cold start until a request actually reaches a route that
 // needs the database.
 resolveDialect(); // validates DB_DIALECT at module load (throws on typos)

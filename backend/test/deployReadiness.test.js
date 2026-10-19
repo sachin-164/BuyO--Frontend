@@ -5,7 +5,9 @@
 //    PostgreSQL backend loads it at runtime); MySQL stays until the cutover
 //    and rollback plan no longer need it; the embedded-PostgreSQL test
 //    tooling stays a devDependency.
-// 2. api/index.js restoreApiPrefix(): the documented URL-normalization cases.
+// 2. api/[...path].js restoreApiPrefix(): the documented URL-normalization
+//    cases (the catch-all function delivers full /api/* paths; the other
+//    delivery forms stay supported).
 // 3. A REAL HTTP round trip through the candidate serverless handler — no
 //    Vercel involved, but the same entry function, proving stripped, full and
 //    function-name path deliveries all route correctly through the actual
@@ -61,7 +63,7 @@ test("vercel.json: builder install omits devDependencies (linux/x64)", () => {
   );
 });
 
-const handler = require("../../api/index.js");
+const handler = require("../../api/[...path].js");
 
 test("restoreApiPrefix: documented normalization cases", () => {
   const { restoreApiPrefix } = handler;
@@ -88,7 +90,7 @@ test("serverless handler round trip: stripped, full and function-name deliveries
   const app = await helpers.startTestApp();
   t.after(() => app.close());
 
-  // Our own HTTP server wrapping the SAME handler api/index.js exports.
+  // Our own HTTP server wrapping the SAME handler api/[...path].js exports.
   const server = http.createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));

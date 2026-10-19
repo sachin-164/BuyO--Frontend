@@ -1,18 +1,23 @@
-// api/index.js — CANDIDATE Vercel serverless entry (Phase 8 preparation).
+// api/[...path].js — CANDIDATE Vercel serverless entry (Phase 8 preparation).
 //
-// Status: PREPARATION ONLY. No Vercel project is linked to this file, nothing
-// has been deployed, and the exact URL-path behavior under Vercel rewrites
-// must be verified with a preview deployment in the (separately approved)
-// deploy phase — see docs/deployment.md.
+// Status: DEPLOYED as the production API entry on the `buyo-project` Vercel
+// project. The catch-all filename `[...path]` is required by Vercel's
+// zero-config routing: a plain `api/index.js` only matches the EXACT path
+// `/api/index` (subpaths like `/api/index/health` return an edge 404 —
+// verified live), while `api/[...path].js` natively matches every `/api/*`
+// request and delivers the FULL path to the handler. That made the old
+// `vercel.json` rewrite (`/api/:path*` → `/api/index/:path`) unable to route
+// any real endpoint; the rewrite was removed along with the rename.
 //
 // What this file does:
 //   - Boots the existing Express app (backend/app.js createApp()) WITHOUT
 //     server.js's listen()/signal handling — serverless owns the lifecycle.
 //   - Normalizes the incoming URL with restoreApiPrefix() so the app works
-//     whether the platform delivers the full path ("/api/products") or a
-//     stripped sub-path ("/products") or the function-name form
-//     ("/api/index/products"). Pure function, unit-tested in
-//     backend/test/deployReadiness.test.js together with a real HTTP round trip.
+//     whether the platform delivers the full path ("/api/products") — the
+//     form the catch-all delivers — or a stripped sub-path ("/products") or
+//     the legacy function-name form ("/api/index/products"). Pure function,
+//     unit-tested in backend/test/deployReadiness.test.js together with a
+//     real HTTP round trip.
 //   - Loads backend/.env for LOCAL previews only (vercel dev). In production
 //     the platform's environment variables are already set and dotenv never
 //     overrides existing values, so this is a no-op there.
