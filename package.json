@@ -1,0 +1,12 @@
+{
+  "name": "buyo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BuyO e-commerce - static frontend + serverless API entry (Vercel)",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "workspaces": [
+    "backend"
+  ]
+}
