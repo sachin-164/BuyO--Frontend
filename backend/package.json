@@ -15,7 +15,7 @@
     "db:restore": "node scripts/db-restore.js",
     "admin:role": "node scripts/admin-role.js",
     "test:user": "node scripts/test-user.js",
-    "test": "node --test --test-concurrency=1 test/auth.test.js test/security.test.js test/migrations.test.js test/catalog.test.js test/cartWishlist.test.js test/orders.test.js test/dialect.test.js",
+    "test": "node --test --test-concurrency=1 test/auth.test.js test/security.test.js test/migrations.test.js test/catalog.test.js test/cartWishlist.test.js test/orders.test.js test/dialect.test.js test/frontendConfig.test.js test/deployReadiness.test.js",
     "test:pg": "node --test --env-file=test/pg-smoke.env test/pgSmoke.test.js",
     "test:pg:catalog": "node test/pgSuite.js test/catalog.test.js",
     "test:pg:orders": "node test/pgSuite.js test/orders.test.js",
@@ -36,11 +36,11 @@
     "multer": "^2.4.0",
     "mysql2": "^3.9.7",
     "nodemailer": "^10.1.2",
+    "pg": "^8.23.1",
     "sequelize": "^6.37.3"
   },
   "devDependencies": {
     "@embedded-postgres/windows-x64": "^18.4.0-beta.17",
-    "embedded-postgres": "^18.4.0-beta.17",
-    "pg": "^8.23.1"
+    "embedded-postgres": "^18.4.0-beta.17"
   }
 }

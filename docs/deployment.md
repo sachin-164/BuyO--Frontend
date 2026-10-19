@@ -1,199 +1,214 @@
-# BuyO — Release & Deployment Plan (Phase 12)
+# BuyO — Deployment Plan (Phase 8): Vercel + Supabase
 
-Status: **PLAN ONLY — nothing has been pushed, created, migrated or deployed.**
-This document describes how to release the existing architecture (static frontend +
-Node/Express API + MySQL/Sequelize + local product-image uploads) without changing
-application behaviour. Every step that touches a hosted resource requires explicit
-approval first.
+Status: **PREPARATION ONLY — nothing has been deployed, no Vercel/Supabase
+project has been touched, no remote database has been contacted.** Every step
+that touches a hosted resource is marked with `*APPROVAL*` and requires your
+explicit go-ahead in a later, separately-approved phase.
 
-Cost figures are indicative (knowledge cutoff early 2026) — **verify current pricing
-on the provider's page before committing**.
+What this phase actually did (all verified locally, see §9):
+
+- audited the repo against a serverless + hosted-Postgres target (§4),
+- moved `pg` to production dependencies and proved a clean prod install (§3),
+- gave the frontend a safe, tested API-URL resolution (§5),
+- added a **candidate** Vercel serverless entry (`api/index.js`) + `vercel.json`
+  with real HTTP round-trip tests (§6) — not linked to any Vercel project,
+- inventoried every environment variable and the credential-rotation
+  checklist (`docs/environment-variables.md`),
+- designed the Supabase Storage path without creating anything (`docs/storage-supabase.md`),
+- replaced this stale Railway-era document with the real target plan.
 
 ---
 
-## 1. Architecture to deploy (unchanged)
+## 1. Target architecture
 
 ```
-[Static frontend]  plain HTML/CSS/JS, no build step (20 pages, js/, css/, assets/)
-        |  fetches CONFIG.API_URL (js/config.js — single place to change)
+[Static frontend]   plain HTML/CSS/JS at repo root — no build step (Vercel static)
+        |  CONFIG.API_URL resolved by js/config.js:
+        |    production host -> same-origin "/api"  (override: window.BUYO_API_URL)
         v
-[Node/Express API]  backend/  (npm start -> server.js; helmet, CORS, rate limits)
-        |                        |  writes/reads  backend/uploads/ (product images)
-        v                        v
-[Managed MySQL]            [Persistent disk mounted at backend/uploads]
+[Serverless API]    api/index.js -> backend/app.js createApp() (Vercel function)
+        |                        |  product images: LOCAL DISK today -> Supabase
+        v                        v    Storage at cutover (docs/storage-supabase.md)
+[Supabase PostgreSQL]   reached via DB_DIALECT=postgres + PG_* settings
+                        (TLS support still to be added — see §4 blocker B3)
 ```
 
-- Frontend and API may live on separate hosts (CORS already supports this via
-  `FRONTEND_URL` + `CORS_ALLOWED_ORIGINS`) or on one origin (simplest).
+- The live production website today is the Vercel deployment of the **`main`**
+  branch (old architecture). It does **not** contain `js/config.js`, `api/`,
+  or `vercel.json` (verified with `git ls-tree 220bdf0`) — nothing done on
+  `master` can affect it until an approved deployment from `master`.
+- Frontend and API share one origin in the target design (simplest CORS story:
+  none needed); a split-origin deployment stays possible via
+  `window.BUYO_API_URL` + `FRONTEND_URL`/`CORS_ALLOWED_ORIGINS`.
 - `backend/package-lock.json` is committed → reproducible installs (`npm ci`).
 
-## 2. Hosting options compared (indicative pricing — verify!)
+## 2. Environment variables
 
-| Option | Frontend | API | Uploads | MySQL | Est. monthly |
-|---|---|---|---|---|---|
-| **A. Railway (recommended for least ops)** | Static service or same service | Web service | Volume mount | Built-in MySQL add-on | ~$5–20 total (usage-based; $5 credit covers a small start) |
-| **B. Render + external MySQL** | Static site (free/cheap) | Web service starter | Render Disk (persistent) | **Render has no managed MySQL** — use Aiven / DigitalOcean / AWS RDS | ~$7 + disk + DB (~$15+) |
-| **C. Fly.io + external MySQL** | Fly app or static | Fly VM | Fly Volume | External only (Fly's managed DB is Postgres) | ~$5–15 + DB |
-| **D. Single VPS (Hetzner/DO)** | nginx on same box | Node via systemd | Local disk | Self-hosted mysqld | ~$5–12 predictable; most ops work |
-| Frontend-only hosts | Netlify / Vercel / GitHub Pages (free tiers) serve the frontend as-is | — | — | — | $0 |
+Names only — values never enter git, logs, or this document. The full
+inventory (purpose, required status, where each is configured) and the
+credential-rotation checklist live in **`docs/environment-variables.md`**.
 
-Notes:
-- **Option A** fits this stack best today: MySQL is first-class, volumes exist for
-  `backend/uploads`, HTTPS and domains are handled, and the repo deploys as two services.
-- **Option D** is cheapest/predictable and keeps the SSH-tunnel procedures in §5–§8
-  natural, but you own OS/DB patching and backups.
-- The in-memory rate limiter assumes **one API instance**. Multi-instance needs a
-  shared store (Redis) — deferred, not required for launch.
-- Idempotency, stock and cart correctness are DB-level (row locks) and are
-  multi-instance safe; only rate limiting is per-instance.
+Minimum the API needs in production: `NODE_ENV`, `JWT_SECRET` (≥32 chars,
+rotated — see checklist), `DB_DIALECT=postgres`, `PG_HOST`/`PG_PORT`/`PG_DB`/
+`PG_USER`/`PG_PASS`, `TRUST_PROXY=1` (Vercel terminates TLS at a proxy),
+`FRONTEND_URL`, `BACKEND_URL`, `CORS_ALLOWED_ORIGINS` (only if split-origin),
+`EMAIL_USER`/`EMAIL_PASS` (or `MAIL_TRANSPORT=json` dry-run first),
+plus `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` once Storage lands.
 
-## 3. Environment variables (names only — never commit values)
+Frontend: `js/config.js` resolves `CONFIG.API_URL` automatically (§5) — no
+variable needed for the same-origin design.
 
-Set in the platform's secret manager (or `.env` on a VPS). Never in git.
+## 3. Production dependency readiness (done)
 
-| Name | Where | Purpose / notes |
+- `pg` `^8.23.1` moved from `devDependencies` to `dependencies` (same tested
+  version); `mysql2` stays until cutover + rollback plan no longer need it;
+  `embedded-postgres` and its platform binary stay dev-only.
+- Lockfile regenerated with the repo's package manager (npm); diff is exactly
+  the `pg` tree losing its `dev` flags.
+- Verified with a clean production install: temp dir + `npm ci --omit=dev`
+  (exit 0) + `require('pg')` loads (8.23.1) + `embedded-postgres` absent.
+  Re-run any time:
+
+  ```bash
+  cd backend && npm ci --omit=dev && node -e "require('pg'); console.log('pg OK')"
+  ```
+
+## 4. Serverless readiness findings (candidate entry exists; blockers remain)
+
+| Area | Status | Detail |
 |---|---|---|
-| `NODE_ENV` | API | `production` in prod |
-| `PORT` | API | Platform usually injects its own; app honours it |
-| `JWT_SECRET` | API | ≥32 chars random hex. Rotating it logs everyone out |
-| `MYSQL_HOST` `MYSQL_PORT` `MYSQL_DB` `MYSQL_USER` `MYSQL_PASS` | API + scripts | Primary DB settings (Railway-style fallbacks `MYSQLHOST` etc. are auto-accepted) |
-| `MYSQL_SSL` | API + scripts | `true` for hosted DBs |
-| `MYSQL_SSL_REJECT_UNAUTHORIZED` | API + scripts | Leave **unset** in production (verification stays ON) |
-| `TRUST_PROXY` | API | Set `1` on Railway/Render/Fly (they terminate TLS at a proxy). Leave unset on a VPS serving directly |
-| `FRONTEND_URL` | API | Production storefront origin (no trailing slash) — verification/reset email links |
-| `BACKEND_URL` | API | Production API origin — verification redirect target |
-| `CORS_ALLOWED_ORIGINS` | API | Extra origins only if frontend != `FRONTEND_URL` origin |
-| `EMAIL_USER` `EMAIL_PASS` | API | SMTP account + App Password (see §6) |
-| `RATE_LIMIT_*` `RESET_TOKEN_TTL` | API | Optional overrides; defaults are fine |
-| `DB_MIGRATE_ALLOWED_DATABASES` etc. | Local tooling only | Used by the guarded local scripts (§5, §8) — not set on the platform |
+| App factory | ✅ ready | `createApp()` (backend/app.js) is listen-free; `server.js` stays the long-running entry for local dev |
+| Candidate entry | ✅ prepared (unverified on Vercel) | `api/index.js` exports the handler; `vercel.json` rewrites `/api/:path*` → `/api`; `restoreApiPrefix()` normalizes full/stripped/function-name URL deliveries — unit + real-HTTP round-trip tested (`backend/test/deployReadiness.test.js`) |
+| Auth statelessness | ✅ ready | Bearer JWT, no cookies/sessions; DB-backed role check per request |
+| Idempotency/stock | ✅ ready | DB row locks — multi-instance safe by design |
+| Body limits | ✅ ready | JSON 100 kB; 413/400 error paths tested |
+| Startup | ⚠️ note | `config/db.js` fires an `authenticate()` probe at module load; first request after a cold start pays the DB connect. Fail-fast if `JWT_SECRET` missing (desired in prod) |
+| Rate limiting | ⚠️ limitation | In-memory (per warm instance). Global limits are only reliable with a shared store (Redis/Upstash) — cutover decision, documented, unchanged |
+| Image uploads | ❌ blocker B1 | multer writes to `backend/uploads/` — **ephemeral on Vercel** (every deploy/restart loses files). Fix: Supabase Storage (`docs/storage-supabase.md`) |
+| Upload size | ❌ blocker B2 | multer allows 5 MB; Vercel request payload cap is ~4.5 MB — the admin upload endpoint cannot accept 5 MB files through a Vercel function. Fix arrives with B1 (smaller cap or client-direct upload) |
+| PG TLS | ❌ blocker B3 | The `PG_*` path is loopback-only today (no SSL options) — connecting to Supabase requires adding TLS support in `dbConnectionOptions.js` in the cutover phase |
+| Connection pooling | ⚠️ cutover config | Sequelize default pool per warm function instance; at cutover use the Supabase **pooler** (transaction mode) URL + conservative pool size. No code change needed now |
+| Health endpoint | ⚠️ gap | No `/api/health` route exists (server.js only logs). Optional small addition in the deploy phase for smoke tests |
+| Persistent state | ✅ none in-process | Nothing depends on in-memory state across requests except the rate limiter; no writable-path assumptions outside `uploads/` |
 
-Ignored / no-op (do not set): `ADMIN_EMAILS` (removed in P11), `MAIL_TRANSPORT=json|fail`
-(test-only behaviours), `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `DATABASE_URL`
-(see §9).
+**Honest limit:** local HTTP round trips prove the handler logic, not Vercel's
+rewrite/path behavior. The path semantics must be confirmed with a preview
+deployment in the deploy phase (`*APPROVAL*`), with fallback options listed in §8.
 
-Frontend: `js/config.js` → `CONFIG.API_URL` must point at the production API
-(`https://api.<your-domain>/api`). One line, one file.
+## 5. Frontend API URL configuration (done, tested)
 
-## 4. First deployment sequence (high level — needs your approval at each *)
+`js/config.js` now resolves `CONFIG.API_URL` in this order (pinned by
+`backend/test/frontendConfig.test.js`):
 
-1. Create the platform project + MySQL instance. *
-2. Set the §3 variables; upload `backend/uploads/` as an empty persistent dir/volume. *
-3. Apply migrations **from your machine through an SSH tunnel** (§5) — no remote
-   migration ever runs unattended. *
-4. Deploy backend (`npm ci && npm start`). Deploy frontend (static upload or repo
-   service); `CONFIG.API_URL` points at it. *
-5. Provision the first verified admin (§5), then run the §10 smoke test.
+1. `window.BUYO_API_URL` (non-empty string) — always wins. To point a deployed
+   frontend at a dedicated API host, add before the config.js script tag (or
+   inject via the platform):
+   `<script>window.BUYO_API_URL = "https://api.example.com/api";</script>`
+2. Local page (`localhost` / `127.0.0.1` / `[::1]` / `file://`) →
+   `http://localhost:5000/api` — byte-identical to the old hard-coded value.
+3. Any other host → same-origin `/api`. **A production page can never silently
+   fall back to localhost**, and the live site is unaffected because `main`
+   does not contain this file.
 
-## 5. Guarded remote operations — the SSH-tunnel pattern
+All existing API paths and the `js/api.js` client contract are unchanged.
+**This phase did not change any URL used by the current live website.**
 
-Every DB-touching script (`db:migrate`, `db:backup`, `db:restore`, `admin:role`)
-refuses non-loopback hosts, `NODE_ENV=production` and missing `--confirm-local`.
-That is deliberate. The sanctioned way to operate on a hosted DB **without weakening
-the guards** is to make it look local:
+## 6. Migration & backup prerequisites (Supabase)
+
+- Schema: apply the guarded PG migrations (`backend/migrations/*.pgsql`) to the
+  Supabase database from your machine through a tunnel/`psql`-style channel in
+  the approved cutover phase — never unattended. The runner refuses non-loopback
+  hosts, `NODE_ENV=production` and missing allowlists today; a sanctioned remote
+  path (tunnel pattern or an audited exception) must be designed before cutover.
+- Backups: Phase 7 gave us a tested PG logical backup/restore pair
+  (`npm run db:backup` / `db:restore`, format `buyo-pg-backup/1`) that works
+  against any loopback PG. For Supabase: enable PITR/automated backups first
+  (primary recovery), then run our logical backup periodically through the
+  tunnel as the portable secondary. Runbook: `docs/backup-restore.md`.
+- Images: `db:backup` covers paths, not files — the Storage migration script
+  (planned in `docs/storage-supabase.md`) must run before paths are rewritten.
+
+## 7. Storage (Supabase) — design only, nothing created
+
+Full design, validation matrix, bucket policy, URL scheme, failure handling
+and blockers: **`docs/storage-supabase.md`**. No bucket, no upload, no
+credentials, no adapter code in this phase — the adapter is implemented only
+after its phase is approved (it needs a chosen URL scheme + credentials to be
+testable for real).
+
+## 8. Deployment sequence (nothing below has been executed)
+
+1. **Cutover-preparation phase** *(separately approved)*: PG TLS support in
+   `dbConnectionOptions.js`, pool sizing, `/api/health`, a sanctioned remote
+   migration path, `pg` runtime already done (§3).
+2. **Supabase project** create + database provision. *\*APPROVAL\** — first
+   contact with Supabase; credentials then enter the platform secret manager only.
+3. Apply migrations to Supabase; seed nothing fake; provision the first admin
+   through the guarded path (`docs/admin-provisioning.md` pattern, adapted to
+   the sanctioned remote channel).
+4. **Storage**: create bucket + service-role key per `docs/storage-supabase.md`;
+   implement + test the adapter; migrate existing `backend/uploads/` files;
+   backfill image URLs. *\*APPROVAL\**
+5. **Vercel project**: link repo (root = repo root), set §2 env vars, deploy a
+   **preview**, verify: static pages load, `/api/*` reaches the function with
+   correct paths (the `restoreApiPrefix` assumptions), auth + CORS + upload
+   flow, `TRUST_PROXY=1` rate-limit behavior. *\*APPROVAL\**
+6. Frontend URL decision: keep same-origin `/api` (default) or set
+   `window.BUYO_API_URL`. Commit the final choice; never guess.
+7. Promote to production (domain, DNS). *\*APPROVAL\** — runs the §10 smoke test.
+8. Rollback (see below) if anything fails.
+
+## 9. Local verification commands (all green at this commit)
 
 ```bash
-# 1) Tunnel the hosted DB to localhost (example; adjust to your provider)
-ssh -N -L 3306:<db-host>:3306 user@bastion      # or provider CLI equivalent
-
-# 2) Run the guarded script from your machine, pointed at localhost
-MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_DB=<prod-db> MYSQL_USER=... MYSQL_PASS=... \
-  NODE_ENV= \   # must NOT be "production" in the tooling shell
-  npm run db:migrate -- --confirm-local
+cd backend
+npm test                # 138 tests: 137 pass, 1 skip (PG-only savepoint), MySQL + config/serverless suites
+npm run test:pg         # 5/5   (embedded-PG smoke)
+npm run test:pg:catalog # 18/18    npm run test:pg:orders   # 22/22
+npm run test:pg:auth    # 16/16    npm run test:pg:cart     # 15/15
+npm run test:pg:security# 20/20    npm run test:pg:migrations # 14/14
+npm run test:pg:tooling # 8/8
+npm ci --omit=dev && node -e "require('pg'); console.log('pg OK')"   # prod install check (§3)
+git ls-files .env backend/.env backend/.env.* | findstr .            # must print nothing
 ```
 
-- DB name must be listed in the matching allowlist env var.
-- Result: schema changes are explicit, local, reviewed commands — identical to dev.
-- **Admin provisioning:** `npm run admin:role -- --email you@example.com --role admin --confirm-local`
-  through the same tunnel, then log in once, verify the account, and confirm the
-  admin badge. Details + revocation: `docs/admin-provisioning.md`.
+Production build check: the frontend has no build step; the API's "build" is
+`npm ci --omit=dev` (§3). On Vercel, the function build happens at deploy time —
+verified in the preview step (§8.5), never claimed before it runs.
 
-## 6. SMTP without exposing credentials
+## 10. Production smoke-test checklist (post-deploy; none of it has been run)
 
-1. **Dry-run first (no credentials at all):** `MAIL_TRANSPORT=json` captures every
-   message into an in-memory outbox instead of sending. Start the API locally with
-   your production-like settings + `MAIL_TRANSPORT=json`, trigger signup/forgot-
-   password, and inspect the captured links (they will use your real
-   `FRONTEND_URL`/`BACKEND_URL`). Never printed to logs by the app; only visible to
-   the process owner.
-2. **First real send:** use a dedicated Gmail account with a **16-char App
-   Password** (`EMAIL_USER`/`EMAIL_PASS`) — never your login password. Send one
-   verification + one reset email to yourself.
-3. Later: a transactional provider (Resend/SendGrid/Mailgun) requires a small
-   `utils/mailer.js` change (service → host/port/auth). Deferred; tracked in §11.
-4. Never commit `.env`; on platforms use the secret manager. `backend/.env` is
-   git-ignored and the secret scan is part of the release checklist (§10).
+- [ ] Function boots, no config warnings; `GET /api/definitely-missing` returns the JSON 404 (proves `/api` routing)
+- [ ] Home/Products load real catalog data over HTTPS; no console errors; no localhost requests in the browser network panel
+- [ ] Signup → verification email arrives (correct `FRONTEND_URL`/`BACKEND_URL`) → verify → login works
+- [ ] Add to cart → COD checkout → order in customer history with totals+GST
+- [ ] Admin login → dashboard counts → order transitions; image upload → URL served → survives a redeploy (Storage, not disk)
+- [ ] Password reset → single-use token → old session invalidated
+- [ ] Authz matrix: 401/403/404 as designed; tampered JWT → 401; CORS rejects unknown origins
+- [ ] Rate limiting: auth 429 after the configured burst; `TRUST_PROXY=1` keeps per-client buckets
+- [ ] Supabase PITR enabled; our logical backup taken; restore-into-scratch drill passes row counts
+- [ ] `git ls-files` shows no `.env`; secret scan clean; rotation checklist items for cutover applied
 
-## 7. Persistent uploads (`backend/uploads/`)
+## 11. Rollback procedure
 
-- Local disk today, served by the API at `/uploads/*` (rate-limited, allowlisted
-  file types, magic-byte verified).
-- **On Railway/Render/Fly: attach a persistent volume/disk at `backend/uploads`.**
-  Without it, every redeploy **loses all product images** (DB rows keep the paths →
-  broken images). This is a launch blocker if you have real uploads.
-- Object storage (S3/R2/Cloudinary) is the scalable end-state but needs a code
-  change (upload target + URL prefix) — deferred with §11.
-- Include the volume in your backup story: `db:backup` covers paths, not files.
-  A periodic `tar` of the uploads dir into the same offsite location as DB backups
-  is the cheap baseline.
+- **Vercel**: instant rollback to the previous deployment from the project
+  dashboard (no git surgery, no force-push). The `main`-branch legacy site
+  stays untouched and deployable as a last resort.
+- **Database**: no destructive migration is ever applied unattended; rollback =
+  restore the pre-change logical backup into the database via
+  `docs/backup-restore.md`, or Supabase PITR to the pre-cutover timestamp.
+- **Config**: env-var changes are recorded in the deploy PR; reverting the
+  values + promoting the previous deployment restores behavior.
+- **Do not** rotate `JWT_SECRET` as a rollback step mid-incident (it logs every
+  user out); rotate only at planned cutovers.
 
-## 8. Backups & restore drills (production)
+## 12. Known blockers before production (carry into the cutover phase)
 
-1. **Provider snapshots:** enable the managed DB's automated backups/PITR where
-   offered. This is the primary recovery path.
-2. **Logical backup (our format):** schedule `npm run db:backup` weekly from a
-   trusted machine through the §5 tunnel (it refuses remote hosts unless
-   `--allow-remote` — prefer the tunnel). Copy the JSON out of `backend/backups/`
-   to offsite storage together with the uploads `tar`.
-3. **Restore drill (quarterly):** through the tunnel, restore the newest backup
-   into a **scratch** database (`buyoDB_restore_check` — the script refuses to
-   overwrite anything existing and verifies every row count), spot-check a few
-   rows, then drop it. Full manual: `docs/backup-restore.md`.
-4. Retention suggestion: 4 weekly + 1 monthly logical backups, 30 days provider PITR.
-
-## 9. Unused Supabase / database variable names — review only
-
-The local `backend/.env` contains three names that **no code reads** (verified by
-grep across the backend: zero references; config loading only reads `MYSQL_*` /
-Railway-style fallbacks):
-
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `DATABASE_URL`
-
-They are inert with this architecture. **Not deleted, not rotated by the assistant.**
-Recommended (your call): remove them from `.env` to shrink the secret surface, and if
-those keys were ever real, rotate them in the Supabase dashboard.
-
-## 10. Production smoke-test checklist (run after any deploy)
-
-- [ ] `GET /api/health`-equivalent: API boots, logs `✅ MySQL Connected`, no config warnings
-- [ ] Home + Products pages load real catalog data over HTTPS (no console errors)
-- [ ] Signup → verification email arrives → link verifies → login works
-- [ ] Add to cart → checkout (COD) → order appears in **customer** history with totals+GST
-- [ ] Admin login → dashboard counts correct (distinct order count!) → order transitions work
-- [ ] Product image upload → served back at `/uploads/...` → survives a redeploy (volume test)
-- [ ] Password reset email → token works once → old session invalidated → old token rejected
-- [ ] Anonymous/admin/customer authorization matrix: 401/403/404 as designed (no leaks)
-- [ ] `curl` an admin route with a customer token → 403; tampered JWT → 401
-- [ ] Rate limiting responds (auth: 429 after the configured burst)
-- [ ] Backup taken through tunnel; restore-into-scratch drill passes row counts
-- [ ] `.env` absent from git (`git ls-files backend/.env` → empty); secret scan clean
-
-## 11. Known blockers & deferred items
-
-**Blockers before a real-money launch:**
-1. Real SMTP account + App Password (§6) — signup currently cannot verify users without it.
-2. Persistent uploads volume (§7) if product images matter at launch.
-3. First admin provisioned through the tunnel (§5).
-4. Domain + HTTPS + `FRONTEND_URL`/`BACKEND_URL`/`CORS_ALLOWED_ORIGINS` set correctly.
-5. `CONFIG.API_URL` updated to the production API and the frontend re-uploaded.
-
-**Deferred (documented, intentionally not in this release):**
-- Transactional email provider integration (mailer.js change).
-- Object storage for uploads.
-- Redis-backed rate limiting for multi-instance.
-- Resend-verification endpoint; cart/wishlist composite unique index; bcrypt cost
-  bump; nodemon as a devDependency (`npm run dev` needs it installed locally —
-  production `npm start` does not).
-- `uuid` npm-audit moderates (unreachable path in Sequelize usage; the suggested
-  "fix" is a breaking downgrade).
+1. B1: product-image storage — local disk is ephemeral on Vercel (Storage adapter phase).
+2. B2: 5 MB multer limit vs ~4.5 MB Vercel payload cap (resolved together with B1).
+3. B3: PG TLS support missing in `dbConnectionOptions.js` (loopback-only today).
+4. Sanctioned remote-migration path for the guarded scripts (tunnel pattern or audited exception).
+5. Real SMTP credentials (JSON dry-run only so far) — or a transactional provider change.
+6. Credential rotation per `docs/environment-variables.md` (leaked legacy `JWT_SECRET`/`MONGO_URI` from old commit `962a229`).
+7. In-memory rate limiter → shared store if multi-instance (documented limitation, acceptable for a single-function start).
+8. Frontend URL choice (§8.6) must be committed before promoting production.
