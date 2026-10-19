@@ -117,7 +117,7 @@ variable needed for the same-origin design.
 | Area | Status | Detail |
 |---|---|---|
 | App factory | ✅ ready | `createApp()` (backend/app.js) is listen-free; `server.js` stays the long-running entry for local dev |
-| Candidate entry | ✅ deployed (verified live) | `api/[...path].js` exports the handler as a Vercel catch-all function matching all `/api/*` (a plain `api/index.js` matches only the exact `/api/index` path — subpaths edge-404, verified live; the old rewrite could therefore never route); `restoreApiPrefix()` normalizes full/stripped/function-name URL deliveries — unit + real-HTTP round-trip tested (`backend/test/deployReadiness.test.js`) |
+| Candidate entry | ✅ deployed (verified live) | `api/[...path].js` exports the handler as a Vercel catch-all function matching all `/api/*` (a plain `api/index.js` matches only the exact `/api/index` path — subpaths edge-404, verified live; the old rewrite could therefore never route); `restoreApiPrefix()` normalizes full/stripped/function-name URL deliveries — unit + real-HTTP round-trip tested (`backend/test/deployReadiness.test.js`); boot is read-only-FS tolerant (guarded uploads-dir mkdir — an unguarded one took the API down with FUNCTION_INVOCATION_FAILED on Vercel, live-verified + regression-tested) |
 | Auth statelessness | ✅ ready | Bearer JWT, no cookies/sessions; DB-backed role check per request |
 | Idempotency/stock | ✅ ready | DB row locks — multi-instance safe by design |
 | Body limits | ✅ ready | JSON 100 kB; 413/400 error paths tested |

@@ -28,9 +28,26 @@ const {
   resolveStorageConfig
 } = require("../lib/imageStore");
 
-// Ensure the uploads folder exists (multer would fail with ENOENT otherwise)
+// Ensure the uploads folder exists (multer would fail with ENOENT otherwise).
+// BOOT MUST NOT DEPEND ON A WRITABLE DISK: on serverless (Vercel) the
+// function file system is read-only outside /tmp and backend/uploads/ is
+// gitignored, so this mkdir threw EROFS at import there and took the WHOLE
+// API down (every /api/* invocation died with FUNCTION_INVOCATION_FAILED —
+// verified live; mechanism reproduced in
+// test/deployReadiness.test.js). If the folder cannot be created, boot
+// continues; only an actual local-disk upload fails later, with a handled
+// error — local-disk uploads are a documented serverless limitation
+// (docs/deployment.md; Supabase Storage activation plan in
+// docs/storage-supabase.md).
 const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+try {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+} catch (err) {
+  console.warn(
+    `[productRoutes] uploads dir not creatable (${err.code || "ERROR"}): ` +
+      "continuing without local-disk uploads (expected on read-only serverless filesystems)"
+  );
+}
 
 // Multer config (store files in /uploads with a server-generated name).
 // SECURITY (Phase 11): the stored filename NEVER contains the client-supplied

@@ -12,11 +12,18 @@
 //    Vercel involved, but the same entry function, proving stripped, full and
 //    function-name path deliveries all route correctly through the actual
 //    Express app (and that a public DB-backed route answers through it).
+// 4. The entry must boot on a READ-ONLY file system (serverless: only /tmp is
+//    writable). Live regression: a boot-time fs.mkdirSync for the gitignored
+//    uploads/ dir threw EROFS on Vercel and every /api/* invocation died with
+//    FUNCTION_INVOCATION_FAILED — the probe below reproduces that condition
+//    (all boot-time mkdir/write calls throw EROFS) and requires the real entry.
 //
 // Uses the standard scratch harness (helpers.js) — never the real buyoDB.
 const test = require("node:test");
 const assert = require("node:assert");
 const http = require("node:http");
+const path = require("node:path");
+const { spawnSync } = require("node:child_process");
 
 const helpers = require("./helpers"); // env must be in place before app modules
 
@@ -118,4 +125,40 @@ test("serverless handler round trip: stripped, full and function-name deliveries
   const catalog = await products.json();
   assert.equal(catalog.success, true);
   assert.ok(Array.isArray(catalog.products));
+});
+
+test("serverless entry boots on a read-only file system (no boot-time disk writes)", () => {
+  // Live regression guard — see the header note (4). On Vercel the function
+  // file system is read-only outside /tmp and backend/uploads/ is gitignored,
+  // so an unguarded boot-time fs.mkdirSync crashed the import chain and every
+  // /api/* request failed with FUNCTION_INVOCATION_FAILED (verified live).
+  // The probe makes ALL boot-time mkdir/writeFileSync calls throw EROFS and
+  // requires the real entry: it must still load.
+  const entry = path.join(__dirname, "..", "..", "api", "[...path].js");
+  const probe = `
+    const fs = require("node:fs");
+    const erofs = (op, p) => {
+      const e = new Error("EROFS: read-only file system, " + op + " " + p);
+      e.code = "EROFS";
+      throw e;
+    };
+    fs.mkdirSync = (p) => erofs("mkdir", p);
+    fs.writeFileSync = (p) => erofs("write", p);
+    process.env.JWT_SECRET = process.env.JWT_SECRET || "read-only-boot-probe";
+    require(${JSON.stringify(entry)});
+    process.stdout.write("BOOT_OK");
+  `;
+  const res = spawnSync(process.execPath, ["-e", probe], {
+    encoding: "utf8",
+    env: { ...process.env },
+    timeout: 30000,
+  });
+  assert.match(
+    res.stdout,
+    /BOOT_OK/,
+    "entry must import without a writable disk — stdout: " +
+      JSON.stringify(res.stdout) +
+      " stderr: " +
+      JSON.stringify(String(res.stderr).slice(0, 500))
+  );
 });
