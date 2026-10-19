@@ -1,4 +1,5 @@
 {
+  "installCommand": "npm ci --omit=dev",
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index/:path" }
   ]

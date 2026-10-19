@@ -93,6 +93,11 @@ variable needed for the same-origin design.
   `embedded-postgres` and its platform binary stay dev-only.
 - Lockfile regenerated with the repo's package manager (npm); diff is exactly
   the `pg` tree losing its `dev` flags.
+- Vercel enforces the same strategy: `vercel.json` pins `installCommand` to
+  `npm ci --omit=dev`. This keeps the builder's linux/x64 install from ever
+  touching the win32-only `@embedded-postgres/windows-x64` devDependency
+  (a default dev-inclusive install dies with `EBADPLATFORM` on Linux); the
+  pin stays a devDependency for the local Windows PG test suites.
 - Verified with a clean production install: temp dir + `npm ci --omit=dev`
   (exit 0) + `require('pg')` loads (8.23.1) + `embedded-postgres` absent.
   Re-run any time:

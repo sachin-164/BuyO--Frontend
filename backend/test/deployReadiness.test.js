@@ -28,6 +28,20 @@ test("package.json: pg is a production dependency; test tooling intact", () => {
   assert.ok(!pkg.dependencies["embedded-postgres"], "test-only tooling must not ship to production");
 });
 
+test("vercel.json: builder install omits devDependencies (linux/x64)", () => {
+  // Vercel installs at the repo root and npm workspaces pull backend's
+  // devDependencies. @embedded-postgres/windows-x64 is win32-only and
+  // NON-optional, so a dev-inclusive install dies with EBADPLATFORM on the
+  // linux/x64 builder. Pinning the install to production deps only keeps the
+  // builder from ever resolving that package (production code never requires
+  // it — only the embedded-PG test suites do).
+  const vercel = require("../../vercel.json");
+  assert.ok(
+    typeof vercel.installCommand === "string" && vercel.installCommand.includes("--omit=dev"),
+    "installCommand must omit devDependencies (EBADPLATFORM on linux for the win32-only embedded-PG binary)"
+  );
+});
+
 const handler = require("../../api/index.js");
 
 test("restoreApiPrefix: documented normalization cases", () => {
