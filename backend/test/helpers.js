@@ -5,6 +5,12 @@
 // name is forced to buyoDB_ph2_test (must end with _test, enforced below) and it
 // is dropped + recreated before each test run.
 //
+// DUAL-DIALECT (migration Phase 1): MySQL is the default. Setting
+// DB_DIALECT=postgres (see npm run test:pg) points the SAME harness at the
+// local PostgreSQL scratch database — same name, same _test enforcement, same
+// drop/recreate-per-run rule. The PostgreSQL path only ever talks to the
+// loopback scratch cluster started by test/pgSmoke.test.js.
+//
 // Requires helpers BEFORE any app module so the test environment is in place.
 
 const path = require("path");
@@ -27,9 +33,47 @@ process.env.RATE_LIMIT_AUTH_MAX = "100000";
 // Phase 11: the ADMIN_EMAILS fallback was removed; admin comes ONLY from
 // Users.role (granted in createAdminUser via the audited script path).
 
-const { resolveMysqlSettings } = require("../config/dbConnectionOptions");
+// Migration Phase 1: the PostgreSQL scratch target shares the same safety
+// rules. Set only when DB_DIALECT=postgres so MySQL runs are byte-identical
+// to before (an extra unset env var changes nothing for MySQL).
+if (String(process.env.DB_DIALECT || "").trim().toLowerCase() === "postgres") {
+  process.env.PG_DB = TEST_DB_NAME;
+}
+
+const {
+  resolveDialect,
+  resolveMysqlSettings,
+  resolvePostgresSettings
+} = require("../config/dbConnectionOptions");
 
 async function recreateTestDatabase() {
+  const dialect = resolveDialect();
+
+  if (dialect === "postgres") {
+    const settings = resolvePostgresSettings();
+    if (settings.database !== TEST_DB_NAME) {
+      throw new Error(`Refusing to run: expected test database "${TEST_DB_NAME}", got "${settings.database}"`);
+    }
+    // The `pg` driver refuses CREATE/DROP DATABASE inside a transaction, so no
+    // transaction wrapper here. Connected to the "postgres" maintenance DB.
+    const { Client } = require("pg");
+    const client = new Client({
+      host: settings.host,
+      port: settings.port,
+      user: settings.username,
+      password: settings.password,
+      database: "postgres"
+    });
+    await client.connect();
+    try {
+      await client.query(`DROP DATABASE IF EXISTS "${TEST_DB_NAME}"`);
+      await client.query(`CREATE DATABASE "${TEST_DB_NAME}"`);
+    } finally {
+      await client.end();
+    }
+    return;
+  }
+
   const settings = resolveMysqlSettings();
   if (settings.database !== TEST_DB_NAME) {
     throw new Error(`Refusing to run: expected test database "${TEST_DB_NAME}", got "${settings.database}"`);
