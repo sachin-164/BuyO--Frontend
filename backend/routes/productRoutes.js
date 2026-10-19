@@ -5,7 +5,6 @@ const express = require("express");
 const router = express.Router();
 const path = require("path");
 const fs = require("fs");
-const crypto = require("crypto");
 const multer = require("multer");
 const {
   addProduct,
@@ -18,6 +17,16 @@ const {
 const { requireAuth, requireAdmin } = require("../middleware/auth");
 const { validateBody, validateQuery } = require("../middleware/validate");
 const { isValidSlug } = require("../utils/slugify");
+// Phase 12: image constants + naming live in the storage adapter so the
+// multipart path and the direct-upload path can never drift apart.
+const {
+  ALLOWED_IMAGE_TYPES,
+  IMAGE_SIGNATURES,
+  DEFAULT_MAX_IMAGE_BYTES,
+  generateImageName,
+  getImageStore,
+  resolveStorageConfig
+} = require("../lib/imageStore");
 
 // Ensure the uploads folder exists (multer would fail with ENOENT otherwise)
 const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
@@ -29,37 +38,51 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // allowlisted image mimetype. Combined with the magic-byte check below, a file
 // that is not a real image can never land in /uploads (which is served
 // statically), closing the stored-content/extension-spoofing vector.
-const ALLOWED_IMAGE_TYPES = {
-  "image/jpeg": ".jpg",
-  "image/png": ".png",
-  "image/gif": ".gif",
-  "image/webp": ".webp"
-};
-
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => {
-    const ext = ALLOWED_IMAGE_TYPES[file.mimetype] || ".img";
-    cb(null, `${Date.now()}-${crypto.randomBytes(8).toString("hex")}${ext}`);
-  }
+  filename: (req, file, cb) => cb(null, generateImageName(file.mimetype))
 });
+
+// Size limit is configurable (MAX_IMAGE_BYTES, default = the historical 5 MB).
+// Read at require time; a config error surfaces on first storage use (503),
+// never as a boot crash.
+let multerMaxBytes = DEFAULT_MAX_IMAGE_BYTES;
+try {
+  multerMaxBytes = resolveStorageConfig().maxImageBytes;
+} catch {
+  // storage misconfiguration is handled lazily with a 503 (no disk fallback)
+}
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
+  limits: { fileSize: multerMaxBytes },
   fileFilter: (req, file, cb) => cb(null, Boolean(ALLOWED_IMAGE_TYPES[file.mimetype]))
 });
+
+// HOSTED STORAGE SAFETY (Phase 12): with STORAGE_DRIVER=supabase the multipart
+// path must never land image bytes on the ephemeral function disk. Files are
+// removed synchronously before the 409 — no silent local-disk fallback.
+function rejectMultipartWhenHosted(req, res, next) {
+  if (!req.file) return next();
+  let store;
+  try {
+    store = getImageStore();
+  } catch {
+    return res.status(503).json({ success: false, message: "Storage is not configured" });
+  }
+  if (store.driver === "local") return next();
+  fs.rmSync(req.file.path, { force: true });
+  return res.status(409).json({
+    success: false,
+    code: "multipart-disabled",
+    message:
+      "Hosted storage mode does not accept multipart image uploads; use the direct upload flow (POST /api/uploads/authorize)"
+  });
+}
 
 // Magic-byte verification (runs after multer stored the file): the first bytes
 // must match the declared image type, otherwise the file is deleted and the
 // request rejected with 400. Minimum discriminating prefixes are used so tiny
 // synthetic test fixtures (e.g. a 4-byte PNG header) still validate.
-const IMAGE_SIGNATURES = {
-  "image/png": (bytes) => bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47,
-  "image/jpeg": (bytes) => bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
-  "image/gif": (bytes) => bytes.length >= 4 && bytes.toString("ascii", 0, 4).startsWith("GIF8"),
-  "image/webp": (bytes) =>
-    bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP"
-};
 
 function verifyImageFile(req, res, next) {
   if (!req.file) return next();
@@ -169,6 +192,7 @@ router.post(
   requireAuth,
   requireAdmin,
   upload.single("image"),
+  rejectMultipartWhenHosted,
   verifyImageFile,
   validateBody(createProductSchema),
   addProduct

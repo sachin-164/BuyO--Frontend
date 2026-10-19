@@ -159,13 +159,17 @@ All existing API paths and the `js/api.js` client contract are unchanged.
 - Images: `db:backup` covers paths, not files — the Storage migration script
   (planned in `docs/storage-supabase.md`) must run before paths are rewritten.
 
-## 7. Storage (Supabase) — design only, nothing created
+## 7. Storage (Supabase) — adapter implemented, no bucket created (Phase 12)
 
 Full design, validation matrix, bucket policy, URL scheme, failure handling
-and blockers: **`docs/storage-supabase.md`**. No bucket, no upload, no
-credentials, no adapter code in this phase — the adapter is implemented only
-after its phase is approved (it needs a chosen URL scheme + credentials to be
-testable for real).
+and blockers: **`docs/storage-supabase.md`**; Phase 12 implementation record:
+**`docs/storage-phase12.md`**. As of Phase 12 the storage adapter, the
+direct-to-storage upload endpoints (`POST /api/uploads/authorize` + server-side
+verification before any product write) and the guarded migration utility
+(`npm run migrate:storage`) are implemented and tested against a MOCKED SDK —
+still no bucket, no upload, no remote contact. Remaining before cutover:
+create the bucket, configure `STORAGE_DRIVER=supabase` + credentials on the
+platform, and run the first real (sandbox) upload.
 
 ## 8. Deployment sequence (nothing below has been executed)
 

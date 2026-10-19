@@ -216,22 +216,42 @@
       if (isEdit) {
         res = await BuyOApi.put("/products/" + encodeURIComponent(productId), payload);
       } else if (payload._file) {
-        var fd = new FormData();
-        ["name", "category", "description", "mrpPrice", "sellingPrice", "stock", "slug", "image"].forEach(function (key) {
-          if (payload[key] !== undefined) fd.append(key, String(payload[key]));
-        });
-        if (payload.categoryId) fd.append("categoryId", String(payload.categoryId));
-        fd.append("image", payload._file);
-        res = await BuyOApi.post("/products", fd);
+        // Phase 12: hosted storage uses the direct-to-storage flow (authorize
+        // -> bytes straight to storage -> server verifies before saving). The
+        // server answers 409 code:"local-storage" in local mode, keeping this
+        // existing multipart path unchanged for development.
+        var upload = window.BuyOStorageUpload
+          ? await window.BuyOStorageUpload.uploadProductImage({
+              apiPost: function (p, body) { return BuyOApi.post(p, body); },
+              file: payload._file
+            })
+          : { mode: "multipart" }; // helper missing -> legacy path (local dev)
+        if (upload.mode === "error") {
+          U.toast(upload.message, { type: "error" });
+          return;
+        }
+        if (upload.mode === "direct") {
+          delete payload._file;
+          payload.image = upload.objectPath; // server verifies + stores the durable URL
+          res = await BuyOApi.post("/products", payload);
+        } else {
+          var fd = new FormData();
+          ["name", "category", "description", "mrpPrice", "sellingPrice", "stock", "slug", "image"].forEach(function (key) {
+            if (payload[key] !== undefined) fd.append(key, String(payload[key]));
+          });
+          if (payload.categoryId) fd.append("categoryId", String(payload.categoryId));
+          fd.append("image", payload._file);
+          res = await BuyOApi.post("/products", fd);
 
-        // multipart can't carry imageMeta JSON — follow up if alt text exists
-        if (res.ok && payload.imageMeta && res.data && res.data.product) {
-          var follow = await BuyOApi.put(
-            "/products/" + encodeURIComponent(res.data.product.id),
-            { imageMeta: payload.imageMeta }
-          );
-          if (!follow.ok) {
-            U.toast("Product saved, but the image description could not be stored.", { type: "info" });
+          // multipart can't carry imageMeta JSON — follow up if alt text exists
+          if (res.ok && payload.imageMeta && res.data && res.data.product) {
+            var follow = await BuyOApi.put(
+              "/products/" + encodeURIComponent(res.data.product.id),
+              { imageMeta: payload.imageMeta }
+            );
+            if (!follow.ok) {
+              U.toast("Product saved, but the image description could not be stored.", { type: "info" });
+            }
           }
         }
       } else {

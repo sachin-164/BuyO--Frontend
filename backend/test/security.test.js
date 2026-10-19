@@ -254,6 +254,42 @@ describe("Security hardening (headers, CORS, authz, validation, limits)", () => 
     assert.equal(json.product.image, "", "non-image part must not become the product image");
   });
 
+  // ---------------- Phase 12: storage driver behavior in LOCAL mode ----------------
+
+  it("storage (local mode): direct-upload authorize endpoint answers 409 code local-storage", async () => {
+    const res = await helpers.api(ctx.baseUrl, "/api/uploads/authorize", {
+      method: "POST",
+      body: { contentType: "image/png", size: 100 },
+      token: admin.token
+    });
+    assert.equal(res.status, 409, res.text);
+    assert.equal(res.json.code, "local-storage", "clients must fall back to multipart in local mode");
+  });
+
+  it("storage (local mode): /uploads/ string references are still accepted on create (compat)", async () => {
+    const res = await helpers.api(ctx.baseUrl, "/api/products", {
+      method: "POST",
+      body: { name: "Legacy Ref Lamp", category: "home", mrpPrice: 100, sellingPrice: 90, image: "/uploads/legacy-compat.png" },
+      token: admin.token
+    });
+    assert.equal(res.status, 201, res.text);
+    assert.equal(res.json.product.image, "/uploads/legacy-compat.png", "existing reference format must pass through unchanged");
+  });
+
+  it("storage (local mode): existing /uploads/ files are served statically", async () => {
+    const name = `compat-${Date.now()}.png`;
+    const file = path.join(__dirname, "..", "uploads", name);
+    fs.writeFileSync(file, Buffer.from([137, 80, 78, 71]));
+    try {
+      const res = await fetch(`${ctx.baseUrl}/uploads/${name}`);
+      assert.equal(res.status, 200);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      assert.deepEqual(bytes, Buffer.from([137, 80, 78, 71]));
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
   it("product validation rejects bad payloads with safe 400s", async () => {
     const cases = [
       [{ category: "x", mrpPrice: 10, sellingPrice: 5 }, "missing name"],

@@ -10,6 +10,9 @@ const Category = require("../models/category");
 const { resolveDialect } = require("../config/dbConnectionOptions");
 const { slugify, uniqueSlug } = require("../utils/slugify");
 const { uniqueConflictMessage } = require("../utils/uniqueErrors");
+// Phase 12: hosted-mode image verification (ledger + stored-object checks).
+// Local mode is a byte-identical passthrough inside this helper.
+const { resolveProductImageValue, bestEffortRemoveImage } = require("../lib/imageStore");
 
 const categoryInclude = [{ model: Category, as: "Category" }];
 
@@ -58,6 +61,9 @@ async function resolveCategoryFilter(param) {
 
 // ---------- Add Product (POST /api/products, admin-only; body pre-validated) ----------
 const addProduct = async (req, res) => {
+  // Set only after a direct upload passed verification — drives orphan
+  // compensation if the database write then fails.
+  let verifiedUploadPath = null;
   try {
     const { name, category, description, mrpPrice, sellingPrice, image, slug, stock, imageMeta, categoryId } = req.body;
 
@@ -101,13 +107,32 @@ const addProduct = async (req, res) => {
       productSlug = await uniqueSlug(Product, slugify(name), "product");
     }
 
+    // Hosted storage (Phase 12): resolve/verify the image LAST, immediately
+    // before the write — after every cheap validation (so a slug conflict
+    // never consumes the upload) and before the DB write (verify-then-save).
+    // Multipart uploads (req.file) skip this: their bytes are already on disk
+    // and magic-verified. Local mode resolves to a passthrough.
+    let resolvedImage = imageUrl;
+    if (!req.file) {
+      try {
+        const resolved = await resolveProductImageValue(imageUrl, req.user.id);
+        resolvedImage = resolved.value;
+        verifiedUploadPath = resolved.cleanupPath;
+      } catch (err) {
+        if (err.exposeToClient) {
+          return res.status(err.status).json({ success: false, message: err.publicMessage });
+        }
+        throw err;
+      }
+    }
+
     const product = await Product.create({
       name,
       category,
       description,
       mrpPrice,
       sellingPrice,
-      image: imageUrl,
+      image: resolvedImage,
       slug: productSlug,
       stock: stock === undefined ? 0 : stock,
       imageMeta: imageMeta === undefined ? null : imageMeta,
@@ -117,6 +142,9 @@ const addProduct = async (req, res) => {
     const withCategory = await Product.findByPk(product.id, { include: categoryInclude });
     res.status(201).json({ success: true, message: "✅ Product added successfully!", product: withCategory });
   } catch (error) {
+    // DB write failed after a direct upload was verified: best-effort remove
+    // the just-uploaded object so it cannot linger as an orphan.
+    if (verifiedUploadPath) await bestEffortRemoveImage(verifiedUploadPath);
     const conflict = uniqueConflictMessage(error, "product");
     if (conflict) return res.status(409).json({ success: false, message: conflict });
     console.error("❌ Error adding product:", error);
@@ -219,6 +247,9 @@ const getProduct = async (req, res) => {
 
 // ---------- Update Product (PUT /api/products/:id, admin-only; body pre-validated) ----------
 const updateProduct = async (req, res) => {
+  // Set only after a direct upload passed verification — drives orphan
+  // compensation if the database write then fails.
+  let verifiedUploadPath = null;
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
@@ -279,10 +310,30 @@ const updateProduct = async (req, res) => {
       updates.categoryId = matched ? matched.id : null;
     }
 
+    // Hosted storage (Phase 12): an image CHANGE must be a verified direct
+    // upload (or an external URL). Re-sending the product's current image
+    // value is a no-op and never consumes an authorization; local mode is a
+    // passthrough. Verification runs right before the write (verify-then-save).
+    if (has("image") && updates.image !== product.image) {
+      try {
+        const resolved = await resolveProductImageValue(updates.image || "", req.user.id);
+        updates.image = resolved.value;
+        verifiedUploadPath = resolved.cleanupPath;
+      } catch (err) {
+        if (err.exposeToClient) {
+          return res.status(err.status).json({ success: false, message: err.publicMessage });
+        }
+        throw err;
+      }
+    }
+
     await product.update(updates);
     const refreshed = await Product.findByPk(product.id, { include: categoryInclude });
     res.json({ success: true, message: "Product updated", product: refreshed });
   } catch (error) {
+    // DB write failed after a direct upload was verified: best-effort remove
+    // the just-uploaded object so it cannot linger as an orphan.
+    if (verifiedUploadPath) await bestEffortRemoveImage(verifiedUploadPath);
     const conflict = uniqueConflictMessage(error, "product");
     if (conflict) return res.status(409).json({ success: false, message: conflict });
     console.error("❌ Error updating product:", error);

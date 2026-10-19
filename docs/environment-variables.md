@@ -31,7 +31,11 @@ Related: `docs/deployment.md` (where each is set at deploy), `backend/.env.examp
 | `MAIL_TRANSPORT` | `json` = capture-only dry run; `fail` = forced failure | **No** (test-only) | `json` is the recommended no-credentials first verification |
 | `RESET_TOKEN_TTL` | Password-reset token lifetime | No | Default `30m` |
 | `RATE_LIMIT_GLOBAL_WINDOW_MS` `RATE_LIMIT_GLOBAL_MAX` `RATE_LIMIT_AUTH_WINDOW_MS` `RATE_LIMIT_AUTH_MAX` | Rate-limit tuning | No | Defaults 15 min / 300 and 15 min / 15 |
-| `SUPABASE_URL` `SUPABASE_SERVICE_ROLE_KEY` | Supabase Storage (planned, `docs/storage-supabase.md`) | At the Storage cutover | **No code reads them today**; service-role key is server-side only |
+| `STORAGE_DRIVER` | `local` (default off-hosted; existing `/uploads` disk) or `supabase` (direct-to-storage uploads) | **Yes at the Storage cutover** | Hosted envs (`VERCEL` or `NODE_ENV=production`) refuse to run without it — no silent ephemeral-disk fallback (Phase 12) |
+| `SUPABASE_URL` `SUPABASE_SERVICE_ROLE_KEY` | Supabase project URL + service-role key for Storage | With `STORAGE_DRIVER=supabase` | Read **only** when the supabase driver is selected; service-role key is server-side only, never in frontend code or responses (Phase 12) |
+| `SUPABASE_STORAGE_BUCKET` | Storage bucket name | No | Default `product-images` |
+| `MAX_IMAGE_BYTES` | Image size cap (multer limit + upload authorization) | No | Default 5 MB, clamp 1 KB–25 MB (Phase 12) |
+| `UPLOAD_AUTH_TTL_MS` | Lifetime of a single-use upload authorization | No | Default 10 min, clamp 1 s–1 h (Phase 12) |
 
 ## 2. Local tooling only (scripts/) — never set on a platform
 
@@ -44,6 +48,8 @@ Related: `docs/deployment.md` (where each is set at deploy), `backend/.env.examp
 | `DB_TEST_USER_ALLOWED_DATABASES` | `test:user` targets | `buyoDB` |
 | `PG_REMOTE_MIGRATION_APPROVED` | Remote approval token (must equal `phase-cutover-approval`); enforced by the CLI tools since Phase 10 | **unset = remote execution disabled** (runbook: `docs/migration-remote.md`) |
 | `PG_REMOTE_ALLOWED_HOSTS` `PG_REMOTE_ALLOWED_DATABASES` | Exact `host:port` / database allowlists for the remote gate (`db:migrate`, `admin:role`, `db:backup`+`--allow-remote`, `db-restore`) | empty = nothing approved |
+| `STORAGE_MIGRATION_APPROVED` | Storage-migration approval token (must equal `phase-cutover-approval`); required by `migrate:storage --apply` in addition to `--confirm-remote` + `--bucket` | **unset = apply disabled** (`docs/storage-supabase.md` §6) |
+| `STORAGE_MIGRATE_ALLOWED_DATABASES` | `migrate:storage` source-database allowlist | `buyoDB_ph12_storage` |
 | `TEST_USER_EMAIL` `TEST_USER_PASSWORD` | `test:user` CLI inputs | — |
 
 All guarded scripts additionally refuse: non-loopback hosts, `NODE_ENV=production`,
@@ -85,7 +91,7 @@ the local `.env` and the platform secret manager.**
    still provisioned with those credentials, rotate the password or delete
    the instance. The Node app has not used Mongo since the Sequelize rewrite.
 3. **Legacy `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` in the local
-   `backend/.env`** — inert (no code reads them), but they are live-shaped
+   `backend/.env`** — inert (no code reads them) until the Storage driver is selected — as of Phase 12 the backend DOES read them when `STORAGE_DRIVER=supabase` (and only then; the default remains local disk) — so they are still live-shaped
    secrets in a file on disk:
    - [ ] Decide: delete them from `.env` (recommended until the Storage phase)
          or — if they were ever real — rotate them in the Supabase dashboard.
