@@ -1,4 +1,4 @@
-# BuyO — Deployment Plan (Phase 8): Vercel + Supabase
+# BuyO — Deployment Plan (Phases 8–9): Vercel + Supabase
 
 Status: **PREPARATION ONLY — nothing has been deployed, no Vercel/Supabase
 project has been touched, no remote database has been contacted.** Every step
@@ -17,6 +17,15 @@ What this phase actually did (all verified locally, see §9):
 - designed the Supabase Storage path without creating anything (`docs/storage-supabase.md`),
 - replaced this stale Railway-era document with the real target plan.
 
+Phase 9 (production-readiness code) added, all verified locally:
+
+- PostgreSQL TLS (`PG_SSL`: automatic for non-loopback hosts, certificate
+  verification always on, no opt-out) + a small validated serverless pool,
+- no database work at module import / serverless cold start (import probe removed),
+- `GET /api/health` (liveness) and `GET /api/health/ready` (bounded DB check),
+- the tested remote-migration approval contract (`docs/migration-remote.md`) —
+  still disabled by default; every script remains loopback-only.
+
 ---
 
 ## 1. Target architecture
@@ -30,7 +39,8 @@ What this phase actually did (all verified locally, see §9):
         |                        |  product images: LOCAL DISK today -> Supabase
         v                        v    Storage at cutover (docs/storage-supabase.md)
 [Supabase PostgreSQL]   reached via DB_DIALECT=postgres + PG_* settings
-                        (TLS support still to be added — see §4 blocker B3)
+                        (app TLS + small pool ready since Phase 9; CLI
+                        scripts stay loopback-only — docs/migration-remote.md)
 ```
 
 - The live production website today is the Vercel deployment of the **`main`**
@@ -54,6 +64,13 @@ rotated — see checklist), `DB_DIALECT=postgres`, `PG_HOST`/`PG_PORT`/`PG_DB`/
 `FRONTEND_URL`, `BACKEND_URL`, `CORS_ALLOWED_ORIGINS` (only if split-origin),
 `EMAIL_USER`/`EMAIL_PASS` (or `MAIL_TRANSPORT=json` dry-run first),
 plus `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` once Storage lands.
+
+Phase 9 additions (all optional — defaults are production-sane): `PG_SSL`
+(unset = automatic: TLS with verification for non-loopback hosts, plaintext
+for loopback; `true`/`false` force a mode; no verification opt-out exists),
+`DB_POOL_MAX`/`DB_POOL_MIN`/`DB_POOL_IDLE_MS`/`DB_POOL_ACQUIRE_MS` (small
+serverless pool, PG path only), `HEALTH_DB_TIMEOUT_MS` (readiness probe
+bound, default 2000). Full list: `docs/environment-variables.md`.
 
 Frontend: `js/config.js` resolves `CONFIG.API_URL` automatically (§5) — no
 variable needed for the same-origin design.
@@ -82,12 +99,13 @@ variable needed for the same-origin design.
 | Auth statelessness | ✅ ready | Bearer JWT, no cookies/sessions; DB-backed role check per request |
 | Idempotency/stock | ✅ ready | DB row locks — multi-instance safe by design |
 | Body limits | ✅ ready | JSON 100 kB; 413/400 error paths tested |
-| Startup | ⚠️ note | `config/db.js` fires an `authenticate()` probe at module load; first request after a cold start pays the DB connect. Fail-fast if `JWT_SECRET` missing (desired in prod) |
+| Startup | ✅ ready (Phase 9) | No DB work at module import — the old fire-and-forget probe was removed; `server.js` authenticates explicitly at startup; fail-fast if `JWT_SECRET` missing (desired in prod) |
+| Health endpoints | ✅ prepared (Phase 9) | `GET /api/health` = liveness, no DB access; `GET /api/health/ready` = bounded `SELECT 1` (default 2 s via `HEALTH_DB_TIMEOUT_MS`), safe 503 with no internals; both behind the global limiter |
 | Rate limiting | ⚠️ limitation | In-memory (per warm instance). Global limits are only reliable with a shared store (Redis/Upstash) — cutover decision, documented, unchanged |
 | Image uploads | ❌ blocker B1 | multer writes to `backend/uploads/` — **ephemeral on Vercel** (every deploy/restart loses files). Fix: Supabase Storage (`docs/storage-supabase.md`) |
 | Upload size | ❌ blocker B2 | multer allows 5 MB; Vercel request payload cap is ~4.5 MB — the admin upload endpoint cannot accept 5 MB files through a Vercel function. Fix arrives with B1 (smaller cap or client-direct upload) |
-| PG TLS | ❌ blocker B3 | The `PG_*` path is loopback-only today (no SSL options) — connecting to Supabase requires adding TLS support in `dbConnectionOptions.js` in the cutover phase |
-| Connection pooling | ⚠️ cutover config | Sequelize default pool per warm function instance; at cutover use the Supabase **pooler** (transaction mode) URL + conservative pool size. No code change needed now |
+| PG TLS | ✅ prepared (Phase 9, app path) | `PG_SSL`: automatic TLS for non-loopback hosts, **verification always on — no opt-out knob exists**; loopback stays plaintext so embedded test clusters need no changes. CLI scripts remain loopback-only; their TLS wiring belongs to the cutover phase (`docs/migration-remote.md`) |
+| Connection pooling | ✅ prepared (Phase 9) | Small serverless pool on the PG path: `DB_POOL_MAX` default 2 (1–10), min 0, idle 10 s, acquire 30 s — strictly validated, refuses to boot on typos. MySQL keeps Sequelize's defaults byte-for-byte. At cutover use the Supabase **pooler** (transaction mode) |
 | Health endpoint | ⚠️ gap | No `/api/health` route exists (server.js only logs). Optional small addition in the deploy phase for smoke tests |
 | Persistent state | ✅ none in-process | Nothing depends on in-memory state across requests except the rate limiter; no writable-path assumptions outside `uploads/` |
 
@@ -118,8 +136,10 @@ All existing API paths and the `js/api.js` client contract are unchanged.
 - Schema: apply the guarded PG migrations (`backend/migrations/*.pgsql`) to the
   Supabase database from your machine through a tunnel/`psql`-style channel in
   the approved cutover phase — never unattended. The runner refuses non-loopback
-  hosts, `NODE_ENV=production` and missing allowlists today; a sanctioned remote
-  path (tunnel pattern or an audited exception) must be designed before cutover.
+  hosts, `NODE_ENV=production` and missing allowlists today. The future remote
+  approval contract (token + `--confirm-remote` + exact host:port/database
+  allowlists + a `DATABASE_URL` tripwire) is designed and test-pinned in
+  **`docs/migration-remote.md`** — wiring it in needs real project details.
 - Backups: Phase 7 gave us a tested PG logical backup/restore pair
   (`npm run db:backup` / `db:restore`, format `buyo-pg-backup/1`) that works
   against any loopback PG. For Supabase: enable PITR/automated backups first
@@ -138,9 +158,12 @@ testable for real).
 
 ## 8. Deployment sequence (nothing below has been executed)
 
-1. **Cutover-preparation phase** *(separately approved)*: PG TLS support in
-   `dbConnectionOptions.js`, pool sizing, `/api/health`, a sanctioned remote
-   migration path, `pg` runtime already done (§3).
+1. ~~Cutover-preparation phase~~ **done as Phase 9**: PG TLS (`PG_SSL`,
+   verification always on), small serverless pool, `/api/health` +
+   `/api/health/ready`, no DB work at cold start, remote-migration contract
+   (`docs/migration-remote.md`). Remaining before Supabase: wire the remote
+   gate + thread TLS through the CLI scripts (cutover phase — needs the real
+   target identity).
 2. **Supabase project** create + database provision. *\*APPROVAL\** — first
    contact with Supabase; credentials then enter the platform secret manager only.
 3. Apply migrations to Supabase; seed nothing fake; provision the first admin
@@ -162,7 +185,7 @@ testable for real).
 
 ```bash
 cd backend
-npm test                # 138 tests: 137 pass, 1 skip (PG-only savepoint), MySQL + config/serverless suites
+npm test                # 157 tests: 156 pass, 1 skip (PG-only savepoint), MySQL + config/serverless/health/TLS/gate suites
 npm run test:pg         # 5/5   (embedded-PG smoke)
 npm run test:pg:catalog # 18/18    npm run test:pg:orders   # 22/22
 npm run test:pg:auth    # 16/16    npm run test:pg:cart     # 15/15
@@ -178,7 +201,7 @@ verified in the preview step (§8.5), never claimed before it runs.
 
 ## 10. Production smoke-test checklist (post-deploy; none of it has been run)
 
-- [ ] Function boots, no config warnings; `GET /api/definitely-missing` returns the JSON 404 (proves `/api` routing)
+- [ ] Function boots, no config warnings; `GET /api/health` → `{success:true,status:"ok"}` (liveness, no DB); `GET /api/health/ready` → 200 only with the DB reachable (503 otherwise); `GET /api/definitely-missing` returns the JSON 404 (proves `/api` routing)
 - [ ] Home/Products load real catalog data over HTTPS; no console errors; no localhost requests in the browser network panel
 - [ ] Signup → verification email arrives (correct `FRONTEND_URL`/`BACKEND_URL`) → verify → login works
 - [ ] Add to cart → COD checkout → order in customer history with totals+GST
@@ -205,9 +228,9 @@ verified in the preview step (§8.5), never claimed before it runs.
 ## 12. Known blockers before production (carry into the cutover phase)
 
 1. B1: product-image storage — local disk is ephemeral on Vercel (Storage adapter phase).
-2. B2: 5 MB multer limit vs ~4.5 MB Vercel payload cap (resolved together with B1).
-3. B3: PG TLS support missing in `dbConnectionOptions.js` (loopback-only today).
-4. Sanctioned remote-migration path for the guarded scripts (tunnel pattern or audited exception).
+2. B2: upload path vs Vercel request limits — lowering multer's 5 MB cap alone fixes nothing (ephemeral disk remains, multipart overhead still counts toward the ~4.5 MB request cap, cold-start timeouts apply). The storage phase moves uploads direct-to-storage via signed URLs; see `docs/storage-supabase.md` §3.
+3. ~~B3: PG TLS missing~~ **resolved in Phase 9 for the app path** (`PG_SSL`, verification always on). Remaining: thread TLS through the four CLI scripts' `pg` clients (cutover phase).
+4. Remote migration remains **blocked by design**: the approval contract is designed + test-pinned (`docs/migration-remote.md`), but wiring it in requires the real target identity and the cutover phase's explicit approval. Until then every script stays loopback-only.
 5. Real SMTP credentials (JSON dry-run only so far) — or a transactional provider change.
 6. Credential rotation per `docs/environment-variables.md` (leaked legacy `JWT_SECRET`/`MONGO_URI` from old commit `962a229`).
 7. In-memory rate limiter → shared store if multi-instance (documented limitation, acceptable for a single-function start).

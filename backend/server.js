@@ -3,7 +3,8 @@ const dotenv = require("dotenv");
 dotenv.config(); // ✅ Load .env first
 
 const { createApp } = require("./app");
-const sequelize = require("./config/db"); // MySQL connection (Sequelize)
+const sequelize = require("./config/db"); // Dual-dialect connection (Sequelize)
+const { resolveDialect, resolveSettings } = require("./config/dbConnectionOptions");
 
 const app = createApp();
 
@@ -33,7 +34,8 @@ const startServer = async () => {
   try {
     // Test DB connection
     await sequelize.authenticate();
-    console.log(`✅ MySQL Connected to DB: ${process.env.MYSQL_DB}`);
+    const label = resolveDialect() === "postgres" ? "PostgreSQL" : "MySQL";
+    console.log(`✅ ${label} Connected to DB: ${resolveSettings().database}`);
 
     // Schema is managed explicitly — no implicit sync on boot.
     // Local dev:  npm run db:sync -- --confirm-local

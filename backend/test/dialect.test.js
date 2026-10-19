@@ -102,7 +102,8 @@ test("resolvePostgresSettings: PG_* mapping with 5432 default", () => {
     port: 5433,
     database: "buyoDB_ph2_test",
     username: "postgres",
-    password: "harness"
+    password: "harness",
+    ssl: false // Phase 9: loopback stays plaintext by default (auto rule)
   });
 });
 

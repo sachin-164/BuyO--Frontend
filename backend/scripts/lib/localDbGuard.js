@@ -39,6 +39,10 @@ function collectLocalGuardReasons({ flags, settings, allowed, allowedEnvVar }) {
 function refuseLocal(scriptLabel, usage, reasons) {
   console.error(`❌ REFUSED: ${scriptLabel} only runs against an explicitly confirmed LOCAL dev database.`);
   for (const reason of reasons) console.error(`   - ${reason}`);
+  if (reasons.some((reason) => reason.includes("not loopback"))) {
+    console.error("   Remote targets stay blocked: the future remote-migration path is a separate, explicitly");
+    console.error("   approved mechanism that is disabled by default (see docs/migration-remote.md).");
+  }
   console.error(`   Usage: ${usage}`);
   process.exit(1);
 }

@@ -14,10 +14,13 @@
 //
 // This module only RESOLVES settings — it never opens a connection.
 //
-// BOUNDARIES (migration Phase 1):
+// BOUNDARIES (migration Phase 1, extended Phase 9):
 //   - DATABASE_URL is intentionally NOT read anywhere in this file. Supabase
 //     connection settings arrive in a later, separately-approved phase.
-//   - The PostgreSQL path has NO SSL options yet: the harness is loopback-only.
+//   - PostgreSQL TLS (Phase 9): verification is always ON when TLS is used —
+//     there is deliberately NO knob to set rejectUnauthorized:false on this
+//     path. Unset PG_SSL = automatic (TLS for non-loopback hosts, none for
+//     loopback), so local embedded-PostgreSQL testing needs no changes.
 
 function firstDefined(...values) {
   for (const value of values) {
@@ -68,16 +71,65 @@ function resolveDialect(env = process.env) {
 
 // PostgreSQL settings for the local migration harness (only used when
 // DB_DIALECT=postgres). PG_* names mirror the MYSQL_* convention. DATABASE_URL
-// is deliberately NOT read here (Supabase arrives in a later approved phase),
-// and there is intentionally no SSL knob: this path is loopback-only.
+// is deliberately NOT read here (Supabase arrives in a later approved phase).
+// `ssl` is the resolved TLS decision (Phase 9, see resolvePgSslSetting).
 function resolvePostgresSettings(env = process.env) {
+  const host = firstDefined(env.PG_HOST, env.PGDBHOST, env.DB_HOST);
   return {
-    host: firstDefined(env.PG_HOST, env.PGDBHOST, env.DB_HOST),
+    host,
     port: Number(firstDefined(env.PG_PORT, env.PGDBPORT, env.DB_PORT, 5432)),
     database: firstDefined(env.PG_DB, env.PGDATABASE, env.DB_NAME),
     username: firstDefined(env.PG_USER, env.PGDBUSER, env.DB_USER),
-    password: firstDefined(env.PG_PASS, env.PGDBPASSWORD, env.DB_PASSWORD, "")
+    password: firstDefined(env.PG_PASS, env.PGDBPASSWORD, env.DB_PASSWORD, ""),
+    ssl: resolvePgSslSetting(host, env)
   };
+}
+
+// Phase 9: TLS decision for PostgreSQL.
+//   PG_SSL unset  -> automatic: TLS for any host that is NOT recognized
+//                    loopback (local dev + embedded test clusters stay
+//                    plaintext; hosted databases get TLS). An unrecognized
+//                    or missing host counts as hosted — fail secure.
+//   PG_SSL=true   -> force TLS even on loopback (e.g. a TLS-terminating
+//                    local tunnel).
+//   PG_SSL=false  -> explicitly disable TLS (e.g. a plaintext SSH tunnel).
+//   anything else -> throws: a typo must never silently pick a mode.
+// TLS always verifies certificates (rejectUnauthorized:true is hardcoded in
+// getSequelizeOptions) — there is intentionally no knob to weaken it.
+function resolvePgSslSetting(host, env = process.env) {
+  const raw = String(env.PG_SSL ?? "").trim().toLowerCase();
+  if (raw === "") return !isLoopbackHost(host);
+  if (raw === "true" || raw === "1" || raw === "yes") return true;
+  if (raw === "false" || raw === "0" || raw === "no") return false;
+  throw new Error(
+    `Unsupported PG_SSL value "${env.PG_SSL}" (expected true, false, or unset for automatic: TLS for non-loopback hosts)`
+  );
+}
+
+// Strict integer env reader: unset -> default; anything invalid throws with
+// the variable NAME (never a secret value — these are sizes/timeouts).
+function intFromEnvSetting(env, name, def, lo, hi) {
+  const raw = env[name];
+  if (raw === undefined || raw === null || String(raw).trim() === "") return def;
+  const value = Number(String(raw).trim());
+  if (!Number.isInteger(value) || value < lo || value > hi) {
+    throw new Error(`${name} must be an integer between ${lo} and ${hi} (got "${raw}")`);
+  }
+  return value;
+}
+
+// Phase 9: small, serverless-suitable Sequelize pool for the POSTGRES path
+// only (MySQL keeps Sequelize's defaults byte-for-byte — the existing test
+// configuration and behavior are preserved). Defaults suit a warm serverless
+// instance talking to a pooled (transaction-mode) hosted endpoint; every
+// value is env-tunable and strictly validated (DB_POOL_MIN is implicitly
+// capped at DB_POOL_MAX).
+function resolvePoolOptions(env = process.env) {
+  const max = intFromEnvSetting(env, "DB_POOL_MAX", 2, 1, 10);
+  const min = intFromEnvSetting(env, "DB_POOL_MIN", 0, 0, max);
+  const idle = intFromEnvSetting(env, "DB_POOL_IDLE_MS", 10000, 1000, 300000);
+  const acquire = intFromEnvSetting(env, "DB_POOL_ACQUIRE_MS", 30000, 1000, 300000);
+  return { max, min, idle, acquire };
 }
 
 // Convenience: settings for whichever dialect is selected.
@@ -104,12 +156,19 @@ function getSequelizeOptions(env = process.env) {
   const dialect = resolveDialect(env);
   if (dialect === "postgres") {
     const settings = resolvePostgresSettings(env);
-    return {
+    const options = {
       host: settings.host,
       port: settings.port,
       dialect: "postgres",
-      logging: false
+      logging: false,
+      // Small pool by default (Phase 9) — serverless-suitable, strictly validated.
+      pool: resolvePoolOptions(env)
     };
+    // TLS with certificate VERIFICATION, hardcoded — no opt-out exists (Phase 9).
+    if (settings.ssl) {
+      options.dialectOptions = { ssl: { rejectUnauthorized: true } };
+    }
+    return options;
   }
   const settings = resolveMysqlSettings(env);
   const options = {
@@ -149,6 +208,9 @@ module.exports = {
   resolveDialect,
   resolveMysqlSettings,
   resolvePostgresSettings,
+  resolvePgSslSetting,
+  resolvePoolOptions,
+  intFromEnvSetting,
   resolveSettings,
   isLoopbackHost,
   sslRejectUnauthorized,

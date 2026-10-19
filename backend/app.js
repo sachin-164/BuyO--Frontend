@@ -9,6 +9,7 @@ const { globalLimiter } = require("./middleware/rateLimiters");
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
 
 const authRoutes = require("./routes/authRoutes");
+const healthRoutes = require("./routes/healthRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const productRoutes = require("./routes/productRoutes");
 const cartRoutes = require("./routes/cartRoutes");
@@ -74,6 +75,7 @@ function createApp() {
   app.use("/api", globalLimiter);
 
   // Routes
+  app.use("/api/health", healthRoutes); // liveness + bounded DB readiness (Phase 9)
   app.use("/api/auth", authRoutes);
   app.use("/api/categories", categoryRoutes);
   app.use("/api/products", productRoutes);

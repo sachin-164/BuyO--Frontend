@@ -17,6 +17,9 @@ Related: `docs/deployment.md` (where each is set at deploy), `backend/.env.examp
 | `JWT_SECRET` | Signs/verifies all bearer tokens (access, verify, reset) | **Yes** — ≥32 random chars | **Rotate before production** — see §4. Startup warns if short |
 | `DB_DIALECT` | `mysql` (default, unset) or `postgres` | Yes for cutover: `postgres` | Anything else refuses to start |
 | `PG_HOST` `PG_PORT` `PG_DB` `PG_USER` `PG_PASS` | PostgreSQL connection (`DB_DIALECT=postgres` only) | **Yes** at cutover | Read instead of `MYSQL_*`; `DATABASE_URL` is deliberately never read |
+| `PG_SSL` | TLS for PostgreSQL. Unset = automatic (TLS for non-loopback hosts, plaintext loopback); `true`/`false` force a mode | Unset is fine (auto); explicit `true` also fine | **Verification is always on — no opt-out exists.** Invalid values refuse to start. Connect by hostname so certificate names match (Phase 9) |
+| `DB_POOL_MAX` `DB_POOL_MIN` `DB_POOL_IDLE_MS` `DB_POOL_ACQUIRE_MS` | Small serverless Sequelize pool (PG path only; MySQL keeps defaults) | No | Defaults 2 / 0 / 10000 / 30000; strictly validated, invalid values refuse to start (Phase 9) |
+| `HEALTH_DB_TIMEOUT_MS` | Timeout for the `/api/health/ready` database probe | No | Default 2000, range 100–30000 (Phase 9) |
 | `MYSQL_HOST` `MYSQL_PORT` `MYSQL_DB` `MYSQL_USER` `MYSQL_PASS` | MySQL connection (default dialect) | Until cutover completes | Railway-style fallbacks auto-accepted: `MYSQLHOST` `MYSQLPORT` `MYSQLDATABASE` `MYSQLUSER` `MYSQLPASSWORD`; also `DB_HOST`-style generic fallbacks |
 | `MYSQL_SSL` | Enable TLS for hosted MySQL | Hosted MySQL only | Verification is ON by default |
 | `MYSQL_SSL_REJECT_UNAUTHORIZED` | Disable TLS verification (self-signed local certs) | **Never in production** | Opt-in local exception only |
@@ -39,6 +42,8 @@ Related: `docs/deployment.md` (where each is set at deploy), `backend/.env.examp
 | `DB_ADMIN_ALLOWED_DATABASES` | `admin:role` targets | `buyoDB` |
 | `DB_RESTORE_ALLOWED_DATABASES` | extra `db:restore` targets | scratch names `buyoDB_*` work by default |
 | `DB_TEST_USER_ALLOWED_DATABASES` | `test:user` targets | `buyoDB` |
+| `PG_REMOTE_MIGRATION_APPROVED` | Future remote-migration approval token (must equal `phase-cutover-approval`) | **unset = remote migration disabled** (contract: `docs/migration-remote.md`) |
+| `PG_REMOTE_ALLOWED_HOSTS` `PG_REMOTE_ALLOWED_DATABASES` | Future exact `host:port` / database allowlists for the remote-migration gate | empty = nothing approved |
 | `TEST_USER_EMAIL` `TEST_USER_PASSWORD` | `test:user` CLI inputs | — |
 
 All guarded scripts additionally refuse: non-loopback hosts, `NODE_ENV=production`,

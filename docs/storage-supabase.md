@@ -60,8 +60,18 @@ New module **`backend/lib/imageStore.js`** with a tiny interface, chosen by env:
   is `products/<generated-name>` (one flat, collision-free prefix).
 - Size: production cap lowered to **4 MB** (under Vercel's ~4.5 MB payload
   cap) — a deliberate policy change to document in the adapter PR; the error
-  message updates with it. Alternative for later: client-direct upload via a
-  signed URL (admin-only flow) to lift the cap entirely.
+  message updates with it. **Lowering the multer cap alone is NOT a fix** —
+  it addresses only one of three independent limits: (a) Vercel's ~4.5 MB
+  cap counts the *entire request*, so multipart boundaries/fields eat into
+  it and a "4.5 MB" cap would still fail near the ceiling; (b) uploaded bytes
+  would still land on **ephemeral disk** (B1) — gone on every restart/redeploy;
+  (c) proxying every image through a function adds cold-start latency and
+  function-duration cost. The durable answer for the storage phase is
+  **direct-to-storage uploads**: the admin client requests a short-lived
+  signed upload URL from the API (auth-checked), PUTs the file straight to
+  Supabase Storage (no function payload limit applies), then confirms with
+  the API, which verifies the object metadata and writes the DB row. The
+  4 MB proxy cap remains only as the interim/dev-compatible path.
 - `PUT /:id` multipart support stays future work (unchanged this phase).
 
 ## 4. Bucket, access policy & credentials
