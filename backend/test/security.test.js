@@ -105,11 +105,26 @@ describe("Security hardening (headers, CORS, authz, validation, limits)", () => 
 
   it("DB-backed admin role grants/revokes API access (no ADMIN_EMAILS needed)", async () => {
     const { applyRoleChange } = require("../scripts/admin-role");
-    const { resolveMysqlSettings } = require("../config/dbConnectionOptions");
+    const { resolveMysqlSettings, resolveDialect } = require("../config/dbConnectionOptions");
     const settings = resolveMysqlSettings(); // points at the scratch test DB (helpers set it)
 
     const user = await helpers.createVerifiedUser(ctx.baseUrl);
     const payload = { name: "Role Lamp", category: "home", mrpPrice: 100, sellingPrice: 90, description: "", image: "" };
+
+    // Grant through the same code path the audited CLI script uses (MySQL).
+    // Migration Phase 5: that script is raw-mysql2 and stays MySQL-only (tooling
+    // not migrated), so on PostgreSQL the test toggles the SAME DB-backed
+    // Users.role column through the model (same pattern as orders Phase 3) and
+    // returns the equivalent { changed, before } result — assertions identical.
+    const setRole = async (role) => {
+      if (resolveDialect() !== "postgres") {
+        return applyRoleChange({ settings, email: user.email, role });
+      }
+      const User = require("../models/user");
+      const row = await User.findOne({ where: { email: user.email } });
+      const [count] = await User.update({ role }, { where: { email: user.email } });
+      return { changed: count > 0, before: row ? row.role : null };
+    };
 
     const before = await helpers.api(ctx.baseUrl, "/api/products", { method: "POST", body: payload, token: user.token });
     assert.equal(before.status, 403, "fresh user must not be admin");
@@ -118,8 +133,7 @@ describe("Security hardening (headers, CORS, authz, validation, limits)", () => 
     assert.equal(meBefore.json.user.role, "customer");
     assert.equal(meBefore.json.user.isAdmin, false);
 
-    // Grant through the same code path the audited CLI script uses.
-    const grant = await applyRoleChange({ settings, email: user.email, role: "admin" });
+    const grant = await setRole("admin");
     assert.equal(grant.changed, true);
     assert.equal(grant.before, "customer");
 
@@ -133,7 +147,7 @@ describe("Security hardening (headers, CORS, authz, validation, limits)", () => 
     assert.equal(meAfter.json.user.isAdmin, true);
 
     // Revoke -> access is lost immediately (requireAuth reads the DB fresh per request).
-    const revoke = await applyRoleChange({ settings, email: user.email, role: "customer" });
+    const revoke = await setRole("customer");
     assert.equal(revoke.changed, true);
     const afterRevoke = await helpers.api(ctx.baseUrl, "/api/products", {
       method: "POST",

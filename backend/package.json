@@ -20,7 +20,8 @@
     "test:pg:catalog": "node test/pgSuite.js test/catalog.test.js",
     "test:pg:orders": "node test/pgSuite.js test/orders.test.js",
     "test:pg:auth": "node test/pgSuite.js test/auth.test.js",
-    "test:pg:cart": "node test/pgSuite.js test/cartWishlist.test.js"
+    "test:pg:cart": "node test/pgSuite.js test/cartWishlist.test.js",
+    "test:pg:security": "node test/pgSuite.js test/security.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
