@@ -14,6 +14,7 @@
     "db:backup": "node scripts/db-backup.js",
     "db:restore": "node scripts/db-restore.js",
     "admin:role": "node scripts/admin-role.js",
+    "migrate:data": "node scripts/migrate-data.js",
     "test:user": "node scripts/test-user.js",
     "test": "node --test --test-concurrency=1 test/auth.test.js test/security.test.js test/migrations.test.js test/catalog.test.js test/cartWishlist.test.js test/orders.test.js test/dialect.test.js test/frontendConfig.test.js test/deployReadiness.test.js test/pgRuntime.test.js test/health.test.js test/remoteMigrationGate.test.js test/remoteGateCli.test.js",
     "test:pg": "node --test --env-file=test/pg-smoke.env test/pgSmoke.test.js",
@@ -23,7 +24,8 @@
     "test:pg:cart": "node test/pgSuite.js test/cartWishlist.test.js",
     "test:pg:security": "node test/pgSuite.js test/security.test.js",
     "test:pg:migrations": "node test/pgSuite.js test/pgMigrations.test.js",
-    "test:pg:tooling": "node test/pgSuite.js test/pgTooling.test.js"
+    "test:pg:tooling": "node test/pgSuite.js test/pgTooling.test.js",
+    "test:pg:data": "node test/pgSuite.js test/dataMigration.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

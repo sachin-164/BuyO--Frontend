@@ -1,4 +1,4 @@
-# BuyO — Remote (Supabase) Migration: Gate, TLS and Sandbox-First Runbook (Phase 9 contract, Phase 10 integration)
+# BuyO — Remote (Supabase) Migration: Gate, TLS and Sandbox-First Runbook (Phase 9 contract, Phase 10 integration, Phase 11 prerequisites)
 
 Status: **the approval gate is INTEGRATED and TESTED; remote execution is
 still disabled by default.** Nothing in this document has ever been run
@@ -176,9 +176,10 @@ locally first. Never run these from CI; never unattended.
    not a backup — stop here.
 4. Also take/keep a fresh **MySQL** backup of the real data — it remains the
    rollback anchor (§5.8).
-5. Honest gap: these tools migrate **schema and tooling**, not rows. Moving
-   production data from MySQL to PostgreSQL is a separate, not-yet-designed
-   prerequisite of cutover — record it, do not improvise it here.
+5. Row movement has its own designed, tested path since Phase 11:
+   `npm run migrate:data` (local-only rehearsal, refusal-by-default — see
+   `docs/migration-data.md`). Running it against a hosted target still
+   requires the full approval gate of §2; nothing about that changed.
 
 ### 5.5 Apply and verify numbered migrations
 
@@ -243,7 +244,65 @@ users or passwords.
 4. Frontend/API URL switch is a cutover-phase decision — never done from a
    migration run.
 
-## 6. What is pinned by tests
+## 6. Supabase target prerequisites (confirm in the dashboard before the first connection)
+
+Nothing in this section may be guessed, and none of it was verified in
+Phase 11 — Phase 11 made **no Supabase connection**. Every item below must be
+read from the Supabase dashboard of the intended project and recorded (values
+without credentials) before any approved remote phase begins. Hostname, port
+and database name come from the dashboard only — never inferred from docs,
+examples or memory.
+
+1. **Correct project and region.** Project name + project ref + region
+   (e.g. the dashboard's Settings → General). Confirm the project ref matches
+   what `PG_HOST` will be set to; a wrong ref points at somebody else's
+   database, and the allowlists exist precisely to stop that.
+2. **Direct connection vs pooler — decide per use.**
+   - *Migrations / CLI tools / `db:backup` / `migrate:data`:* prefer the
+     **direct connection** (`:5432`) — one administrative session, no
+     pooler-specific semantics (transaction pooling can break session-level
+     assumptions such as advisory locks or `SET` state).
+   - *Serverless runtime (Vercel → Sequelize):* use the **pooled** endpoint
+     (session or transaction pooler, `:6543`) — many short-lived serverless
+     instances cannot hold direct connections.
+   - Record which endpoint is which from the dashboard; the two hostnames
+     differ and only the dashboard knows the mapping.
+3. **Supported connection method for this stack.** Confirm the dashboard's
+   connection string style maps onto `PG_HOST`/`PG_PORT`/`PG_DB`/`PG_USER`/
+   `PG_PASS` env names (the code never reads a URL). Confirm the region's
+   supported TLS mode (the code always verifies certificates —
+   `rejectUnauthorized: true` with no opt-out).
+4. **Emptiness / initialization safety.** Before first use, verify the
+   intended target schema is empty:
+   `SELECT count(*) FROM information_schema.tables WHERE table_schema='public';`
+   → must be `0` for a fresh target. If it is not, STOP: find out what is in
+   there (someone else's data? a previous partial run?) — never initialize
+   over unknown content. §5.2 covers creating an isolated sandbox instead.
+5. **Backup, restore and recovery options.** From the dashboard: automatic
+   backups (plan-dependent), point-in-time recovery (PITR) availability and
+   its window, manual backup/snapshot export, and how a restore is performed.
+   An approved remote phase must know the rollback story **before** writing
+   (§5.4) — if the plan has no backups, say so explicitly and decide whether
+   that is acceptable for a sandbox (usually yes) vs production (no).
+6. **Required database privileges.** The migration role needs at least:
+   schema create/drop in the target database, DDL + DML on all public tables,
+   sequence `setval` (Phase 11 resets sequences after preserving ids), and
+   `CREATE DATABASE`/`DROP DATABASE` if §5.2/§5.7 steps will be used —
+   Supabase's dashboard roles may or may not grant these depending on how the
+   sandbox is created. Record what the role can actually do; the runbook
+   adapts to reality, never the other way around.
+7. **Extension availability.** Check `pg_available_extensions` for anything
+   the schema or tooling needs (the current BuyO schema uses none beyond
+   defaults — verify rather than assume: `SELECT extname FROM pg_extension;`
+   on the target after initialization should show only what Supabase seeds).
+   If a future migration wants an extension, it arrives as a numbered
+   `.pgsql` file with the normal precheck/verify contract — never as an
+   ad-hoc dashboard click during a run.
+8. **No secrets in the record.** What gets written down is names, refs,
+   regions, ports, privilege lists and counts — passwords, connection strings
+   and API keys stay out of docs, commits and terminal history (§5.0).
+
+## 7. What is pinned by tests
 
 - Gate contract (11 refusal/allowance cases):
   `backend/test/remoteMigrationGate.test.js`
@@ -255,5 +314,8 @@ users or passwords.
 - Local loopback flows unchanged: `backend/test/pgMigrations.test.js`,
   `backend/test/pgTooling.test.js` (PG) and `backend/test/migrations.test.js`
   (MySQL)
+- Data-migration tool reuses the same guards (loopback+allowlist, gate for
+  non-loopback, `DATABASE_URL` never read) and the migration runner's hosted
+  refusal is re-proven: `backend/test/dataMigration.test.js` (Phase 11, 9)
 - Refusal output points here (`docs/migration-remote.md`) whenever a
   non-loopback host is detected.
