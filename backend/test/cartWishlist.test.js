@@ -114,6 +114,28 @@ describe("Cart & Wishlist APIs (Phase 5)", () => {
     assert.equal(second.json.items[0].lineTotal, 300);
   });
 
+  // Migration Phase 4: cart dedup has no unique index on (UserId, productId) —
+  // it relies on locking the user's row so concurrent adds serialize. This
+  // proves the row-lock discipline on both MySQL/InnoDB and PostgreSQL and
+  // that two racing adds produce exactly one line with the summed qty.
+  it("concurrent duplicate adds serialize into a single line (user-row lock)", async () => {
+    const user = await helpers.createVerifiedUser(ctx.baseUrl);
+    const p = await simpleProduct("Cart Concurrent", { stock: 10 });
+
+    const [a, b] = await Promise.all([
+      cartAdd(user.token, { productId: p.json.product.id, qty: 1 }),
+      cartAdd(user.token, { productId: p.json.product.id, qty: 2 })
+    ]);
+    assert.equal(a.status, 201, a.text);
+    assert.equal(b.status, 201, b.text);
+
+    const list = await cartGet(user.token);
+    assert.equal(list.status, 200, list.text);
+    assert.equal(list.json.count, 1, "concurrent adds must never create two lines");
+    assert.equal(list.json.items[0].qty, 3, "both adds must be counted exactly once");
+    assert.equal(list.json.items[0].lineTotal, 300);
+  });
+
   it("stock limits are enforced on add and on quantity update", async () => {
     const user = await helpers.createVerifiedUser(ctx.baseUrl);
     const p = await simpleProduct("Cart Stock", { stock: 3 });

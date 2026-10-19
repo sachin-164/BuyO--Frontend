@@ -101,6 +101,28 @@ describe("Auth regression (signup / verify / login / password reset)", () => {
     assert.equal(res.json.message, "User already exists");
   });
 
+  // Migration Phase 4: validation normalises every email to lowercase, which is
+  // what makes duplicate detection and login behave identically on MySQL
+  // (case-insensitive collation) and PostgreSQL (case-sensitive unique index).
+  // Without that normalisation PG would silently create a second account for a
+  // differently-cased signup.
+  it("signup and login normalise email case (duplicate check on case-sensitive DBs)", async () => {
+    const user = await helpers.createVerifiedUser(ctx.baseUrl);
+
+    const dup = await helpers.api(ctx.baseUrl, "/api/auth/signup", {
+      method: "POST",
+      body: { name: "Case Dup", email: user.email.toUpperCase(), password: "Password123!" }
+    });
+    assert.equal(dup.status, 400, dup.text);
+    assert.equal(dup.json.message, "User already exists");
+
+    const login = await helpers.api(ctx.baseUrl, "/api/auth/login", {
+      method: "POST",
+      body: { email: user.email.toUpperCase(), password: user.password }
+    });
+    assert.equal(login.status, 200, login.text);
+  });
+
   it("verify: valid token marks the user verified and login then works", async () => {
     const email = helpers.uniqueEmail("verify");
     helpers.clearOutbox();
