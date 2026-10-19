@@ -6,6 +6,12 @@ schema, or email-verification behaviour for anyone else.
 
 Script: `backend/scripts/test-user.js` (run via `npm run test:user`).
 
+**Dialect scope (Migration Phase 7):** this script is intentionally
+**MySQL-only** — it targets the local MySQL dev database workflow and was not
+ported to PostgreSQL (its guards are unchanged; see the tool matrix in
+[migration-phase7.md](migration-phase7.md)). The dual-dialect local tools are
+`db:migrate`, `db:sync`, `db:backup`, `db:restore` and `admin:role`.
+
 ## What it does (and does not do)
 
 - Creates ONE account in the **existing** `Users` table with the **same**

@@ -206,10 +206,10 @@ async function createAdminUser(baseUrl) {
   // Admin comes from the DB role only (ADMIN_EMAILS fallback removed in
   // Phase 11) — grant it through the same audited path the CLI script uses.
   if (resolveDialect() === "postgres") {
-    // Migration Phase 2: the audited CLI script (scripts/admin-role.js) uses
-    // raw mysql2 and stays MySQL-only until the tooling phase. For the local
-    // PG scratch harness, grant the role through the model instead — same
-    // source of truth (Users.role), same scratch database, no CLI involved.
+    // Migration Phase 7 made scripts/admin-role.js dialect-aware, but the
+    // harness keeps granting via the model: same source of truth
+    // (Users.role), same scratch database, no extra connection — the CLI's
+    // PG path is pinned directly by test/pgTooling.test.js.
     const User = require("../models/user");
     const [count] = await User.update({ role: "admin" }, { where: { email: admin.email } });
     if (!count) throw new Error("failed to grant admin role in the test database");

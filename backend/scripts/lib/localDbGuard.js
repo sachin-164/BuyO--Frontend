@@ -10,7 +10,7 @@
 //
 // Refusals happen BEFORE any connection is made — no accidental remote contact.
 
-const { isLoopbackHost } = require("../../config/dbConnectionOptions");
+const { isLoopbackHost, resolveDialect } = require("../../config/dbConnectionOptions");
 
 function getAllowedDatabases(envVarName, defaults = []) {
   const raw = String(process.env[envVarName] || "").trim();
@@ -26,8 +26,12 @@ function collectLocalGuardReasons({ flags, settings, allowed, allowedEnvVar }) {
   if (String(process.env.NODE_ENV || "").toLowerCase() === "production") reasons.push("NODE_ENV=production is set");
   if (!settings.host) reasons.push("no database host configured");
   else if (!isLoopbackHost(settings.host)) reasons.push(`host "${settings.host}" is not loopback (localhost/127.0.0.1/::1)`);
-  if (!settings.database) reasons.push("no database name configured (MYSQL_DB)");
-  else if (!allowed.includes(settings.database)) reasons.push(`database "${settings.database}" is not in ${allowedEnvVar} (${allowed.join(", ")})`);
+  if (!settings.database) {
+    // Message-only: name the env var of the ACTIVE dialect (identical text on
+    // MySQL — byte-identical guard output for every pre-Phase-7 test).
+    const dbEnv = resolveDialect() === "postgres" ? "PG_DB" : "MYSQL_DB";
+    reasons.push(`no database name configured (${dbEnv})`);
+  } else if (!allowed.includes(settings.database)) reasons.push(`database "${settings.database}" is not in ${allowedEnvVar} (${allowed.join(", ")})`);
 
   return reasons;
 }

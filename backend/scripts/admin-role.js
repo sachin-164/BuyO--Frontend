@@ -15,6 +15,10 @@
 //   1. --confirm-local flag passed          2. NODE_ENV is not "production"
 //   3. host is loopback                     4. database in DB_ADMIN_ALLOWED_DATABASES
 //
+// DUAL-DIALECT (Migration Phase 7): the guards are identical for both
+// databases; MySQL targets come from MYSQL_* env vars, PostgreSQL targets from
+// PG_* env vars (never DATABASE_URL, loopback-only, no SSL).
+//
 // Every change prints a timestamped audit line: BEFORE -> AFTER (database, email).
 
 const path = require("path");
@@ -22,14 +26,42 @@ const dotenv = require("dotenv");
 dotenv.config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 
 const mysql = require("mysql2/promise");
-const { resolveMysqlSettings, toMysql2Options } = require("../config/dbConnectionOptions");
+const {
+  resolveDialect,
+  resolveMysqlSettings,
+  resolvePostgresSettings,
+  toMysql2Options
+} = require("../config/dbConnectionOptions");
 const { getAllowedDatabases, collectLocalGuardReasons, refuseLocal } = require("./lib/localDbGuard");
 
 const VALID_ROLES = ["customer", "admin"];
 const DEFAULT_ALLOWED_DATABASES = ["buyoDB"];
 
+// Migration Phase 7: the PostgreSQL path resolves its target from PG_* env vars
+// only (same rule as the migration runner) — an explicit settings object is a
+// MySQL-path concept and must not be silently ignored on PG.
+const PG_ENV_ONLY =
+  "PostgreSQL admin:role resolves its target from PG_* environment variables only " +
+  "(DB_DIALECT=postgres); passing explicit settings is not supported on this path.";
+
 async function connect(settings) {
   return mysql.createConnection(toMysql2Options(settings));
+}
+
+// Migration Phase 7: raw `pg` connection for the PostgreSQL path. Loopback-only
+// by design — same boundary as the rest of the PG harness (no SSL, no
+// DATABASE_URL, no remote Supabase).
+function connectPg(database) {
+  const settings = resolvePostgresSettings();
+  const { Client } = require("pg");
+  return new Client({
+    host: settings.host,
+    port: settings.port,
+    user: settings.username,
+    password: settings.password,
+    database: database || settings.database
+    // No SSL: this path is loopback-only by design.
+  });
 }
 
 async function getUserByEmail(connection, email) {
@@ -41,13 +73,44 @@ async function getUserByEmail(connection, email) {
 }
 
 // Library entry point (used by tests and by main()). Throws on user-not-found.
-async function applyRoleChange({ settings = resolveMysqlSettings(), email, role }) {
+// MySQL keeps the exact pre-Phase-7 behavior (explicit `settings` honored);
+// PostgreSQL validates first, then reads its target from PG_* env vars only.
+async function applyRoleChange(options = {}) {
+  const { email, role } = options;
   if (!VALID_ROLES.includes(role)) {
     throw new Error(`Invalid role "${role}" — expected one of: ${VALID_ROLES.join(", ")}`);
   }
   const normalizedEmail = String(email || "").trim().toLowerCase();
   if (!normalizedEmail) throw new Error("A user email is required (--email).");
 
+  if (resolveDialect() === "postgres") {
+    if (options.settings) throw new Error(PG_ENV_ONLY);
+    const client = connectPg();
+    try {
+      await client.connect();
+      const { rows } = await client.query(
+        `SELECT id, email, "isVerified", role FROM "Users" WHERE email = $1 LIMIT 1`,
+        [normalizedEmail]
+      );
+      const user = rows[0] || null;
+      if (!user) throw new Error(`No user found with email "${normalizedEmail}".`);
+
+      const result = {
+        user: { id: user.id, email: user.email, isVerified: Boolean(user.isVerified) },
+        before: user.role,
+        after: role,
+        changed: user.role !== role
+      };
+      if (!result.changed) return result;
+
+      await client.query(`UPDATE "Users" SET role = $1 WHERE id = $2`, [role, user.id]);
+      return result;
+    } finally {
+      await client.end().catch(() => {});
+    }
+  }
+
+  const settings = options.settings ?? resolveMysqlSettings();
   const connection = await connect(settings);
   try {
     const user = await getUserByEmail(connection, normalizedEmail);
@@ -68,7 +131,22 @@ async function applyRoleChange({ settings = resolveMysqlSettings(), email, role 
   }
 }
 
-async function listAdmins({ settings = resolveMysqlSettings() }) {
+async function listAdmins(options = {}) {
+  if (resolveDialect() === "postgres") {
+    if (options.settings) throw new Error(PG_ENV_ONLY);
+    const client = connectPg();
+    try {
+      await client.connect();
+      const { rows } = await client.query(
+        `SELECT id, email, "isVerified" FROM "Users" WHERE role = 'admin' ORDER BY id`
+      );
+      return rows.map((row) => ({ id: row.id, email: row.email, isVerified: Boolean(row.isVerified) }));
+    } finally {
+      await client.end().catch(() => {});
+    }
+  }
+
+  const settings = options.settings ?? resolveMysqlSettings();
   const connection = await connect(settings);
   try {
     const [rows] = await connection.query(
@@ -88,7 +166,8 @@ function parseFlagValue(flags, name) {
 
 async function main() {
   const flags = new Set(process.argv.slice(2));
-  const settings = resolveMysqlSettings();
+  const dialect = resolveDialect();
+  const settings = dialect === "postgres" ? resolvePostgresSettings() : resolveMysqlSettings();
   const allowed = getAllowedDatabases("DB_ADMIN_ALLOWED_DATABASES", DEFAULT_ALLOWED_DATABASES);
 
   const reasons = collectLocalGuardReasons({
@@ -106,7 +185,9 @@ async function main() {
   }
 
   if (flags.has("--list")) {
-    const admins = await listAdmins({ settings });
+    // The PG library path refuses explicit settings (PG_* env only); MySQL
+    // keeps receiving the guard's resolved settings as before.
+    const admins = dialect === "postgres" ? await listAdmins() : await listAdmins({ settings });
     console.log(`Admins in "${settings.database}" (${admins.length}):`);
     for (const admin of admins) {
       console.log(`   ${admin.email}${admin.isVerified ? "" : "  ⚠️ not verified (cannot log in yet)"}`);
@@ -123,7 +204,10 @@ async function main() {
     process.exit(1);
   }
 
-  const result = await applyRoleChange({ settings, email, role });
+  const result =
+    dialect === "postgres"
+      ? await applyRoleChange({ email, role })
+      : await applyRoleChange({ settings, email, role });
   if (!result.changed) {
     console.log(`ℹ️  No change: ${result.user.email} already has role "${result.after}" (database: ${settings.database}).`);
     return;

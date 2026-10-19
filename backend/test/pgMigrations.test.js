@@ -20,15 +20,21 @@
 //      docs/migration-phase6.md)
 // Plus: CLI guards apply to the PG path, and the application keeps working
 // with the constraints present (cart double-add still yields ONE line).
+//
+// Migration Phase 7 additions: the CLI allowlist refusal on the PG path,
+// checksum tamper protection for applied .pgsql files, and the verify-refusal
+// path (an index with the migration's NAME but the wrong definition) with
+// full rollback + documented recovery.
 
 const { describe, it, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
+const fsp = require("node:fs/promises");
 const path = require("path");
 
 const helpers = require("./helpers");
-const { runMigrations } = require("../scripts/migrate");
+const { runMigrations, computeChecksum } = require("../scripts/migrate");
 
 // Models are required INSIDE before() (after startTestApp recreates the
 // scratch DB): config/db.js probes the connection at module load, and loading
@@ -131,7 +137,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
 
   // ------------------------------------------------------------------ tests
 
-  it("migrate CLI guards apply to the PostgreSQL path (flag + production refusals)", async () => {
+  it("migrate CLI guards apply to the PostgreSQL path (flag + production + loopback + allowlist)", async () => {
     const noFlag = await runCliMigrate([], { DB_MIGRATE_ALLOWED_DATABASES: helpers.TEST_DB_NAME });
     assert.equal(noFlag.code, 1);
     assert.match(noFlag.stderr, /missing --confirm-local flag/);
@@ -142,6 +148,16 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     });
     assert.equal(production.code, 1);
     assert.match(production.stderr, /NODE_ENV=production is set/);
+
+    const allowlist = await runCliMigrate(["--confirm-local"], {
+      DB_MIGRATE_ALLOWED_DATABASES: "some_other_database"
+    });
+    assert.equal(allowlist.code, 1);
+    assert.match(allowlist.stderr, /is not in DB_MIGRATE_ALLOWED_DATABASES/);
+    // This runs before any successful migration in the suite: a refused CLI
+    // run must not even create the bookkeeping table.
+    const present = await query(`SELECT to_regclass('schema_migrations') IS NOT NULL AS ok`);
+    assert.equal(present[0].ok, false, "a refused run must not touch the database");
   });
 
   it("fresh schema: migration creates all four unique indexes (sync alone does not)", async () => {
@@ -238,6 +254,63 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     const status = await runMigrations({ quiet: true, statusOnly: true });
     assert.deepEqual(status.pending, []);
     assert.equal(status.upToDate, true);
+  });
+
+  it("checksum protection refuses when an applied .pgsql file changed (no run, then recovers)", async () => {
+    // Tamper with the recorded checksum of an applied file — the runner must
+    // refuse BEFORE executing anything (same rule as the MySQL .sql files).
+    await query(
+      `UPDATE "schema_migrations" SET checksum = REPEAT('0', 64) WHERE id = '${PG_MIGRATIONS[0]}'`
+    );
+    await assert.rejects(runMigrations({ quiet: true }), /already-applied migration file\(s\) changed/);
+    // Nothing was applied or removed while refused.
+    assert.deepEqual(await appliedIds(), PG_MIGRATIONS, "a checksum refusal must not change bookkeeping");
+
+    // Documented fix: restore the real checksum (the file itself was never edited).
+    const content = await fsp.readFile(path.join(BACKEND_DIR, "migrations", PG_MIGRATIONS[0]), "utf8");
+    await query(
+      `UPDATE "schema_migrations" SET checksum = '${computeChecksum(content)}' WHERE id = '${PG_MIGRATIONS[0]}'`
+    );
+    const healthy = await runMigrations({ quiet: true });
+    assert.deepEqual(healthy.applied, [], "runner must be healthy again after the checksum is restored");
+  });
+
+  it("verify refuses a wrong same-name index: full rollback, untouched data, recovery after fix", async () => {
+    // Simulate the dangerous silent-failure case: an index with the migration's
+    // NAME but the WRONG definition (not unique, wrong columns) and no
+    // bookkeeping row for 005. The CREATE IF NOT EXISTS would be skipped, so
+    // only the `verify:` directive can catch this — it must abort + roll back.
+    await query(`DROP INDEX IF EXISTS "uq_cartitems_user_product"`);
+    await query(`CREATE INDEX uq_cartitems_user_product ON "CartItems" ("UserId")`);
+    await query(`DELETE FROM "schema_migrations" WHERE id = '${PG_MIGRATIONS[0]}'`);
+
+    const rowsBefore = await rowsSnapshot();
+
+    await assert.rejects(runMigrations({ quiet: true }), (err) => {
+      assert.match(err.message, /005_pg_cart_items_user_product_unique\.pgsql/);
+      assert.match(err.message, /verify failed/);
+      assert.match(err.message, /uq_cartitems_user_product/);
+      assert.match(err.message, /rolled back/);
+      return true;
+    });
+
+    // Rollback: bookkeeping keeps 006/007 only; the PRE-EXISTING wrong index
+    // is untouched (the skipped CREATE was rolled back, nothing else dropped).
+    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[1], PG_MIGRATIONS[2]]);
+    const wrong = await query(`SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_cartitems_user_product'`);
+    assert.equal(wrong.length, 1, "the pre-existing wrong index must survive the rollback");
+    assert.match(wrong[0].indexdef, /USING btree \("UserId"\)/, "must still be the wrong definition");
+    assert.deepEqual(await rowsSnapshot(), rowsBefore, "a verify failure must not change any row");
+
+    // Recovery (documented): remove the wrong index, re-run — the real one is created.
+    await query(`DROP INDEX "uq_cartitems_user_product"`);
+    const result = await runMigrations({ quiet: true });
+    assert.deepEqual(result.applied, [PG_MIGRATIONS[0]]);
+    const good = await query(`SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_cartitems_user_product'`);
+    assert.equal(good.length, 1);
+    assert.match(good[0].indexdef, /\("UserId", "productId"\)/, "the correct composite unique index must exist");
+    assert.ok(good[0].indexdef.startsWith("CREATE UNIQUE INDEX"), "the restored index must be UNIQUE");
+    assert.deepEqual(await appliedIds(), PG_MIGRATIONS.slice().sort(), "state fully healed for the following tests");
   });
 
   it("pre-existing cart duplicates: clear failure, NO data change, NO index, NO bookkeeping row", async () => {

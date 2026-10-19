@@ -22,7 +22,8 @@
     "test:pg:auth": "node test/pgSuite.js test/auth.test.js",
     "test:pg:cart": "node test/pgSuite.js test/cartWishlist.test.js",
     "test:pg:security": "node test/pgSuite.js test/security.test.js",
-    "test:pg:migrations": "node test/pgSuite.js test/pgMigrations.test.js"
+    "test:pg:migrations": "node test/pgSuite.js test/pgMigrations.test.js",
+    "test:pg:tooling": "node test/pgSuite.js test/pgTooling.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

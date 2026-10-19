@@ -38,6 +38,11 @@ npm run admin:role -- --email you@example.com --role customer --confirm-local
 - The script refuses non-loopback hosts, `NODE_ENV=production` and a missing
   `--confirm-local` flag; the database must be listed in
   `DB_ADMIN_ALLOWED_DATABASES` (default: `buyoDB`).
+- **Dual-dialect since Migration Phase 7:** the guards and the audit line are
+  identical on both databases. MySQL targets come from `MYSQL_*` env vars;
+  PostgreSQL targets (`DB_DIALECT=postgres`) come from `PG_*` env vars only —
+  never `DATABASE_URL`, loopback-only. The PostgreSQL CLI path is pinned by
+  `npm run test:pg:tooling` (see migration-phase7.md).
 - Role changes take effect on the next API request — `requireAuth` reloads the
   user from the database on every request.
 - Unverified accounts can be granted ahead of time, but `requireAdmin` also

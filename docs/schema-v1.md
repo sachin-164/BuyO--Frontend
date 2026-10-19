@@ -1,9 +1,13 @@
 # BuyO — Database Schema v1 (Phase 3)
 
 This document is the reference for the Phase 3 schema change: what was added, why,
-how it is applied, and how to recover if something goes wrong. The schema is
-**MySQL-only** and evolves exclusively through the numbered migrations in
-`backend/migrations/` — never through `sequelize.sync({ alter: true })`.
+how it is applied, and how to recover if something goes wrong. The schema
+evolves exclusively through the numbered migrations in `backend/migrations/` —
+never through `sequelize.sync({ alter: true })`. This document describes the
+**MySQL** v1 schema (the `NNN_*.sql` files, the default dialect); the
+PostgreSQL migration harness applies its own numbered `NNN_*.pgsql` files
+(see [migration-phase6.md](migration-phase6.md) and
+[migration-phase7.md](migration-phase7.md)).
 
 ## 1. What v1 adds (all additive — nothing is dropped or renamed)
 
@@ -17,9 +21,9 @@ how it is applied, and how to recover if something goes wrong. The schema is
   the controller writes `role: 'customer'` explicitly.
 - Admin access is granted **only** by the audited provisioning script
   (`npm run admin:role`) — see [admin-provisioning.md](./admin-provisioning.md).
-- Transitional safety: `utils/roles.js` still honors the Phase 2 `ADMIN_EMAILS`
-  env allowlist, so existing admins keep access until their DB role is granted.
-  `requireAdmin` = verified user **and** (`role = 'admin'` **or** allowlisted).
+- **Phase 11:** the transitional `ADMIN_EMAILS` env allowlist was **removed**
+  (see [admin-provisioning.md](./admin-provisioning.md)); `Users.role` is the
+  sole source of truth. `requireAdmin` = verified user **and** `role = 'admin'`.
 
 ### 1.2 `Categories` — canonical taxonomy + configurable tax
 

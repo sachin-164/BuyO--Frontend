@@ -20,20 +20,26 @@
 //   4. Target database is listed in DB_SYNC_ALLOWED_DATABASES
 //      (comma-separated; defaults to local dev database names only)
 //
+// DUAL-DIALECT (Migration Phase 7): the guards are identical for both
+// databases; settings resolve from MYSQL_* (default) or PG_* (DB_DIALECT=
+// postgres) env vars — never DATABASE_URL. The allowlist defaults are
+// unchanged, so a PostgreSQL scratch database still needs an explicit
+// DB_SYNC_ALLOWED_DATABASES entry.
+//
 // Production schema changes are NOT possible through this script.
 
 const path = require("path");
 const dotenv = require("dotenv");
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
-const { resolveMysqlSettings } = require("../config/dbConnectionOptions");
+const { resolveSettings } = require("../config/dbConnectionOptions");
 const { getAllowedDatabases, collectLocalGuardReasons, refuseLocal } = require("./lib/localDbGuard");
 
 const DEFAULT_ALLOWED_DATABASES = ["buyoDB", "buyoDB_ph1_verify"];
 
 async function main() {
   const flags = new Set(process.argv.slice(2));
-  const settings = resolveMysqlSettings();
+  const settings = resolveSettings();
   const allowed = getAllowedDatabases("DB_SYNC_ALLOWED_DATABASES", DEFAULT_ALLOWED_DATABASES);
 
   const reasons = collectLocalGuardReasons({

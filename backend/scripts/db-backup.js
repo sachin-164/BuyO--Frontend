@@ -1,15 +1,27 @@
 #!/usr/bin/env node
 // scripts/db-backup.js
-// Exports the MySQL database (schema + all rows) to a timestamped JSON dump so it
+// Exports the database (schema + all rows) to a timestamped JSON dump so it
 // can be restored and verified reliably. Read-only against the database.
 //
+// DUAL-DIALECT (Migration Phase 7):
+//   - MySQL (default): format `buyo-mysql-backup/1` — SHOW TABLES / SHOW CREATE
+//     TABLE / SELECT *. Byte-identical to the pre-Phase-7 behavior.
+//   - PostgreSQL (DB_DIALECT=postgres): format `buyo-pg-backup/1` — pg_catalog
+//     metadata (columns + types + defaults + serial sequences, PK/unique/check
+//     constraints, foreign keys, non-constraint indexes, enum types) + SELECT *.
+//     A tested in-process equivalent of pg_dump for this guarded local tool —
+//     see docs/migration-phase7.md for prerequisites and limitations.
+//   The two formats are NOT interchangeable: db:restore only accepts the
+//   format matching the active dialect.
+//
 // Output: backend/backups/buyo-backup-<YYYYMMDD-HHmmss>.json
-//   - contains: metadata, per-table DDL (SHOW CREATE TABLE), row counts, all rows
+//   - contains: metadata, per-table DDL, row counts, all rows
 //   - never contains credentials (no env values, usernames, passwords or URLs)
 //   - written ONLY inside backend/backups/ (git-ignored)
 //
 // Safety guard: refuses a non-loopback host unless --allow-remote is passed
-// explicitly (intended for the future hosted database).
+// explicitly (intended for the future hosted database). PostgreSQL settings
+// come from PG_* env vars only — never DATABASE_URL (loopback-only, no SSL).
 //
 // Usage:
 //   npm run db:backup
@@ -23,9 +35,22 @@ const dotenv = require("dotenv");
 dotenv.config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 
 const mysql = require("mysql2/promise");
-const { resolveMysqlSettings, isLoopbackHost, toMysql2Options } = require("../config/dbConnectionOptions");
+const {
+  resolveDialect,
+  resolveMysqlSettings,
+  resolvePostgresSettings,
+  isLoopbackHost,
+  toMysql2Options
+} = require("../config/dbConnectionOptions");
 
 const BACKUP_DIR = path.resolve(__dirname, "..", "backups");
+
+// Migration Phase 7 (same rule as the migration runner): the PostgreSQL path
+// resolves its target from PG_* env vars only; explicit settings are a
+// MySQL-path concept and must not be silently ignored.
+const PG_ENV_ONLY =
+  "PostgreSQL db:backup resolves its target from PG_* environment variables only " +
+  "(DB_DIALECT=postgres); passing explicit settings is not supported on this path.";
 
 function timestamp() {
   const d = new Date();
@@ -40,6 +65,11 @@ function escapeIdentifier(name) {
   return `\`${String(name).replace(/`/g, "``")}\``;
 }
 
+// PostgreSQL identifier quoting (double quotes).
+function quoteIdent(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
+}
+
 function normalizeValue(value) {
   if (value === null || value === undefined) return value;
   if (Buffer.isBuffer(value)) return { __type: "Buffer", base64: value.toString("base64") };
@@ -47,17 +77,28 @@ function normalizeValue(value) {
   return value;
 }
 
-// Library entry point. Throws on refusal (non-loopback without --allow-remote).
-async function createBackup({ flags = new Set(), settings = resolveMysqlSettings(), outDir = BACKUP_DIR } = {}) {
-  if (!settings.database) throw new Error("No database configured (MYSQL_DB).");
+function normalizeRow(row) {
+  const normalized = {};
+  for (const [column, value] of Object.entries(row)) normalized[column] = normalizeValue(value);
+  return normalized;
+}
+
+// Shared refusal: non-loopback hosts need the explicit --allow-remote opt-in.
+function assertBackupTargetAllowed(settings, flags, envLabel) {
+  if (!settings.database) throw new Error(`No database configured (${envLabel}).`);
   if (!isLoopbackHost(settings.host) && !flags.has("--allow-remote")) {
     const err = new Error(`host "${settings.host}" is not loopback.`);
     err.refusedRemote = true;
     throw err;
   }
+}
 
+// --------------------------------------------------------------------------
+// MySQL dump (format buyo-mysql-backup/1) — unchanged behavior.
+// --------------------------------------------------------------------------
+
+async function buildMysqlDump(settings) {
   const connection = await mysql.createConnection(toMysql2Options(settings));
-  let tables;
   const dump = {
     format: "buyo-mysql-backup/1",
     createdAt: new Date().toISOString(),
@@ -67,7 +108,7 @@ async function createBackup({ flags = new Set(), settings = resolveMysqlSettings
 
   try {
     const [tableRows] = await connection.query("SHOW TABLES");
-    tables = tableRows.map((row) => Object.values(row)[0]);
+    const tables = tableRows.map((row) => Object.values(row)[0]);
 
     for (const table of tables) {
       const [[ddlRow]] = await connection.query(`SHOW CREATE TABLE ${escapeIdentifier(table)}`);
@@ -77,15 +118,195 @@ async function createBackup({ flags = new Set(), settings = resolveMysqlSettings
       dump.tables[table] = {
         rowCount: rows.length,
         createSql,
-        rows: rows.map((row) => {
-          const normalized = {};
-          for (const [column, value] of Object.entries(row)) normalized[column] = normalizeValue(value);
-          return normalized;
-        })
+        rows: rows.map(normalizeRow)
       };
     }
   } finally {
     await connection.end();
+  }
+  return dump;
+}
+
+// --------------------------------------------------------------------------
+// PostgreSQL dump (format buyo-pg-backup/1) — Migration Phase 7.
+//
+// PostgreSQL has no SHOW CREATE TABLE, so the DDL is rebuilt from pg_catalog
+// (physical names, never assumed from model properties):
+//   createSql      CREATE TABLE with column types (format_type), NOT NULL and
+//                  verbatim defaults; serial columns keep their nextval
+//                  default and the referenced sequence is listed separately
+//   sequences      [{ name, column }] — created and owned around createSql
+//   constraintSqls PK/unique/check/exclusion constraints (validated AFTER rows)
+//   fkSqls         foreign keys (added AFTER every table's rows are loaded)
+//   indexSqls      indexes that do NOT back a constraint (raw CREATE INDEX,
+//                  incl. the Phase 6 functional uq_*_lower indexes)
+//   rows           all data (SELECT *; Date/Buffer normalized like MySQL)
+// --------------------------------------------------------------------------
+
+async function describeTablePg(client, table) {
+  const { rows: columns } = await client.query(
+    `SELECT a.attname AS name, format_type(a.atttypid, a.atttypmod) AS type,
+            a.attnotnull AS notnull, a.attgenerated AS generated,
+            pg_get_expr(d.adbin, d.adrelid) AS default_expr
+     FROM pg_attribute a
+     JOIN pg_class c ON c.oid = a.attrelid
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+     WHERE n.nspname = current_schema() AND c.relname = $1
+       AND a.attnum > 0 AND NOT a.attisdropped
+     ORDER BY a.attnum`,
+    [table]
+  );
+
+  const sequences = [];
+  const lines = columns.map((col) => {
+    if (col.generated) {
+      throw new Error(`Unsupported generated column "${table}.${col.name}" in the backup path.`);
+    }
+    let line = `  ${quoteIdent(col.name)} ${col.type}`;
+    if (col.notnull) line += " NOT NULL";
+    if (col.default_expr) {
+      line += ` DEFAULT ${col.default_expr}`;
+      // Serial-style default: remember the sequence so the restore can
+      // recreate it (and its ownership) before/after the table.
+      const nextval = /^nextval\('(.+)'::regclass\)$/.exec(col.default_expr);
+      if (nextval) sequences.push({ name: nextval[1], column: col.name });
+    }
+    return line;
+  });
+  const createSql = `CREATE TABLE ${quoteIdent(table)} (\n${lines.join(",\n")}\n)`;
+
+  const { rows: constraints } = await client.query(
+    `SELECT con.conname AS name, con.contype AS type, pg_get_constraintdef(con.oid) AS def
+     FROM pg_constraint con
+     JOIN pg_class c ON c.oid = con.conrelid
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = current_schema() AND c.relname = $1
+       AND con.contype IN ('p', 'u', 'c', 'x')
+     ORDER BY con.conname`,
+    [table]
+  );
+  const constraintSqls = constraints.map(
+    (row) => `ALTER TABLE ${quoteIdent(table)} ADD CONSTRAINT ${quoteIdent(row.name)} ${row.def}`
+  );
+
+  const { rows: fks } = await client.query(
+    `SELECT con.conname AS name, pg_get_constraintdef(con.oid) AS def
+     FROM pg_constraint con
+     JOIN pg_class c ON c.oid = con.conrelid
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = current_schema() AND c.relname = $1 AND con.contype = 'f'
+     ORDER BY con.conname`,
+    [table]
+  );
+  const fkSqls = fks.map(
+    (row) => `ALTER TABLE ${quoteIdent(table)} ADD CONSTRAINT ${quoteIdent(row.name)} ${row.def}`
+  );
+
+  // Indexes NOT backing any constraint (constraint-backed and primary indexes
+  // are rebuilt via constraintSqls above — emitting both would duplicate them).
+  const { rows: indexes } = await client.query(
+    `SELECT i.relname AS name, pg_get_indexdef(i.oid) AS def
+     FROM pg_index ix
+     JOIN pg_class i ON i.oid = ix.indexrelid
+     JOIN pg_class t ON t.oid = ix.indrelid
+     JOIN pg_namespace n ON n.oid = t.relnamespace
+     LEFT JOIN pg_constraint con ON con.conindid = ix.indexrelid
+     WHERE n.nspname = current_schema() AND t.relname = $1
+       AND con.oid IS NULL AND NOT ix.indisprimary
+     ORDER BY i.relname`,
+    [table]
+  );
+  const indexSqls = indexes.map((row) => row.def);
+
+  const { rows } = await client.query(`SELECT * FROM ${quoteIdent(table)}`);
+
+  return {
+    rowCount: rows.length,
+    createSql,
+    sequences,
+    constraintSqls,
+    fkSqls,
+    indexSqls,
+    rows: rows.map(normalizeRow)
+  };
+}
+
+async function buildPgDump(settings) {
+  const { Client } = require("pg");
+  const client = new Client({
+    host: settings.host,
+    port: settings.port,
+    user: settings.username,
+    password: settings.password,
+    database: settings.database
+    // No SSL: this path is loopback-only by design.
+  });
+  await client.connect();
+
+  const dump = {
+    format: "buyo-pg-backup/1",
+    createdAt: new Date().toISOString(),
+    database: settings.database,
+    enumTypes: {},
+    tables: {}
+  };
+
+  try {
+    // Enum types referenced by any column (e.g. Users.role) — restore needs
+    // CREATE TYPE before the tables that use them. The subquery yields DISTINCT
+    // type oids: a type used by several columns must not duplicate its labels
+    // (CREATE TYPE rejects duplicate labels).
+    const { rows: enumRows } = await client.query(
+      `SELECT t.typname AS name, e.enumlabel AS label, e.enumsortorder AS ord
+       FROM pg_type t
+       JOIN pg_enum e ON e.enumtypid = t.oid
+       WHERE t.typtype = 'e'
+         AND t.oid IN (
+           SELECT DISTINCT a.atttypid
+           FROM pg_attribute a
+           JOIN pg_class c ON c.oid = a.attrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE n.nspname = current_schema() AND a.attnum > 0 AND NOT a.attisdropped
+         )
+       ORDER BY t.typname, e.enumsortorder`
+    );
+    for (const row of enumRows) (dump.enumTypes[row.name] ??= []).push(row.label);
+
+    const { rows: tableRows } = await client.query(
+      `SELECT tablename FROM pg_tables WHERE schemaname = current_schema() ORDER BY tablename`
+    );
+    for (const row of tableRows) {
+      dump.tables[row.tablename] = await describeTablePg(client, row.tablename);
+    }
+  } finally {
+    await client.end();
+  }
+  return dump;
+}
+
+// --------------------------------------------------------------------------
+// Library entry point. Throws on refusal (non-loopback without --allow-remote).
+// --------------------------------------------------------------------------
+
+async function createBackup(options = {}) {
+  const { flags = new Set(), outDir = BACKUP_DIR } = options;
+  const explicitSettings = options.settings;
+  const dialect = resolveDialect();
+
+  let dump;
+  let database;
+  if (dialect === "postgres") {
+    if (explicitSettings) throw new Error(PG_ENV_ONLY);
+    const settings = resolvePostgresSettings();
+    assertBackupTargetAllowed(settings, flags, "PG_DB");
+    database = settings.database;
+    dump = await buildPgDump(settings);
+  } else {
+    const settings = explicitSettings ?? resolveMysqlSettings();
+    assertBackupTargetAllowed(settings, flags, "MYSQL_DB");
+    database = settings.database;
+    dump = await buildMysqlDump(settings);
   }
 
   await fsp.mkdir(outDir, { recursive: true });
@@ -96,7 +317,7 @@ async function createBackup({ flags = new Set(), settings = resolveMysqlSettings
 
   await fsp.writeFile(outPath, JSON.stringify(dump, null, 2), "utf8");
 
-  return { outPath, database: settings.database, tables, dump };
+  return { outPath, database, tables: Object.keys(dump.tables), dump };
 }
 
 async function main() {

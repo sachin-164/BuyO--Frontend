@@ -6,6 +6,12 @@
 // backup was taken from, never restores into an existing database (create a
 // fresh target name), and verifies every table's row count afterwards.
 //
+// DUAL-DIALECT (Migration Phase 7): the guards and verification are identical
+// for both databases; the accepted backup format follows the active dialect —
+// MySQL restores `buyo-mysql-backup/1`, PostgreSQL restores `buyo-pg-backup/1`
+// (a format from the other dialect is refused). PostgreSQL settings come from
+// PG_* env vars only (never DATABASE_URL; loopback-only, no SSL).
+//
 // Usage:
 //   npm run db:restore -- --file backups/buyo-backup-<stamp>.json --target buyoDB_restore_check --confirm-local
 //   npm run db:restore -- --target buyoDB_restore_check --confirm-local        (uses newest backup)
@@ -24,23 +30,40 @@ const dotenv = require("dotenv");
 dotenv.config({ path: path.join(__dirname, "..", ".env"), quiet: true });
 
 const mysql = require("mysql2/promise");
-const { resolveMysqlSettings, toMysql2Options } = require("../config/dbConnectionOptions");
+const {
+  resolveDialect,
+  resolveMysqlSettings,
+  resolvePostgresSettings,
+  toMysql2Options
+} = require("../config/dbConnectionOptions");
 const { getAllowedDatabases, collectLocalGuardReasons, refuseLocal } = require("./lib/localDbGuard");
 
 const BACKUP_DIR = path.resolve(__dirname, "..", "backups");
 const SCRATCH_DATABASE_PATTERN = /^buyodb_[a-z0-9_]+$/i;
 
+// Migration Phase 7 (same rule as the migration runner): the PostgreSQL path
+// resolves its target from PG_* env vars only.
+const PG_ENV_ONLY =
+  "PostgreSQL db:restore resolves its target from PG_* environment variables only " +
+  "(DB_DIALECT=postgres); passing explicit settings is not supported on this path.";
+
 function escapeIdentifier(name) {
   return `\`${String(name).replace(/`/g, "``")}\``;
+}
+
+// PostgreSQL identifier quoting (double quotes).
+function quoteIdent(name) {
+  return `"${String(name).replace(/"/g, '""')}"`;
 }
 
 function reviveValue(value) {
   if (value && typeof value === "object") {
     if (value.__type === "Date") return new Date(value.iso);
     if (value.__type === "Buffer") return Buffer.from(value.base64, "base64");
-    // mysql2 returns JSON columns already parsed (object/array). Re-serialize so
-    // the INSERT sends valid JSON text — an object would reach MySQL as the
-    // invalid string "[object Object]" and fail the restore.
+    // mysql2 AND pg both return JSON columns already parsed (object/array).
+    // Re-serialize so the INSERT sends valid JSON text — an object would reach
+    // the database as the invalid string "[object Object]" and fail the
+    // restore. (Re-serialized plain objects are exactly what JSON columns need.)
     return JSON.stringify(value);
   }
   return value;
@@ -59,14 +82,21 @@ async function findLatestBackup() {
   return path.join(BACKUP_DIR, backups[backups.length - 1]);
 }
 
+// --------------------------------------------------------------------------
 // Library entry point (used by tests and by main()).
-async function runRestore({ backupPath, targetDatabase, settings = resolveMysqlSettings(), log = console.log }) {
+// Guards (source-name, scratch pattern) run for BOTH dialects before any
+// connection is made; each dialect then only accepts its own backup format.
+// --------------------------------------------------------------------------
+
+async function runRestore({ backupPath, targetDatabase, settings: explicitSettings, log = console.log }) {
   const database = String(targetDatabase || "").trim();
   if (!database) throw new Error("A target database name is required (--target).");
 
   const backup = JSON.parse(await fsp.readFile(backupPath, "utf8"));
-  if (backup.format !== "buyo-mysql-backup/1") {
-    throw new Error(`Unsupported backup format "${backup.format}" — expected buyo-mysql-backup/1.`);
+  const dialect = resolveDialect();
+  const expectedFormat = dialect === "postgres" ? "buyo-pg-backup/1" : "buyo-mysql-backup/1";
+  if (backup.format !== expectedFormat) {
+    throw new Error(`Unsupported backup format "${backup.format}" — expected ${expectedFormat}.`);
   }
   const sourceDatabase = String(backup.database || "");
   if (sourceDatabase.toLowerCase() === database.toLowerCase()) {
@@ -79,6 +109,13 @@ async function runRestore({ backupPath, targetDatabase, settings = resolveMysqlS
         "Add it to DB_RESTORE_ALLOWED_DATABASES to allow it explicitly."
     );
   }
+
+  if (dialect === "postgres") {
+    if (explicitSettings) throw new Error(PG_ENV_ONLY);
+    return runRestorePg({ backup, database, backupPath, log });
+  }
+
+  const settings = explicitSettings ?? resolveMysqlSettings();
 
   // Create the target — it must not exist yet.
   const adminConnection = await mysql.createConnection(toMysql2Options(settings, { includeDatabase: false }));
@@ -135,9 +172,141 @@ async function runRestore({ backupPath, targetDatabase, settings = resolveMysqlS
   }
 }
 
+// --------------------------------------------------------------------------
+// PostgreSQL restore (Migration Phase 7) — mirrors the MySQL semantics:
+// fresh target only, then enum types → sequences → tables → rows (count
+// verified per table) → PK/unique/check constraints → foreign keys → indexes
+// → sequence advancement past the restored ids.
+//
+// Constraints/FKs are applied AFTER the rows: PostgreSQL validates them on
+// ADD, so a corrupted backup fails loudly instead of loading bad data.
+// --------------------------------------------------------------------------
+
+// Multi-row INSERT with positional $n placeholders (pg has no mysql2 "VALUES ?" batch).
+function insertStatementPg(table, columns, rowCount) {
+  const placeholders = [];
+  let n = 0;
+  for (let r = 0; r < rowCount; r++) {
+    placeholders.push(`(${columns.map(() => `$${++n}`).join(", ")})`);
+  }
+  return (
+    `INSERT INTO ${quoteIdent(table)} (${columns.map(quoteIdent).join(", ")}) ` +
+    `VALUES ${placeholders.join(", ")}`
+  );
+}
+
+// PostgreSQL does NOT advance sequences past manually inserted ids — after a
+// restore, setval(seq, MAX(id), hasRows) makes the next DEFAULT insert land on
+// MAX(id)+1 instead of colliding (empty table → nextval = 1).
+function setvalStatementPg(table, column) {
+  const t = quoteIdent(table);
+  const c = quoteIdent(column);
+  const regclassArg = `'${t.replace(/'/g, "''")}'`;
+  const columnArg = `'${String(column).replace(/'/g, "''")}'`;
+  return (
+    `SELECT setval(pg_get_serial_sequence(${regclassArg}, ${columnArg}), ` +
+    `GREATEST((SELECT MAX(${c}) FROM ${t}), 1), ` +
+    `(SELECT MAX(${c}) FROM ${t}) IS NOT NULL)`
+  );
+}
+
+async function runRestorePg({ backup, database, backupPath, log }) {
+  const settings = resolvePostgresSettings();
+  const { Client } = require("pg");
+  const connect = (dbName) =>
+    new Client({
+      host: settings.host,
+      port: settings.port,
+      user: settings.username,
+      password: settings.password,
+      database: dbName
+      // No SSL: this path is loopback-only by design.
+    });
+
+  // Create the target — it must not exist yet.
+  const admin = connect("postgres");
+  await admin.connect();
+  try {
+    const { rows } = await admin.query(`SELECT 1 FROM pg_database WHERE datname = $1`, [database]);
+    if (rows.length) {
+      throw new Error(`Refusing: database "${database}" already exists. Drop it first or choose a new target name.`);
+    }
+    await admin.query(`CREATE DATABASE ${quoteIdent(database)}`);
+  } finally {
+    await admin.end().catch(() => {});
+  }
+
+  const client = connect(database);
+  await client.connect();
+  try {
+    // 1. Enum types first — column definitions reference them.
+    for (const [name, labels] of Object.entries(backup.enumTypes || {})) {
+      const values = labels.map((label) => `'${String(label).replace(/'/g, "''")}'`).join(", ");
+      await client.query(`CREATE TYPE ${quoteIdent(name)} AS ENUM (${values})`);
+    }
+
+    // 2. Serial sequences (column defaults reference them), then tables.
+    for (const [table, info] of Object.entries(backup.tables)) {
+      for (const seq of info.sequences || []) {
+        await client.query(`CREATE SEQUENCE IF NOT EXISTS ${seq.name}`);
+      }
+      await client.query(info.createSql);
+      for (const seq of info.sequences || []) {
+        await client.query(`ALTER SEQUENCE ${seq.name} OWNED BY ${quoteIdent(table)}.${quoteIdent(seq.column)}`);
+      }
+    }
+
+    // 3. Rows, with per-table count verification (same contract as MySQL).
+    const summary = {};
+    for (const [table, info] of Object.entries(backup.tables)) {
+      const rows = Array.isArray(info.rows) ? info.rows : [];
+      if (rows.length) {
+        const columns = Object.keys(rows[0]);
+        const values = rows.map((row) => columns.map((column) => reviveValue(row[column])));
+        for (const batch of chunk(values, 500)) {
+          await client.query(insertStatementPg(table, columns, batch.length), batch.flat());
+        }
+      }
+      const { rows: countRows } = await client.query(`SELECT COUNT(*) AS n FROM ${quoteIdent(table)}`);
+      const actual = Number(countRows[0].n);
+      const expected = Number(info.rowCount ?? rows.length);
+      if (actual !== expected) {
+        throw new Error(`Row count mismatch for "${table}": backup has ${expected}, restored ${actual}.`);
+      }
+      summary[table] = actual;
+      log(`   ${table}: ${actual} rows restored`);
+    }
+
+    // 4. PK/unique/check constraints (validated on ADD), then foreign keys.
+    for (const info of Object.values(backup.tables)) {
+      for (const sql of info.constraintSqls || []) await client.query(sql);
+    }
+    for (const info of Object.values(backup.tables)) {
+      for (const sql of info.fkSqls || []) await client.query(sql);
+    }
+
+    // 5. Remaining (non-constraint) indexes.
+    for (const info of Object.values(backup.tables)) {
+      for (const sql of info.indexSqls || []) await client.query(sql);
+    }
+
+    // 6. Advance sequences past the restored ids.
+    for (const [table, info] of Object.entries(backup.tables)) {
+      for (const seq of info.sequences || []) {
+        await client.query(setvalStatementPg(table, seq.column));
+      }
+    }
+
+    return { database, tables: summary, source: backupPath };
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
 async function main() {
   const flags = new Set(process.argv.slice(2));
-  const settings = resolveMysqlSettings();
+  const dialect = resolveDialect();
+  const settings = dialect === "postgres" ? resolvePostgresSettings() : resolveMysqlSettings();
   const allowed = getAllowedDatabases("DB_RESTORE_ALLOWED_DATABASES", []);
 
   const reasons = collectLocalGuardReasons({
@@ -172,9 +341,15 @@ async function main() {
   }
 
   console.log(`→ Restoring ${path.relative(path.join(__dirname, ".."), backupPath)} into "${target}"...`);
-  const result = await runRestore({ backupPath, targetDatabase: target, settings });
+  // The PG library path refuses explicit settings (PG_* env only); MySQL keeps
+  // receiving the guard's resolved settings as before.
+  const result =
+    dialect === "postgres"
+      ? await runRestore({ backupPath, targetDatabase: target })
+      : await runRestore({ backupPath, targetDatabase: target, settings });
   console.log(`✅ Restore verified: ${Object.keys(result.tables).length} table(s), row counts match the backup.`);
-  console.log(`   This is a scratch database — drop it when done: DROP DATABASE ${escapeIdentifier(target)}`);
+  const dropHint = dialect === "postgres" ? quoteIdent(target) : escapeIdentifier(target);
+  console.log(`   This is a scratch database — drop it when done: DROP DATABASE ${dropHint}`);
 }
 
 if (require.main === module) {
