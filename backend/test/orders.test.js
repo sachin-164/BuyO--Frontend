@@ -12,7 +12,7 @@
 const { describe, it, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const helpers = require("./helpers");
-const { resolveMysqlSettings } = require("../config/dbConnectionOptions");
+const { resolveMysqlSettings, resolveDialect } = require("../config/dbConnectionOptions");
 const { applyRoleChange } = require("../scripts/admin-role");
 
 describe("Orders & addresses (Phase 6)", () => {
@@ -177,6 +177,11 @@ describe("Orders & addresses (Phase 6)", () => {
   });
 
   // ================= checkout: validation + recalculation =================
+
+  it("checkout requires authentication (401 without a token)", async () => {
+    const res = await api("/api/orders", { method: "POST", body: { addressId: 1, idempotencyKey: idemKey("anon") } });
+    assert.equal(res.status, 401, res.text);
+  });
 
   it("checkout validates address/idempotency key and rejects an empty cart", async () => {
     const seeded = await seedCheckout({ qty: 1 });
@@ -466,6 +471,14 @@ describe("Orders & addresses (Phase 6)", () => {
     assert.equal((await api("/api/admin/orders", { token: user.token })).status, 403);
 
     const settings = { ...resolveMysqlSettings() };
+    // Role toggling: the audited CLI helper (applyRoleChange) is raw-mysql2
+    // and stays MySQL-only (Phase 2 decision, tooling not migrated yet).
+    // On PostgreSQL the test changes the SAME DB-backed Users.role column
+    // through the model (same pattern as helpers.createAdminUser) — the
+    // assertions below are identical on both dialects.
+    const setRole = (role) => (resolveDialect() === "postgres"
+      ? ctx.sequelize.models.User.update({ role }, { where: { email: admin.email } })
+      : applyRoleChange({ settings, email: admin.email, role }));
     try {
       // Baseline: the DB role (granted via the audited path in createAdminUser)
       // is what grants access. Phase 11 removed the ADMIN_EMAILS fallback, so
@@ -474,10 +487,10 @@ describe("Orders & addresses (Phase 6)", () => {
 
       // Removing the DB role fails closed — including while ADMIN_EMAILS is set
       // (the fallback no longer exists; the env value is ignored).
-      await applyRoleChange({ settings, email: admin.email, role: "customer" });
+      await setRole("customer");
       process.env.ADMIN_EMAILS = admin.email;
       assert.equal((await adminListOrders()).status, 403, "no DB role must fail closed (fallback removed)");
-      await applyRoleChange({ settings, email: admin.email, role: "admin" });
+      await setRole("admin");
       assert.equal((await adminListOrders()).status, 200, "restored DB role must work again");
 
       // Unverified accounts can never reach admin routes, even with the role.
@@ -487,7 +500,7 @@ describe("Orders & addresses (Phase 6)", () => {
       assert.equal((await adminListOrders()).status, 200);
     } finally {
       delete process.env.ADMIN_EMAILS;
-      await applyRoleChange({ settings, email: admin.email, role: "admin" });
+      await setRole("admin");
       await ctx.sequelize.models.User.update({ isVerified: true }, { where: { id: admin.user.id } });
     }
   });
@@ -649,5 +662,78 @@ describe("Orders & addresses (Phase 6)", () => {
     assert.equal(none.json.count, 0);
     assert.equal(none.json.pagination.hasNext, false);
     assert.equal(none.json.pagination.hasPrev, false);
+  });
+
+  // PostgreSQL-only (migration Phase 3): the checkout's order-number collision
+  // retry loop catches-and-continues inside an open transaction. MySQL/InnoDB
+  // tolerates a failed INSERT there; PostgreSQL ABORTS the whole transaction on
+  // any failed statement ("current transaction is aborted"), so every attempt
+  // must run inside a SAVEPOINT (see orderController.createOrder). This test
+  // runs that exact mechanism against the real schema on PG and verifies the
+  // outer transaction still accepts statements and commits afterwards.
+  it("PG-only: a failed insert inside a savepoint leaves the outer transaction usable", {
+    skip: String(process.env.DB_DIALECT || "").trim().toLowerCase() === "postgres"
+      ? false
+      : "PostgreSQL-only (runs under npm run test:pg:orders)"
+  }, async () => {
+    const { Transaction } = require("sequelize");
+    const User = require("../models/user");
+    const Order = require("../models/order");
+
+    const probe = await User.create({
+      name: "Savepoint Probe",
+      email: helpers.uniqueEmail("savepoint-probe"),
+      password: "x".repeat(70),
+      isVerified: true
+    });
+    const base = {
+      userId: probe.id,
+      status: "placed",
+      paymentMethod: "cod",
+      subtotal: 1,
+      taxTotal: 0,
+      grandTotal: 1,
+      taxBreakdown: { lines: [] },
+      shippingAddress: { fullName: "Probe", line1: "1 Main St", city: "Probe City", state: "PS", pincode: "100001", phone: "9999999999" },
+      addressId: null,
+      notes: null
+    };
+    const existing = await Order.create({ ...base, orderNumber: "SP-DUP-000001", idempotencyKey: "sp-probe-key-1" });
+
+    try {
+      const retriedId = await ctx.sequelize.transaction(async (transaction) => {
+        let created = null;
+        for (let attempt = 0; attempt < 3 && !created; attempt += 1) {
+          try {
+            created = await ctx.sequelize.transaction(
+              { transaction, type: Transaction.TYPES.SAVEPOINT },
+              (savepoint) => Order.create(
+                { ...base, orderNumber: existing.orderNumber, idempotencyKey: `sp-probe-key-${attempt + 2}` },
+                { transaction: savepoint }
+              )
+            );
+          } catch (err) {
+            assert.equal(err.name, "SequelizeUniqueConstraintError", `expected the uq_orders_number collision, got: ${err.message} (${err.name})`);
+            assert.match(`${err.message} ${JSON.stringify(err.fields || {})}`, /uq_orders_number|orderNumber/i);
+            // The critical PG property: after ROLLBACK TO SAVEPOINT the outer
+            // transaction must accept statements again. Without the savepoint
+            // this line would throw "current transaction is aborted".
+            await Order.count({ transaction });
+          }
+        }
+        if (!created) {
+          created = await Order.create({ ...base, orderNumber: "SP-DUP-000002", idempotencyKey: "sp-probe-key-9" }, { transaction });
+        }
+        return created.id;
+      });
+
+      const row = await Order.findByPk(retriedId);
+      assert.ok(row, "the retried order must survive the commit");
+      assert.equal(row.orderNumber, "SP-DUP-000002", "the retry must succeed with a fresh order number");
+      assert.equal(await Order.count({ where: { userId: probe.id } }), 2, "exactly the pre-existing + the retried order");
+    } finally {
+      await Order.destroy({ where: { userId: probe.id } });
+      await probe.destroy();
+    }
   });
 });

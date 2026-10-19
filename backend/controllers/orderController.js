@@ -27,8 +27,10 @@
 //     concurrently after this transaction's snapshot are never wiped.
 // Failure anywhere => rollback => stock, cart and order tables untouched.
 const crypto = require("crypto");
-const { Op } = require("sequelize");
+const { Op, Transaction } = require("sequelize");
 const sequelize = require("../config/db");
+const { resolveDialect } = require("../config/dbConnectionOptions");
+const { stockDelta } = require("../utils/sqlLiterals");
 const User = require("../models/user");
 const CartItem = require("../models/cart");
 const Product = require("../models/product");
@@ -177,35 +179,47 @@ const createOrder = async (req, res, next) => {
       );
 
       // Order number with collision retries; exhaustion rolls everything back.
+      // MySQL/InnoDB tolerates a failed INSERT inside an open transaction, but
+      // PostgreSQL ABORTS the whole transaction on any failed statement
+      // ("current transaction is aborted"), which would poison the checkout
+      // above. On PG every attempt therefore runs inside a SAVEPOINT: a
+      // collision rolls back only to the savepoint and the outer checkout
+      // transaction stays usable. MySQL keeps the original inline create.
+      const createOrderRow = (tx) => Order.create(
+        {
+          userId: req.user.id,
+          orderNumber: generateOrderNumber(),
+          idempotencyKey,
+          status: "placed",
+          paymentMethod: "cod",
+          subtotal: totals.subtotal,
+          taxTotal: totals.taxTotal,
+          grandTotal: totals.grandTotal,
+          taxBreakdown: totals.taxBreakdown,
+          shippingAddress: {
+            label: address.label,
+            fullName: address.fullName,
+            phone: address.phone,
+            line1: address.line1,
+            line2: address.line2,
+            city: address.city,
+            state: address.state,
+            pincode: address.pincode
+          },
+          addressId: address.id,
+          notes: notes || null
+        },
+        { transaction: tx }
+      );
       let order = null;
       for (let attempt = 0; attempt < ORDER_NUMBER_ATTEMPTS && !order; attempt += 1) {
         try {
-          order = await Order.create(
-            {
-              userId: req.user.id,
-              orderNumber: generateOrderNumber(),
-              idempotencyKey,
-              status: "placed",
-              paymentMethod: "cod",
-              subtotal: totals.subtotal,
-              taxTotal: totals.taxTotal,
-              grandTotal: totals.grandTotal,
-              taxBreakdown: totals.taxBreakdown,
-              shippingAddress: {
-                label: address.label,
-                fullName: address.fullName,
-                phone: address.phone,
-                line1: address.line1,
-                line2: address.line2,
-                city: address.city,
-                state: address.state,
-                pincode: address.pincode
-              },
-              addressId: address.id,
-              notes: notes || null
-            },
-            { transaction }
-          );
+          order = resolveDialect() === "postgres"
+            ? await sequelize.transaction(
+                { transaction, type: Transaction.TYPES.SAVEPOINT },
+                (savepoint) => createOrderRow(savepoint)
+              )
+            : await createOrderRow(transaction);
         } catch (err) {
           if (isOrderNumberConflict(err)) continue;
           throw err;
@@ -232,7 +246,7 @@ const createOrder = async (req, res, next) => {
           throw new Error(`Non-integer cart quantity during checkout: ${qtyByProduct.get(productId)}`); // 500; not user-triggerable (DB INT)
         }
         const [affected] = await Product.update(
-          { stock: sequelize.literal(`\`stock\` - ${qty}`) },
+          { stock: sequelize.literal(stockDelta("-", qty)) },
           { where: { id: productId, stock: { [Op.gte]: qty } }, transaction }
         );
         if (affected === 0) {

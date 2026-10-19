@@ -14,6 +14,7 @@
 // (No DB uniqueness on (orderId, toStatus): history must stay able to record
 // future legitimate repeated statuses — see migration 004 header.)
 const sequelize = require("../config/db");
+const { stockDelta } = require("../utils/sqlLiterals");
 const User = require("../models/user");
 const Product = require("../models/product");
 const Order = require("../models/order");
@@ -140,7 +141,7 @@ const updateOrderStatus = async (req, res, next) => {
             throw new Error(`Non-integer order item quantity during restock: ${item.qty}`); // 500; not user-triggerable (DB INT)
           }
           await Product.update(
-            { stock: sequelize.literal(`\`stock\` + ${qty}`) },
+            { stock: sequelize.literal(stockDelta("+", qty)) },
             { where: { id: item.productId }, transaction }
           );
         }

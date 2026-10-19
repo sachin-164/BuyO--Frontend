@@ -218,3 +218,28 @@ test("isLoopbackHost: unchanged loopback detection (guards reuse it)", () => {
   assert.equal(isLoopbackHost(""), false);
   assert.equal(isLoopbackHost(undefined), false);
 });
+
+// ---------- dialect-aware stock literal (migration Phase 3) ----------
+
+const { stockDelta } = require("../utils/sqlLiterals");
+
+test("stockDelta: MySQL keeps the original backtick-quoted SQL byte-for-byte", () => {
+  assert.equal(stockDelta("-", 2, {}), "`stock` - 2");
+  assert.equal(stockDelta("+", 7, {}), "`stock` + 7");
+  assert.equal(stockDelta("-", 1, { DB_DIALECT: "mysql" }), "`stock` - 1");
+});
+
+test("stockDelta: PostgreSQL uses double quotes (backticks are a syntax error there)", () => {
+  assert.equal(stockDelta("-", 2, { DB_DIALECT: "postgres" }), '"stock" - 2');
+  assert.equal(stockDelta("+", 7, { DB_DIALECT: "postgres" }), '"stock" + 7');
+  assert.equal(stockDelta("-", 1, { DB_DIALECT: "PostgreSQL" }), '"stock" - 1');
+});
+
+test("stockDelta: rejects unsafe operands and quantities (no injection surface)", () => {
+  assert.throws(() => stockDelta("*", 1, {}), /Unsupported stock operator/);
+  assert.throws(() => stockDelta("=", 1, {}), /Unsupported stock operator/);
+  assert.throws(() => stockDelta("-", 0, {}), /Non-integer/);
+  assert.throws(() => stockDelta("-", -3, {}), /Non-integer/);
+  assert.throws(() => stockDelta("-", 1.5, {}), /Non-integer/);
+  assert.throws(() => stockDelta("-", "2 OR 1=1", {}), /Non-integer/);
+});
