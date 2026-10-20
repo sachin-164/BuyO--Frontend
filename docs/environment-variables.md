@@ -16,7 +16,7 @@ Related: `docs/deployment.md` (where each is set at deploy), `backend/.env.examp
 | `PORT` | Listen port for the long-running server (`server.js`) | No | Local dev default 5000; Vercel ignores it (serverless owns the lifecycle) |
 | `JWT_SECRET` | Signs/verifies all bearer tokens (access, verify, reset) | **Yes** — ≥32 random chars | **Rotate before production** — see §4. Startup warns if short |
 | `DB_DIALECT` | `mysql` (default, unset) or `postgres` | Yes for cutover: `postgres` | Anything else refuses to start |
-| `PG_HOST` `PG_PORT` `PG_DB` `PG_USER` `PG_PASS` | PostgreSQL connection (`DB_DIALECT=postgres` only) | **Yes** at cutover | Read instead of `MYSQL_*`; `DATABASE_URL` is deliberately never read |
+| `PG_HOST` `PG_PORT` `PG_DB` `PG_USER` `PG_PASS` | PostgreSQL connection (`DB_DIALECT=postgres` only) | **Yes** at cutover | Read instead of `MYSQL_*`; they always win over `DATABASE_URL`, which (approved Supabase phase) only fills fields they leave unset — never read on the MySQL path, and it never flips the dialect on its own |
 | `PG_SSL` | TLS for PostgreSQL. Unset = automatic (TLS for non-loopback hosts, plaintext loopback); `true`/`false` force a mode | Unset is fine (auto); explicit `true` also fine | **Verification is always on — no opt-out exists.** Invalid values refuse to start. Connect by hostname so certificate names match (Phase 9) |
 | `DB_POOL_MAX` `DB_POOL_MIN` `DB_POOL_IDLE_MS` `DB_POOL_ACQUIRE_MS` | Small serverless Sequelize pool (PG path only; MySQL keeps defaults) | No | Defaults 2 / 0 / 10000 / 30000; strictly validated, invalid values refuse to start (Phase 9) |
 | `HEALTH_DB_TIMEOUT_MS` | Timeout for the `/api/health/ready` database probe | No | Default 2000, range 100–30000 (Phase 9) |

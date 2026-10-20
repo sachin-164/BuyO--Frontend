@@ -18,7 +18,7 @@
 //
 // BOUNDARIES:
 //   - Loopback only; never connects to Supabase or any remote host.
-//   - DATABASE_URL is never read by the resolution code.
+//   - DATABASE_URL only fills PG_* gaps on the postgres path (absent here).
 //   - The child suite recreates the buyoDB_ph2_test scratch database via the
 //     same guarded harness path the MySQL suites use.
 //   - If embedded PostgreSQL fails to initialise/start, this fails loudly

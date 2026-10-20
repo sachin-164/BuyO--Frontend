@@ -15,7 +15,8 @@
 //
 // BOUNDARIES:
 //   - Loopback only; never connects to Supabase or any remote host.
-//   - DATABASE_URL is never read by the resolution code under test.
+//   - DATABASE_URL is only read on the postgres path to fill PG_* gaps (it is
+//     absent here, and PG_* names always win).
 //   - If embedded PostgreSQL fails to initialise/start on this machine, the
 //     test FAILS loudly (no silent fallback to another harness).
 

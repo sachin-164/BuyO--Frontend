@@ -15,12 +15,22 @@
 // This module only RESOLVES settings — it never opens a connection.
 //
 // BOUNDARIES (migration Phase 1, extended Phase 9):
-//   - DATABASE_URL is intentionally NOT read anywhere in this file. Supabase
-//     connection settings arrive in a later, separately-approved phase.
+//   - DATABASE_URL is read ONLY on the PostgreSQL path (approved Supabase
+//     phase): when DB_DIALECT=postgres, the URL fills any connection field
+//     (host/port/database/username/password) left unset by the explicit
+//     PG_* names — the discrete names always WIN, so the local loopback
+//     harness is unaffected even when a DATABASE_URL line sits in backend/.env.
+//     The MySQL path never reads it, and there is deliberately NO dialect
+//     inference from DATABASE_URL: MySQL stays the default until the dialect
+//     is explicitly selected (a stray URL must never silently retarget local
+//     development). The remote-migration gate tripwire (its mere PRESENCE
+//     refuses remote DB operations) is unchanged.
 //   - PostgreSQL TLS (Phase 9): verification is always ON when TLS is used —
 //     there is deliberately NO knob to set rejectUnauthorized:false on this
 //     path. Unset PG_SSL = automatic (TLS for non-loopback hosts, none for
-//     loopback), so local embedded-PostgreSQL testing needs no changes.
+//     loopback), so local embedded-PostgreSQL testing needs no changes. Any
+//     sslmode-style query parameter on DATABASE_URL is deliberately ignored —
+//     the PG_SSL env knob (and the automatic rule) remains the only switch.
 
 function firstDefined(...values) {
   for (const value of values) {
@@ -69,18 +79,63 @@ function resolveDialect(env = process.env) {
   );
 }
 
-// PostgreSQL settings for the local migration harness (only used when
-// DB_DIALECT=postgres). PG_* names mirror the MYSQL_* convention. DATABASE_URL
-// is deliberately NOT read here (Supabase arrives in a later approved phase).
-// `ssl` is the resolved TLS decision (Phase 9, see resolvePgSslSetting).
+// Parse a PostgreSQL connection URL (approved Supabase phase). Returns null
+// when no URL is set; throws a CLEAN error (variable name only — the URL
+// itself contains the password and is never echoed, not even truncated) when
+// set but unusable. Supports the Supabase transaction-pooler shape
+// (postgresql://postgres.<ref>:<password>@<pooler-host>:6543/postgres) and
+// percent-encoded credentials. The URL's query string (e.g. sslmode=...) is
+// deliberately ignored — TLS stays governed by PG_SSL/the automatic rule with
+// certificate verification hardcoded on.
+function parsePostgresUrl(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === "") return null;
+  const value = String(raw).trim();
+  if (!/^postgres(ql)?:\/\//i.test(value)) {
+    throw new Error(
+      "DATABASE_URL must use the postgresql:// (or postgres://) scheme when DB_DIALECT=postgres"
+    );
+  }
+  let url;
+  try {
+    // WHATWG URL splits userinfo at the LAST @, so pooler passwords that
+    // contain an unencoded @ (bracketed format) still parse correctly.
+    url = new URL(value);
+  } catch {
+    throw new Error(
+      "DATABASE_URL is not a valid URL (expected postgresql://user:password@host:port/database)"
+    );
+  }
+  const decode = (part) => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      throw new Error("DATABASE_URL contains invalid percent-encoding in its credentials or database name");
+    }
+  };
+  const database = url.pathname.replace(/^\//, "");
+  return {
+    host: url.hostname || undefined,
+    port: url.port ? Number(url.port) : undefined,
+    database: database ? decode(database) : undefined,
+    username: url.username ? decode(url.username) : undefined,
+    password: url.password ? decode(url.password) : undefined
+  };
+}
+
+// PostgreSQL settings (DB_DIALECT=postgres). Precedence: the explicit PG_*
+// names always win; DATABASE_URL only fills what they leave unset. This keeps
+// the local loopback harness byte-identical even when backend/.env carries a
+// DATABASE_URL line, while production (URL only, no PG_*) works with nothing
+// but DATABASE_URL + DB_DIALECT=postgres.
 function resolvePostgresSettings(env = process.env) {
-  const host = firstDefined(env.PG_HOST, env.PGDBHOST, env.DB_HOST);
+  const fromUrl = parsePostgresUrl(env.DATABASE_URL);
+  const host = firstDefined(env.PG_HOST, env.PGDBHOST, env.DB_HOST, fromUrl && fromUrl.host);
   return {
     host,
-    port: Number(firstDefined(env.PG_PORT, env.PGDBPORT, env.DB_PORT, 5432)),
-    database: firstDefined(env.PG_DB, env.PGDATABASE, env.DB_NAME),
-    username: firstDefined(env.PG_USER, env.PGDBUSER, env.DB_USER),
-    password: firstDefined(env.PG_PASS, env.PGDBPASSWORD, env.DB_PASSWORD, ""),
+    port: Number(firstDefined(env.PG_PORT, env.PGDBPORT, env.DB_PORT, fromUrl && fromUrl.port, 5432)),
+    database: firstDefined(env.PG_DB, env.PGDATABASE, env.DB_NAME, fromUrl && fromUrl.database),
+    username: firstDefined(env.PG_USER, env.PGDBUSER, env.DB_USER, fromUrl && fromUrl.username),
+    password: firstDefined(env.PG_PASS, env.PGDBPASSWORD, env.DB_PASSWORD, fromUrl && fromUrl.password),
     ssl: resolvePgSslSetting(host, env)
   };
 }
@@ -207,6 +262,7 @@ function getMysql2Options(env = process.env) {
 module.exports = {
   resolveDialect,
   resolveMysqlSettings,
+  parsePostgresUrl,
   resolvePostgresSettings,
   resolvePgSslSetting,
   resolvePoolOptions,
