@@ -175,3 +175,25 @@ test("pgClientOptions: hosted targets get verified TLS; loopback stays byte-iden
   assert.equal(maintenance.database, "postgres");
   assert.deepEqual(maintenance.ssl, { rejectUnauthorized: true });
 });
+
+// Supabase hosts pin the official root as an EXTRA anchor (the production
+// certificate chain is private-rooted: a bare verify fails with
+// SELF_SIGNED_CERT_IN_CHAIN before authentication). Verification stays fully
+// enabled; look-alike hostnames must never receive the pinned CA.
+test("pgClientOptions: Supabase hosts get the pinned root CA + rejectUnauthorized:true; look-alikes do not", () => {
+  const SUPABASE_ROOT_CA = require("../config/supabaseRootCa");
+  const supabase = pgClientOptions({
+    host: "db.example-project.supabase.co", port: 5432, username: "u", password: "p", database: "d", ssl: true
+  });
+  assert.deepEqual(
+    supabase.ssl,
+    { rejectUnauthorized: true, ca: [SUPABASE_ROOT_CA] },
+    "extra trust anchor added — verification itself unchanged and still ON"
+  );
+  const lookalike = pgClientOptions({
+    host: "supabase.co.attacker.example", port: 5432, username: "u", password: "p", database: "d", ssl: true
+  });
+  assert.deepEqual(lookalike.ssl, { rejectUnauthorized: true }, "suffix-anchored match only — no CA for look-alikes");
+  const loopback = pgClientOptions({ host: "127.0.0.1", port: 5433, username: "u", password: "p", database: "d" });
+  assert.equal("ssl" in loopback, false, "loopback untouched by the CA logic");
+});
