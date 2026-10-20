@@ -43,7 +43,12 @@ const { runMigrations, computeChecksum } = require("../scripts/migrate");
 const execFileAsync = promisify(execFile);
 const BACKEND_DIR = path.join(__dirname, "..");
 
+// The full .pgsql namespace in filename order. 000 bootstraps the base
+// schema (a complete no-op on the sync-built scratch DB — the DO type guards
+// and IF NOT EXISTS skip everything — so it is recorded but changes nothing),
+// then 005-007 layer their indexes on top.
 const PG_MIGRATIONS = [
+  "000_pg_base_schema.pgsql",
   "005_pg_cart_items_user_product_unique.pgsql",
   "006_pg_wishlist_items_user_product_unique.pgsql",
   "007_pg_ci_unique_email_and_category.pgsql"
@@ -167,7 +172,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     }
 
     const result = await runMigrations({ quiet: true });
-    assert.deepEqual(result.applied, PG_MIGRATIONS, "all three migration files must apply in order");
+    assert.deepEqual(result.applied, PG_MIGRATIONS, "all four migration files must apply in order");
 
     const afterIdx = await indexNames();
     for (const name of NEW_INDEXES) assert.ok(afterIdx.includes(name), `${name} must exist after migration`);
@@ -202,7 +207,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     assert.deepEqual(
       (await query(`SELECT id FROM "schema_migrations" ORDER BY id`)).map((r) => r.id),
       PG_MIGRATIONS,
-      "bookkeeping must record exactly the three applied files"
+      "bookkeeping must record exactly the four applied files"
     );
   });
 
@@ -282,7 +287,9 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     // only the `verify:` directive can catch this — it must abort + roll back.
     await query(`DROP INDEX IF EXISTS "uq_cartitems_user_product"`);
     await query(`CREATE INDEX uq_cartitems_user_product ON "CartItems" ("UserId")`);
-    await query(`DELETE FROM "schema_migrations" WHERE id = '${PG_MIGRATIONS[0]}'`);
+    // Remove 005's bookkeeping row ONLY — 000/006/007 stay recorded, so the
+    // rerun's pending set is exactly 005 and its verify is the one under test.
+    await query(`DELETE FROM "schema_migrations" WHERE id = '${PG_MIGRATIONS[1]}'`);
 
     const rowsBefore = await rowsSnapshot();
 
@@ -294,9 +301,9 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
       return true;
     });
 
-    // Rollback: bookkeeping keeps 006/007 only; the PRE-EXISTING wrong index
-    // is untouched (the skipped CREATE was rolled back, nothing else dropped).
-    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[1], PG_MIGRATIONS[2]]);
+    // Rollback: bookkeeping keeps 000/006/007 only; the PRE-EXISTING wrong
+    // index is untouched (the skipped CREATE was rolled back, nothing else dropped).
+    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0], PG_MIGRATIONS[2], PG_MIGRATIONS[3]]);
     const wrong = await query(`SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_cartitems_user_product'`);
     assert.equal(wrong.length, 1, "the pre-existing wrong index must survive the rollback");
     assert.match(wrong[0].indexdef, /USING btree \("UserId"\)/, "must still be the wrong definition");
@@ -305,7 +312,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     // Recovery (documented): remove the wrong index, re-run — the real one is created.
     await query(`DROP INDEX "uq_cartitems_user_product"`);
     const result = await runMigrations({ quiet: true });
-    assert.deepEqual(result.applied, [PG_MIGRATIONS[0]]);
+    assert.deepEqual(result.applied, [PG_MIGRATIONS[1]]);
     const good = await query(`SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_cartitems_user_product'`);
     assert.equal(good.length, 1);
     assert.match(good[0].indexdef, /\("UserId", "productId"\)/, "the correct composite unique index must exist");
@@ -313,7 +320,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     assert.deepEqual(await appliedIds(), PG_MIGRATIONS.slice().sort(), "state fully healed for the following tests");
   });
 
-  it("pre-existing cart duplicates: clear failure, NO data change, NO index, NO bookkeeping row", async () => {
+  it("pre-existing cart duplicates: clear failure, NO data change, NO index, failed file unrecorded", async () => {
     // Simulate a legacy database where these migrations never ran.
     for (const idx of NEW_INDEXES) await query(`DROP INDEX IF EXISTS "${idx}"`);
     await query(`DELETE FROM "schema_migrations"`);
@@ -338,7 +345,10 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
 
     assert.deepEqual(await rowsSnapshot(), rowsBefore, "a failed migration must not change ANY row");
     assert.deepEqual(await indexNames(), idxBefore, "a failed migration must not create any index");
-    assert.deepEqual(await appliedIds(), [], "a failed migration must not be recorded as applied");
+    // Bookkeeping was wiped above, so the run starts fresh: 000 applies first
+    // (idempotent no-op — it legitimately records itself), then 005 fails and
+    // rolls back completely — the FAILED file must not be recorded as applied.
+    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0]]);
   });
 
   it("after cart remediation, email duplicates fail 007 safely (no emails printed, 005/006 kept)", async () => {
@@ -361,8 +371,9 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     });
 
     assert.deepEqual(await rowsSnapshot(), rowsBefore, "duplicate users must survive untouched");
-    // Per-file transactions: 005 + 006 committed, 007 fully rolled back.
-    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0], PG_MIGRATIONS[1]]);
+    // Per-file transactions: 000 (already recorded from the run above) plus
+    // 005 + 006 committed, 007 fully rolled back.
+    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0], PG_MIGRATIONS[1], PG_MIGRATIONS[2]]);
     const idx = await indexNames();
     assert.ok(idx.includes("uq_cartitems_user_product"));
     assert.ok(idx.includes("uq_wishlistitems_user_product"));
@@ -386,7 +397,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     });
 
     assert.deepEqual(await rowsSnapshot(), rowsBefore, "duplicate categories must survive untouched");
-    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0], PG_MIGRATIONS[1]]);
+    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0], PG_MIGRATIONS[1], PG_MIGRATIONS[2]]);
     const idx = await indexNames();
     assert.ok(!idx.includes("uq_users_email_lower"), "the earlier create in 007 must roll back too");
     assert.ok(!idx.includes("uq_categories_name_lower"));
@@ -397,7 +408,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     await query(`DELETE FROM "Categories" WHERE slug IN ('p6-dup-a', 'p6-dup-b')`);
 
     const result = await runMigrations({ quiet: true });
-    assert.deepEqual(result.applied, [PG_MIGRATIONS[2]]);
+    assert.deepEqual(result.applied, [PG_MIGRATIONS[3]]);
 
     const idx = await indexNames();
     for (const name of NEW_INDEXES) assert.ok(idx.includes(name), `${name} must exist after recovery`);

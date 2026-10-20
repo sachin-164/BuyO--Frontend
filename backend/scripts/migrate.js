@@ -6,8 +6,11 @@
 //   - Migrations live in backend/migrations/NNN_name.sql, applied in filename order.
 //   - Applied migrations are recorded in the `schema_migrations` table together
 //     with a SHA-256 checksum. Editing an already-applied file is REFUSED.
-//   - Statements are split on ";" — migration files must NOT contain ";"
-//     inside string literals (kept simple on purpose; see docs/schema-v1.md).
+//   - Statements are split on ";" — MySQL migration files must NOT contain
+//     ";" inside string literals (kept simple on purpose; see docs/schema-v1.md).
+//     The PostgreSQL splitter additionally treats dollar-quoted bodies
+//     ($$ ... $$ / $tag$ ... $tag$) as opaque so DO blocks can carry the
+//     semicolons plpgsql requires (see splitPgStatements).
 //   - Statements run sequentially. MySQL DDL is not transactional, so every
 //     migration step is GUARDED (checks information_schema first) and safe to
 //     re-run after a partial failure. Recovery strategy: pre-migration backup
@@ -33,7 +36,12 @@
 //   -- verify: <label>     the statement must return exactly one row whose
 //                          boolean column ok is true, otherwise the migration
 //                          ABORTS and rolls back — no false success.
-// File policy (both dialects): no ";" inside string literals.
+// File policy: MySQL ".sql" files — no ";" inside string literals (the MySQL
+// splitter strips comment lines first, then splits on ";"). PostgreSQL
+// ".pgsql" files — statements split on ";" OUTSIDE dollar-quoted bodies only
+// (comment lines are stripped after splitting, so keep ";" out of comment
+// prose in .pgsql files too); a ";" inside a plain string literal still
+// splits, so keep string literals ";"-free as before.
 //
 // Safety guards — REFUSES to run unless ALL hold:
 //   1. --confirm-local flag passed          2. NODE_ENV is not "production"
@@ -235,11 +243,51 @@ function discoverPgMigrationFiles() {
 }
 
 // Splits a .pgsql file into executable statements while KEEPING directive
-// comments with their statement. Same no-";"-inside-strings policy as MySQL.
-// Comments are removed only right before execution.
+// comments with their statement. Dollar-quoted bodies ($$ ... $$ or
+// $tag$ ... $tag$) are opaque: their required plpgsql semicolons (DO blocks)
+// never split, and an unterminated dollar quote keeps the rest of the file in
+// one chunk so the server reports it as a single clear SQL error. Everything
+// else splits on ";" exactly as before — a ";" inside a plain string literal
+// still splits (keep literals ";"-free, as documented). Comment lines are
+// removed only right before execution (never from inside a dollar-quoted body
+// in practice — keep migration DO bodies comment-free).
+function splitDollarAware(sqlText) {
+  const text = sqlText.replace(/^\uFEFF/, "");
+  const chunks = [];
+  let current = "";
+  let i = 0;
+  while (i < text.length) {
+    if (text[i] === "$") {
+      const open = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(text.slice(i));
+      if (open) {
+        const tag = open[0]; // "$$" or "$tag$"
+        const end = text.indexOf(tag, i + tag.length);
+        if (end === -1) {
+          current += text.slice(i); // unterminated: consume the rest verbatim
+          i = text.length;
+          continue;
+        }
+        current += text.slice(i, end + tag.length);
+        i = end + tag.length;
+        continue;
+      }
+    }
+    if (text[i] === ";") {
+      chunks.push(current);
+      current = "";
+      i += 1;
+      continue;
+    }
+    current += text[i];
+    i += 1;
+  }
+  chunks.push(current);
+  return chunks;
+}
+
 function splitPgStatements(sqlText) {
   const statements = [];
-  for (const rawChunk of sqlText.replace(/^\uFEFF/, "").split(";")) {
+  for (const rawChunk of splitDollarAware(sqlText)) {
     let precheckLabel = null;
     let verifyLabel = null;
     const sqlLines = [];

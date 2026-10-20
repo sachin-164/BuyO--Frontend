@@ -166,7 +166,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
     const schema = await run("test/pgSchemaFor.js", [TARGET_DB]);
     assert.equal(schema.code, 0, `schema setup failed:\n${schema.stdout}${schema.stderr}`);
     assert.match(schema.stdout, new RegExp(`SCHEMA_OK ${TARGET_DB}`));
-    assert.match(schema.stdout, /applied_pgsql=3/); // 005, 006, 007
+    assert.match(schema.stdout, /applied_pgsql=4/); // 000, 005, 006, 007
   });
 
   after(async () => {
@@ -194,7 +194,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
       }
       assert.ok(pgNames.includes("schema_migrations"), "bookkeeping table exists");
       const bookkeeping = await client.query(`SELECT count(*)::int AS n FROM "schema_migrations"`);
-      assert.equal(bookkeeping.rows[0].n, 3, "numbered .pgsql migrations recorded");
+      assert.equal(bookkeeping.rows[0].n, 4, "numbered .pgsql migrations recorded");
 
       const idx = await client.query(
         `SELECT indexname FROM pg_indexes WHERE schemaname='public'`

@@ -19,7 +19,7 @@ process.env.NODE_ENV = "test";
 process.env.MYSQL_DB = "buyoDB_ph3_sync";
 
 const { resolveMysqlSettings, toMysql2Options } = require("../config/dbConnectionOptions");
-const { runMigrations, computeChecksum } = require("../scripts/migrate");
+const { runMigrations, computeChecksum, splitPgStatements } = require("../scripts/migrate");
 const { createBackup } = require("../scripts/db-backup");
 const { runRestore } = require("../scripts/db-restore");
 const { applyRoleChange, listAdmins } = require("../scripts/admin-role");
@@ -193,6 +193,63 @@ async function buildLegacyDatabase(database) {
     await connection.end();
   }
 }
+
+// Unit coverage for the PostgreSQL splitter's dollar-quote awareness — no
+// database involved. This is what lets 000_pg_base_schema.pgsql carry DO
+// blocks (plpgsql REQUIRES internal semicolons) while every existing .pgsql
+// file keeps splitting byte-for-byte identically (no dollar quotes in them).
+describe("PG statement splitter: dollar-quote awareness", () => {
+  it("keeps a DO block with plpgsql semicolons as ONE statement", () => {
+    const sql = [
+      "-- leads the statement",
+      "DO $$ BEGIN",
+      "  CREATE TYPE \"probe_t\" AS ENUM ('a', 'b');",
+      "EXCEPTION",
+      "  WHEN duplicate_object THEN NULL;",
+      "END $$;"
+    ].join("\n");
+    const parts = splitPgStatements(sql);
+    assert.equal(parts.length, 1, "the whole DO block must be one statement");
+    assert.equal(parts[0].kind, "exec");
+    assert.ok(parts[0].sql.startsWith("DO $$ BEGIN"), "body must start intact");
+    assert.ok(parts[0].sql.endsWith("END $$"), "body must end intact");
+    assert.ok(parts[0].sql.includes("WHEN duplicate_object THEN NULL;"), "inner semicolons must survive");
+    assert.ok(!parts[0].sql.includes("-- leads"), "comment lines must be stripped");
+  });
+
+  it("preserves legacy splitting for files without dollar quotes", () => {
+    const sql = "-- c1\nSELECT 1;\n\n-- verify: works\nSELECT true AS ok;";
+    const parts = splitPgStatements(sql);
+    assert.equal(parts.length, 2);
+    assert.equal(parts[0].kind, "exec");
+    assert.equal(parts[0].sql, "SELECT 1");
+    assert.equal(parts[1].kind, "verify");
+    assert.equal(parts[1].label, "works");
+    assert.equal(parts[1].sql, "SELECT true AS ok");
+  });
+
+  it("handles several DO blocks and following statements in order", () => {
+    const sql = [
+      "DO $$ BEGIN CREATE TYPE \"a_t\" AS ENUM ('x'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+      "DO $$ BEGIN CREATE TYPE \"b_t\" AS ENUM ('y'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+      "CREATE TABLE IF NOT EXISTS \"T\" (\"id\" serial NOT NULL);",
+      "SELECT 1 AS ok;"
+    ].join("\n");
+    const parts = splitPgStatements(sql);
+    assert.equal(parts.length, 4);
+    assert.ok(parts[0].sql.startsWith("DO $$"), "first must be the first DO");
+    assert.ok(parts[1].sql.includes("\"b_t\""), "second must be the second DO");
+    assert.ok(parts[2].sql.startsWith("CREATE TABLE"), "third must be the table DDL");
+    assert.equal(parts[3].sql, "SELECT 1 AS ok");
+  });
+
+  it("keeps an unterminated dollar quote in one chunk (server-side error, not a split)", () => {
+    const sql = "DO $$ BEGIN\n  SELECT 1;\n"; // no closing tag at all
+    const parts = splitPgStatements(sql);
+    assert.equal(parts.length, 1, "must not split inside the unclosed body");
+    assert.ok(parts[0].sql.includes("SELECT 1;"), "body text must be preserved for a clear server error");
+  });
+});
 
 describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
   let backupPath = "";

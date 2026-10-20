@@ -47,7 +47,13 @@ new script:
 - Same file directory and numbering; **disjoint namespaces by suffix**:
   MySQL reads `NNN_*.sql` only (the applied `.sql` files stay frozen by
   checksum protection), PostgreSQL reads `NNN_*.pgsql` only. A dialect never
-  sees the other's files.
+  sees the other's files. The `.pgsql` namespace applies in filename order:
+  `000_pg_base_schema.pgsql` (base-schema bootstrap — creates the nine
+  application tables and five enum types exactly as `sequelize.sync()` would,
+  a complete no-op on a sync-built database, a full bootstrap on an empty
+  target, five `verify:` directives prove the result; pinned by
+  `test/pgBaseSchema.test.js` via `npm run test:pg:base`), then `005`–`007`
+  (the Phase 6 index files below).
 - PG settings come from `PG_*` env vars only (`DATABASE_URL` never read),
   loopback, no SSL — passing explicit `settings` to the PG branch is refused
   rather than silently ignored.
@@ -66,8 +72,14 @@ new script:
   claim success unless its constraint provably exists (checked via
   `pg_index`/`pg_get_indexdef`: name, `indisunique`, `indisvalid`, expected
   column list or `LOWER(...)` expression).
-- Statement policy (both dialects): no `;` inside string literals; directive
-  comment lines must start their own statement chunk.
+- Statement policy: MySQL `.sql` files — no `;` inside string literals
+  (comment lines are stripped first, then the rest splits on `;`).
+  PostgreSQL `.pgsql` files — statements split on `;` OUTSIDE dollar-quoted
+  bodies only, so `DO` blocks can carry the semicolons plpgsql requires
+  (`000_pg_base_schema.pgsql` uses exception-guarded `CREATE TYPE` this way);
+  keep `;` out of comment prose and out of plain string literals in `.pgsql`
+  files, and keep `$` out of comment prose entirely. Directive comment lines
+  must start their own statement chunk.
 
 ## 3. Exact index definitions
 

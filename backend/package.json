@@ -25,6 +25,7 @@
     "test:pg:cart": "node test/pgSuite.js test/cartWishlist.test.js",
     "test:pg:security": "node test/pgSuite.js test/security.test.js",
     "test:pg:migrations": "node test/pgSuite.js test/pgMigrations.test.js",
+    "test:pg:base": "node test/pgSuite.js test/pgBaseSchema.test.js",
     "test:pg:tooling": "node test/pgSuite.js test/pgTooling.test.js",
     "test:pg:data": "node test/pgSuite.js test/dataMigration.test.js",
     "test:pg:storage": "node test/pgSuite.js test/storageUpload.test.js"
