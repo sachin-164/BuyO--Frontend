@@ -31,6 +31,14 @@
 //     loopback), so local embedded-PostgreSQL testing needs no changes. Any
 //     sslmode-style query parameter on DATABASE_URL is deliberately ignored —
 //     the PG_SSL env knob (and the automatic rule) remains the only switch.
+//   - Supabase CA trust (Phase 11): Supabase-hosted PostgreSQL endpoints use
+//     Supabase's private PKI, whose root is NOT in Node's default trust
+//     store. For *.supabase.co / *.supabase.com hosts the official Supabase
+//     Root 2021 CA (see supabaseRootCa.js, public certificate data) is added
+//     to the connection's trust — certificate-chain and hostname verification
+//     stay FULLY ON. Other hosts keep the default public trust store.
+
+const SUPABASE_ROOT_CA = require("./supabaseRootCa");
 
 function firstDefined(...values) {
   for (const value of values) {
@@ -151,6 +159,8 @@ function resolvePostgresSettings(env = process.env) {
 //   anything else -> throws: a typo must never silently pick a mode.
 // TLS always verifies certificates (rejectUnauthorized:true is hardcoded in
 // getSequelizeOptions) — there is intentionally no knob to weaken it.
+// Supabase hosts additionally trust the official Supabase Root 2021 CA
+// (supabaseRootCa.js); other hosts use the default public trust store.
 function resolvePgSslSetting(host, env = process.env) {
   const raw = String(env.PG_SSL ?? "").trim().toLowerCase();
   if (raw === "") return !isLoopbackHost(host);
@@ -206,6 +216,18 @@ function isLoopbackHost(host) {
   );
 }
 
+// Supabase cloud hosts (Phase 11): db.<ref>.supabase.co (direct) and
+// aws-*-<region>.pooler.supabase.com (transaction/session poolers). Anchored
+// at the END of the hostname so lookalike domains (e.g.
+// "supabase.co.attacker.example") never match, and a preceding dot (or start
+// of string) is required so "notsupabase.co" never matches. Only these hosts
+// get the pinned Supabase root CA added to their TLS trust; every other host
+// keeps the default public trust store unchanged.
+function isSupabaseHost(host) {
+  if (!host) return false;
+  return /(^|\.)supabase\.(co|com)$/.test(String(host).trim().toLowerCase());
+}
+
 // Options for Sequelize (used by config/db.js)
 function getSequelizeOptions(env = process.env) {
   const dialect = resolveDialect(env);
@@ -221,7 +243,17 @@ function getSequelizeOptions(env = process.env) {
     };
     // TLS with certificate VERIFICATION, hardcoded — no opt-out exists (Phase 9).
     if (settings.ssl) {
-      options.dialectOptions = { ssl: { rejectUnauthorized: true } };
+      const sslOptions = { rejectUnauthorized: true };
+      // Supabase endpoints chain to Supabase's private root CA, which is not
+      // in Node's default trust store (a bare verify fails with
+      // SELF_SIGNED_CERT_IN_CHAIN before authentication). For those hosts
+      // ONLY, add the official Supabase Root 2021 CA as an extra trust
+      // anchor; verification and hostname checks remain fully enabled, and
+      // non-Supabase hosts keep the default public trust store untouched.
+      if (isSupabaseHost(settings.host)) {
+        sslOptions.ca = [SUPABASE_ROOT_CA];
+      }
+      options.dialectOptions = { ssl: sslOptions };
     }
     return options;
   }
@@ -269,6 +301,7 @@ module.exports = {
   intFromEnvSetting,
   resolveSettings,
   isLoopbackHost,
+  isSupabaseHost,
   sslRejectUnauthorized,
   getSequelizeOptions,
   getMysql2Options,
