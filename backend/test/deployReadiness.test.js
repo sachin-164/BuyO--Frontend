@@ -5,9 +5,10 @@
 //    PostgreSQL backend loads it at runtime); MySQL stays until the cutover
 //    and rollback plan no longer need it; the embedded-PostgreSQL test
 //    tooling stays a devDependency.
-// 2. api/[...path].js restoreApiPrefix(): the documented URL-normalization
-//    cases (the catch-all function delivers full /api/* paths; the other
-//    delivery forms stay supported).
+// 2. api/app.js restoreApiPrefix(): the documented URL-normalization cases
+//    (the /api/:path* rewrite delivers full /api/* paths plus a synthetic
+//    ?path= query param that must be stripped; the other delivery forms stay
+//    supported).
 // 3. A REAL HTTP round trip through the candidate serverless handler — no
 //    Vercel involved, but the same entry function, proving stripped, full and
 //    function-name path deliveries all route correctly through the actual
@@ -70,7 +71,7 @@ test("vercel.json: builder install omits devDependencies (linux/x64)", () => {
   );
 });
 
-const handler = require("../../api/[...path].js");
+const handler = require("../../api/app.js");
 
 test("restoreApiPrefix: documented normalization cases", () => {
   const { restoreApiPrefix } = handler;
@@ -92,12 +93,28 @@ test("restoreApiPrefix: documented normalization cases", () => {
   assert.equal(restoreApiPrefix(undefined), "/api");
 });
 
+test("restoreApiPrefix: the rewrite-appended ?path= param is stripped, real params kept", () => {
+  const { restoreApiPrefix, stripRewriteParam } = handler;
+  // Verified live: Vercel rewrites (/api/:path* -> /api/app) deliver the
+  // original path plus the unbound capture as a query parameter.
+  assert.equal(stripRewriteParam("/api/health/ready?path=health%2Fready"), "/api/health/ready");
+  assert.equal(stripRewriteParam("/api/products?q=laptop&path=products"), "/api/products?q=laptop");
+  assert.equal(stripRewriteParam("/api/products?path=x&q=laptop"), "/api/products?q=laptop");
+  assert.equal(stripRewriteParam("/api/diag?path="), "/api/diag");
+  assert.equal(stripRewriteParam("/api/products"), "/api/products"); // no query — untouched
+  // real params (including ones merely containing "path" in the value) survive
+  assert.equal(stripRewriteParam("/api/products?filepath=a&x=1"), "/api/products?filepath=a&x=1");
+  // end-to-end through the documented normalizer
+  assert.equal(restoreApiPrefix("/api/health/ready?path=health%2Fready"), "/api/health/ready");
+  assert.equal(restoreApiPrefix("/api/products?q=laptop&path=products"), "/api/products?q=laptop");
+});
+
 test("serverless handler round trip: stripped, full and function-name deliveries", async (t) => {
   // Boot the scratch DB + models (tables exist for the positive-path check).
   const app = await helpers.startTestApp();
   t.after(() => app.close());
 
-  // Our own HTTP server wrapping the SAME handler api/[...path].js exports.
+  // Our own HTTP server wrapping the SAME handler api/app.js exports.
   const server = http.createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -134,7 +151,7 @@ test("serverless entry boots on a read-only file system (no boot-time disk write
   // /api/* request failed with FUNCTION_INVOCATION_FAILED (verified live).
   // The probe makes ALL boot-time mkdir/writeFileSync calls throw EROFS and
   // requires the real entry: it must still load.
-  const entry = path.join(__dirname, "..", "..", "api", "[...path].js");
+  const entry = path.join(__dirname, "..", "..", "api", "app.js");
   const probe = `
     const fs = require("node:fs");
     const erofs = (op, p) => {

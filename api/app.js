@@ -1,20 +1,23 @@
-// api/[...path].js — CANDIDATE Vercel serverless entry (Phase 8 preparation).
+// api/app.js — the deployed Vercel serverless entry.
 //
-// Status: DEPLOYED as the production API entry on the `buyo-project` Vercel
-// project. The catch-all filename `[...path]` is required by Vercel's
-// zero-config routing: a plain `api/index.js` only matches the EXACT path
-// `/api/index` (subpaths like `/api/index/health` return an edge 404 —
-// verified live), while `api/[...path].js` natively matches every `/api/*`
-// request and delivers the FULL path to the handler. That made the old
-// `vercel.json` rewrite (`/api/:path*` → `/api/index/:path`) unable to route
-// any real endpoint; the rewrite was removed along with the rename.
+// Routing story (every step verified live on the `buyo-project` project):
+//   - `api/index.js` matches ONLY the exact `/api/index` path (subpaths hit
+//     the edge 404), so the historical `/api/:path*` → `/api/index/:path`
+//     rewrite could never deliver a real endpoint.
+//   - `api/[...path].js` as a zero-config function matched only ONE segment
+//     (`/api/health` reached it, `/api/health/ready` edge-404'd).
+//   - FINAL DESIGN: a plain `api/app.js` function (route `/api/app`) plus a
+//     `vercel.json` rewrite `/api/:path*` → `/api/app`. Vercel rewrites
+//     deliver the ORIGINAL url to the function and append the unbound
+//     `:path` capture as a query parameter (e.g. `/api/health/ready?path=
+//     health%2Fready`) — restoreApiPrefix() strips that synthetic param.
 //
 // What this file does:
 //   - Boots the existing Express app (backend/app.js createApp()) WITHOUT
 //     server.js's listen()/signal handling — serverless owns the lifecycle.
 //   - Normalizes the incoming URL with restoreApiPrefix() so the app works
 //     whether the platform delivers the full path ("/api/products") — the
-//     form the catch-all delivers — or a stripped sub-path ("/products") or
+//     form the rewrite delivers — or a stripped sub-path ("/products") or
 //     the legacy function-name form ("/api/index/products"). Pure function,
 //     unit-tested in backend/test/deployReadiness.test.js together with a
 //     real HTTP round trip.
@@ -48,10 +51,26 @@ const { createApp } = require("../backend/app");
 
 const app = createApp();
 
+// Vercel rewrites (/api/:path* → /api/app) deliver the original path but
+// append the unbound :path capture as a query parameter (?path=...). No
+// route consumes a `path` query parameter (validateQuery whitelists per
+// route), so drop the synthetic one before Express sees the request; every
+// real query parameter is preserved. Verified live: the function receives
+// "/api/health/ready?path=health%2Fready" for a request to /api/health/ready.
+function stripRewriteParam(url) {
+  const q = url.indexOf("?");
+  if (q === -1) return url;
+  const kept = url
+    .slice(q + 1)
+    .split("&")
+    .filter((param) => param !== "path" && !param.startsWith("path="));
+  return kept.length ? url.slice(0, q) + "?" + kept.join("&") : url.slice(0, q);
+}
+
 // Restore the /api prefix if the platform stripped it. Order matters:
 // the function-name form must be checked before the generic /api/ passthrough.
 function restoreApiPrefix(url) {
-  const value = typeof url === "string" && url !== "" ? url : "/";
+  const value = stripRewriteParam(typeof url === "string" && url !== "" ? url : "/");
   const FUNCTION_PREFIX = "/api/index";
   if (value === FUNCTION_PREFIX || value.startsWith(FUNCTION_PREFIX + "/") || value.startsWith(FUNCTION_PREFIX + "?")) {
     return "/api" + value.slice(FUNCTION_PREFIX.length);
@@ -69,3 +88,4 @@ function handler(req, res) {
 
 module.exports = handler;
 module.exports.restoreApiPrefix = restoreApiPrefix;
+module.exports.stripRewriteParam = stripRewriteParam;
