@@ -29,7 +29,20 @@
 // in-memory rate limiter being per-instance.
 const path = require("path");
 
-require("dotenv").config({ path: path.join(__dirname, "..", "backend", ".env"), quiet: true });
+// Load backend/.env for LOCAL previews only (vercel dev). In production the
+// platform's environment variables are already set and dotenv never
+// overrides existing values, so this is a no-op there. dotenv is declared in
+// the ROOT package.json because this entry lives at repo root (api/) — the
+// backend workspace nests its own copy under backend/node_modules/, which a
+// require from api/ can never reach (that mismatch was the live
+// FUNCTION_INVOCATION_FAILED: "Cannot find module 'dotenv'"). The catch is a
+// belt: on Vercel the platform env is complete without dotenv, so a missing
+// optional preview nicety must never take the API down.
+try {
+  require("dotenv").config({ path: path.join(__dirname, "..", "backend", ".env"), quiet: true });
+} catch (err) {
+  // dotenv not installed (platform env already provided): continue.
+}
 
 const { createApp } = require("../backend/app");
 
