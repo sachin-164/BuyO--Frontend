@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { PackageOpen, Receipt } from "lucide-react";
 import { OrderStatusBadge } from "@/components/commerce/order-status-timeline";
+import { CancelOrderButton } from "@/components/commerce/cancel-order-button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -187,9 +188,18 @@ export default function OrdersPage() {
                           {formatPrice(order.grandTotal)}
                         </span>
                       </p>
-                      <Button asChild size="sm">
-                        <Link to={`/orders/${order.id}`}>View details</Link>
-                      </Button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {order.canCancel ? (
+                          <CancelOrderButton
+                            orderId={order.id}
+                            orderNumber={order.orderNumber}
+                            variant="ghost"
+                          />
+                        ) : null}
+                        <Button asChild size="sm">
+                          <Link to={`/orders/${order.id}`}>View details</Link>
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>

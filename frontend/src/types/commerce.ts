@@ -121,6 +121,8 @@ export interface OrderSummary {
   taxTotal: number;
   grandTotal: number;
   createdAt: string;
+  /** Server-derived: true only while the order can still be cancelled. */
+  canCancel?: boolean;
   items: OrderItem[];
 }
 
@@ -155,6 +157,12 @@ export interface CreateOrderResponse {
   success: true;
   message?: string;
   idempotentReplay?: boolean;
+  order: Order;
+}
+
+export interface CancelOrderResponse {
+  success: true;
+  message: string;
   order: Order;
 }
 

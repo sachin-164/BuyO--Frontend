@@ -71,8 +71,8 @@
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 12 | Customer order cancellation API | Admin-only cancellation | `POST /orders/:id/cancel`: owner-scoped, only cancellable statuses, single transaction, exactly-once restock, status event | — | Concurrent double-cancel → one 200 + one 409; stock restored exactly once; other users get 404; terminal states 409 | `orderCancel.test.js` | TODO |
-| 13 | Customer cancellation UI | Missing | Cancel action on eligible orders with confirm dialog, disabled/terminal states, cache invalidation | 12 | Refetches order + list; shows new event in the timeline; no action on terminal orders | `orders-cancel.test.tsx` | TODO |
+| 12 | Customer order cancellation API | Admin-only cancellation | `POST /orders/:id/cancel`: owner-scoped, only cancellable statuses, single transaction, exactly-once restock, status event | — | Concurrent double-cancel → one 200 + one 409; stock restored exactly once; other users get 404; terminal states 409 | `orderCancelAndNotifications.test.js` | IMPLEMENTED |
+| 13 | Customer cancellation UI | Missing | Cancel action on eligible orders with confirm dialog, disabled/terminal states, cache invalidation | 12 | Refetches order + list; shows new event in the timeline; no action on terminal orders | `orders-pages.test.tsx` | IMPLEMENTED |
 
 ## G. Auth: verification
 
@@ -92,8 +92,8 @@
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 18 | Order placed confirmation email | Auth mail only | Send receipt on successful checkout (non-blocking, failure never rolls back the order) | — | Exactly one mail per order, including idempotent replay; totals/items match the order | `orderEmails.test.js` | TODO |
-| 19 | Order status / cancellation notifications | Missing | Mail on each admin status change and customer cancellation, in the same transaction's success path | 12 | Sent after commit only; failure logged, not surfaced as order failure; one mail per transition | `orderStatusEmails.test.js` | TODO |
+| 18 | Order placed confirmation email | Auth mail only | Send receipt on successful checkout (non-blocking, failure never rolls back the order) | — | Exactly one mail per order, including idempotent replay; totals/items match the order | `orderCancelAndNotifications.test.js` | IMPLEMENTED |
+| 19 | Order status / cancellation notifications | Missing | Mail on each admin status change and customer cancellation, in the same transaction's success path | 12 | Sent after commit only; failure logged, not surfaced as order failure; one mail per transition | `orderCancelAndNotifications.test.js` | IMPLEMENTED |
 
 ## J. Catalog: variants — **owner-gated**
 

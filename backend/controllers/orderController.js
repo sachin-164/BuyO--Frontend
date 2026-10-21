@@ -42,6 +42,8 @@ const OrderStatusEvent = require("../models/orderStatusEvent");
 const { buildOrderTotals } = require("../utils/pricing");
 const { HttpError, parsePositiveId } = require("../utils/apiError");
 const { STATUS_VALUES } = require("../utils/orderStatus");
+const { applyStatusTransition, canCancel } = require("../utils/orderTransitions");
+const { notifyOrderPlaced, notifyOrderStatus } = require("../utils/orderMailer");
 
 const ORDER_NUMBER_ATTEMPTS = 5;
 const categoryInclude = [{ model: Category, as: "Category" }];
@@ -71,6 +73,9 @@ function serializeOrder(order) {
     addressId: order.addressId,
     notes: order.notes,
     createdAt: order.createdAt,
+    // Server-derived so the storefront never re-implements the lifecycle rules
+    // (utils/orderStatus ALLOWED_TRANSITIONS is the single source of truth).
+    canCancel: canCancel(order.status),
     items: (order.OrderItems || []).map((item) => ({
       id: item.id,
       productId: item.productId,
@@ -292,6 +297,9 @@ const createOrder = async (req, res, next) => {
       return res.status(200).json({ success: true, idempotentReplay: true, order });
     }
     const order = await fetchOrderGraph(outcome.orderId);
+    // Exactly one receipt per real checkout: idempotent replays above never
+    // reach this line, so a retried POST cannot send a second email.
+    await notifyOrderPlaced(order, req.user);
     return res.status(201).json({ success: true, message: "Order placed (Cash on Delivery)", order });
   } catch (err) {
     // Concurrent duplicate (unique-index race): rollback already happened —
@@ -346,6 +354,7 @@ const listOrders = async (req, res, next) => {
         taxTotal: Number(order.taxTotal),
         grandTotal: Number(order.grandTotal),
         createdAt: order.createdAt,
+        canCancel: canCancel(order.status),
         items: (order.OrderItems || []).map((item) => ({
           id: item.id,
           productId: item.productId,
@@ -377,4 +386,46 @@ const getOrder = async (req, res, next) => {
   }
 };
 
-module.exports = { createOrder, listOrders, getOrder, serializeOrder, fetchOrderGraph, STATUS_VALUES };
+// ---------- POST /api/orders/:id/cancel — customer cancellation ----------
+// Owner-scoped (a foreign order id is a 404, never a 403 — no existence
+// disclosure). Same transaction/lock/restock discipline as the admin path via
+// utils/orderTransitions, so a customer cancel and an admin cancel racing on the
+// same order produce exactly one success and exactly one restock.
+const cancelOrder = async (req, res, next) => {
+  try {
+    const id = parsePositiveId(req.params.id, "order id");
+
+    const outcome = await sequelize.transaction(async (transaction) => {
+      const order = await Order.findOne({
+        where: { id, userId: req.user.id },
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+      if (!order) throw new HttpError(404, "Order not found");
+
+      const previous = await applyStatusTransition(
+        order,
+        "cancelled",
+        "Cancelled by customer",
+        transaction
+      );
+      return { orderId: order.id, previous };
+    });
+
+    const order = await fetchOrderGraph(outcome.orderId);
+    await notifyOrderStatus(order, req.user, outcome.previous, "cancelled");
+    res.json({ success: true, message: "Order cancelled", order });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = {
+  createOrder,
+  listOrders,
+  getOrder,
+  cancelOrder,
+  serializeOrder,
+  fetchOrderGraph,
+  STATUS_VALUES
+};

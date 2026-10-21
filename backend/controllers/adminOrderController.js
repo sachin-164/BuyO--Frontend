@@ -2,7 +2,9 @@
 // Guarded by requireAuth + requireAdmin (DB-backed `Users.role = 'admin'`,
 // verified email required — admin authorization fails closed).
 //
-// STATUS UPDATES — single transaction:
+// STATUS UPDATES — single transaction, implemented once in
+// utils/orderTransitions.applyStatusTransition (shared with the customer
+// cancellation endpoint):
 //  1. Lock the order row (SELECT ... FOR UPDATE): two concurrent cancels
 //     serialize here, so exactly one of them can perform the transition.
 //  2. Validate the transition against ALLOWED_TRANSITIONS; terminal states
@@ -11,19 +13,20 @@
 //  3. Update Orders.status + append an OrderStatusEvents row; on cancellation
 //     restock every item (ascending productId) in the SAME transaction, so
 //     status change + event + restock commit or roll back together.
+//  4. AFTER the commit, notify the customer once. A mail failure is logged and
+//     swallowed, so it can never turn a successful change into an error.
 // (No DB uniqueness on (orderId, toStatus): history must stay able to record
 // future legitimate repeated statuses — see migration 004 header.)
 const sequelize = require("../config/db");
 const { Op, fn, col, where: sqlWhere } = require("sequelize");
-const { stockDelta } = require("../utils/sqlLiterals");
 const User = require("../models/user");
-const Product = require("../models/product");
 const Order = require("../models/order");
 const OrderItem = require("../models/orderItem");
 const OrderStatusEvent = require("../models/orderStatusEvent");
 const { HttpError, parsePositiveId } = require("../utils/apiError");
-const { ALLOWED_TRANSITIONS } = require("../utils/orderStatus");
 const { normalizeSearchTerm } = require("../utils/searchTerm");
+const { applyStatusTransition } = require("../utils/orderTransitions");
+const { notifyOrderStatus } = require("../utils/orderMailer");
 
 const itemInclude = [{ model: OrderItem, as: "OrderItems", order: [["id", "ASC"]] }];
 const eventInclude = [{ model: OrderStatusEvent, as: "OrderStatusEvents", order: [["id", "ASC"]] }];
@@ -154,50 +157,28 @@ const updateOrderStatus = async (req, res, next) => {
     const id = parsePositiveId(req.params.id, "order id");
     const { status, note } = req.body;
 
-    const orderId = await sequelize.transaction(async (transaction) => {
+    const outcome = await sequelize.transaction(async (transaction) => {
       // Lock the order row: concurrent status changes serialize here.
       const order = await Order.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
       if (!order) throw new HttpError(404, "Order not found");
 
-      const allowed = ALLOWED_TRANSITIONS[order.status] || [];
-      if (!allowed.includes(status)) {
-        throw new HttpError(409, `Cannot change order status from '${order.status}' to '${status}'`);
-      }
-
-      const previous = order.status;
-      await order.update({ status }, { transaction });
-      await OrderStatusEvent.create(
-        { orderId: order.id, fromStatus: previous, toStatus: status, note: note || null },
-        { transaction }
-      );
-
-      // Cancellation restocks — same transaction as the status change.
-      if (status === "cancelled") {
-        const items = await OrderItem.findAll({
-          where: { orderId: order.id },
-          order: [["productId", "ASC"], ["id", "ASC"]],
-          transaction
-        });
-        for (const item of items) {
-          if (item.productId === null) continue; // product deleted -> nothing to restock
-          const qty = Number(item.qty);
-          if (!Number.isInteger(qty) || qty < 1) {
-            throw new Error(`Non-integer order item quantity during restock: ${item.qty}`); // 500; not user-triggerable (DB INT)
-          }
-          await Product.update(
-            { stock: sequelize.literal(stockDelta("+", qty)) },
-            { where: { id: item.productId }, transaction }
-          );
-        }
-      }
-
-      return order.id;
+      // Single shared implementation: validates the transition, appends the
+      // history event, and restocks on cancellation inside this transaction.
+      const previous = await applyStatusTransition(order, status, note, transaction);
+      return { orderId: order.id, previous };
     });
 
-    const order = await Order.findByPk(orderId, {
+    const order = await Order.findByPk(outcome.orderId, {
       include: [...itemInclude, ...eventInclude, ...userInclude]
     });
-    res.json({ success: true, message: `Order status changed to '${status}'`, order: serializeAdminOrder(order) });
+    // After commit only: a mail failure is logged and swallowed, so it can never
+    // turn a successful status change into an error response.
+    await notifyOrderStatus(serializeAdminOrder(order), order.User, outcome.previous, status);
+    res.json({
+      success: true,
+      message: `Order status changed to '${status}'`,
+      order: serializeAdminOrder(order)
+    });
   } catch (err) {
     next(err);
   }

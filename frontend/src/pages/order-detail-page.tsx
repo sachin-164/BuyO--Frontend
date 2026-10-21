@@ -9,6 +9,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { OrderItems } from "@/components/commerce/order-items";
+import { CancelOrderButton } from "@/components/commerce/cancel-order-button";
 import { OrderStatusBadge, OrderStatusTimeline } from "@/components/commerce/order-status-timeline";
 import { addressLines } from "@/components/commerce/address-utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -237,14 +238,18 @@ export default function OrderDetailPage() {
                 <Button asChild variant="outline">
                   <Link to="/shop">Continue shopping</Link>
                 </Button>
+                {order.canCancel ? (
+                  <CancelOrderButton orderId={order.id} orderNumber={order.orderNumber} />
+                ) : null}
               </div>
               {order.status === "cancelled" ? (
                 <Alert variant="warning">
                   <Info aria-hidden="true" />
-                  <AlertTitle>Cancelled order</AlertTitle>
+                  <AlertTitle>Order cancelled</AlertTitle>
                   <AlertDescription>
-                    The server marked this order cancelled. There is no customer-facing cancellation
-                    request endpoint in the current API.
+                    This order was cancelled and its items were returned to stock. It was Cash on
+                    Delivery, so no payment was collected. The status history above records who
+                    cancelled it.
                   </AlertDescription>
                 </Alert>
               ) : null}

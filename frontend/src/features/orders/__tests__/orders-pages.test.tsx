@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Route, Routes } from "react-router-dom";
@@ -22,6 +22,7 @@ const ORDER_SUMMARY: OrderSummary = {
   taxTotal: 50,
   grandTotal: 1050,
   createdAt: "2026-01-01T10:00:00.000Z",
+  canCancel: true,
   items: [
     {
       id: 3,
@@ -94,8 +95,26 @@ function installFetch({
   listStatus = 200,
   detail = ORDER_DETAIL,
   detailStatus = 200,
+  cancelStatus = 200,
 } = {}) {
   const requests: Array<{ url: URL; method: string }> = [];
+  const cancelledDetail: Order = {
+    ...detail,
+    status: "cancelled",
+    canCancel: false,
+    statusEvents: [
+      ...detail.statusEvents,
+      {
+        id: 95,
+        fromStatus: detail.status,
+        toStatus: "cancelled",
+        note: "Cancelled by customer",
+        createdAt: "2026-01-03T11:00:00.000Z",
+      },
+    ],
+  };
+  let currentDetail = detail;
+
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), "http://localhost");
     const method = init?.method ?? "GET";
@@ -124,7 +143,27 @@ function installFetch({
       if (detailStatus >= 400) {
         return jsonResponse({ success: false, message: "Order not found" }, detailStatus);
       }
-      return jsonResponse({ success: true, order: detail });
+      return jsonResponse({ success: true, order: currentDetail });
+    }
+    if (method === "POST" && /^\/api\/orders\/\d+\/cancel$/.test(url.pathname)) {
+      if (cancelStatus >= 400) {
+        return jsonResponse(
+          {
+            success: false,
+            message:
+              cancelStatus === 409
+                ? "Cannot change order status from 'shipped' to 'cancelled'"
+                : "Order could not be cancelled",
+          },
+          cancelStatus,
+        );
+      }
+      currentDetail = cancelledDetail;
+      return jsonResponse({
+        success: true,
+        message: "Order cancelled",
+        order: cancelledDetail,
+      });
     }
     return jsonResponse({ success: false, message: "Not found" }, 404);
   });
@@ -206,6 +245,27 @@ describe("OrdersPage", () => {
     expect(await screen.findByText("Orders could not be loaded")).toBeInTheDocument();
     expect(screen.getByText("Orders failed")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("shows a cancel action only for orders the server marks cancellable", async () => {
+    installFetch();
+    renderWithProviders(<OrdersPage />, { route: "/orders" });
+
+    await screen.findByText("BO-240101-9X8Y7Z");
+    expect(screen.getByRole("button", { name: "Cancel order" })).toBeInTheDocument();
+  });
+
+  it("hides the cancel action when the server says the order is no longer cancellable", async () => {
+    installFetch({
+      list: {
+        ...ORDERS_LIST,
+        orders: [{ ...ORDER_SUMMARY, status: "shipped", canCancel: false }],
+      },
+    });
+    renderWithProviders(<OrdersPage />, { route: "/orders" });
+
+    await screen.findByText("BO-240101-9X8Y7Z");
+    expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
   });
 
   it("paginates with links that preserve the status filter", async () => {
@@ -295,6 +355,86 @@ describe("OrderDetailPage", () => {
     expect(
       requests.find((request) => request.url.pathname === "/api/orders/23"),
     ).toBeDefined();
+  });
+
+  it("cancels an eligible order through the confirm dialog and shows the new status", async () => {
+    const user = userEvent.setup();
+    const requests = installFetch();
+    renderOrderDetail("/orders/23");
+
+    await screen.findByText("BO-240101-9X8Y7Z");
+    await user.click(screen.getByRole("button", { name: "Cancel order" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/returns every item to stock/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/no payment has been collected/i)).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel order" }));
+
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" && request.url.pathname === "/api/orders/23/cancel",
+        ),
+      ).toBe(true);
+    });
+
+    // The cached detail was replaced by the server's returned order graph.
+    expect((await screen.findAllByText("Order cancelled")).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Cancelled by customer/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes the dialog and re-reads the order when the server reports a conflict", async () => {
+    const user = userEvent.setup();
+    const requests = installFetch({ cancelStatus: 409 });
+    renderOrderDetail("/orders/23");
+
+    await screen.findByText("BO-240101-9X8Y7Z");
+    await user.click(screen.getByRole("button", { name: "Cancel order" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel order" }));
+
+    expect(
+      await screen.findByText("This order can no longer be cancelled"),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // It refetches instead of assuming the order was cancelled.
+    await waitFor(() => {
+      expect(
+        requests.filter(
+          (request) => request.method === "GET" && request.url.pathname === "/api/orders/23",
+        ).length,
+      ).toBeGreaterThan(1);
+    });
+    expect(screen.queryByText(/Cancelled by customer/i)).toBeNull();
+  });
+
+  it("keeps the dialog open and explains a non-conflict failure", async () => {
+    const user = userEvent.setup();
+    installFetch({ cancelStatus: 500 });
+    renderOrderDetail("/orders/23");
+
+    await screen.findByText("BO-240101-9X8Y7Z");
+    await user.click(screen.getByRole("button", { name: "Cancel order" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel order" }));
+
+    expect(await screen.findByText("The order could not be cancelled")).toBeInTheDocument();
+    expect(screen.getByText("Order could not be cancelled")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("shows the cancellation explanation and no action for a cancelled order", async () => {
+    installFetch({ detail: { ...ORDER_DETAIL, status: "cancelled", canCancel: false } });
+    renderOrderDetail("/orders/23");
+
+    expect(await screen.findByText("Order cancelled")).toBeInTheDocument();
+    expect(screen.getByText(/its items were returned to stock/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel order" })).toBeNull();
   });
 
   it("clears the session and redirects when the orders API rejects the token", async () => {
