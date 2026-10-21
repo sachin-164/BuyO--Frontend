@@ -4,6 +4,7 @@ import { CheckCircle2, Info, MailCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { ResendVerificationForm } from "@/components/auth/resend-verification-form";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { cn } from "@/lib/utils";
 
@@ -75,18 +76,15 @@ export default function VerifyPage() {
         <Info aria-hidden="true" />
         <AlertTitle>No verification token found</AlertTitle>
         <AlertDescription>
-          Open the verification email first. If the link expired, create the account again or request
-          a password reset email to confirm ownership.
+          Open the verification email and use its link. If that link expired, request a new one below.
         </AlertDescription>
       </Alert>
-      <div className="mt-6 flex flex-wrap gap-2">
-        <Button asChild variant="outline" className="flex-1">
-          <Link to="/signup">Create account</Link>
-        </Button>
-        <Button asChild variant="outline" className="flex-1">
-          <Link to="/forgot-password">Forgot password</Link>
-        </Button>
+      <div className="mt-6 rounded-lg border border-border bg-secondary/40 p-4">
+        <ResendVerificationForm />
       </div>
+      <Button asChild variant="outline" className="mt-4 w-full">
+        <Link to="/login">Back to sign in</Link>
+      </Button>
     </AuthShell>
   );
 }

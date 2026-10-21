@@ -4,6 +4,8 @@ const FIELD_NAMES = new Set([
   "name",
   "email",
   "password",
+  "currentPassword",
+  "newPassword",
   "fullName",
   "phone",
   "line1",

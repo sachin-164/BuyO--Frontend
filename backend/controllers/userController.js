@@ -250,4 +250,119 @@ const me = async (req, res) => {
   res.json({ success: true, user: publicUser(req.user) });
 };
 
-module.exports = { signup, verify, login, forgotPassword, resetPassword, me };
+// ---------- PATCH /api/auth/me — profile update ----------
+// Only `name` is editable. Email is deliberately immutable here: changing it
+// would need a re-verification flow (the account's verified identity is bound
+// to that address), and inventing one silently would let an attacker who
+// controls a live session move the account to a new address. Phone numbers are
+// per delivery address (Addresses.phone), not account properties.
+const updateProfile = async (req, res) => {
+  try {
+    const { name } = req.body;
+    await req.user.update({ name });
+    res.json({ success: true, message: "Profile updated", user: publicUser(req.user) });
+  } catch (err) {
+    console.error("Profile update error:", err);
+    res.status(500).json({ success: false, message: "Profile could not be updated." });
+  }
+};
+
+// ---------- POST /api/auth/change-password (requires auth) ----------
+// Requires the CURRENT password, so a stolen session token alone cannot take
+// over the account. The write is a compare-and-swap on the old hash (same
+// pattern as reset-password), so two concurrent changes cannot interleave.
+//
+// Because access tokens embed sha256(password) as `pwv`, this invalidates every
+// existing session for the account. The response therefore issues a fresh token
+// for the current session only — other devices are signed out.
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    const valid = await bcrypt.compare(currentPassword, req.user.password);
+    if (!valid) {
+      // Deliberately 400, not 401: the session is valid, only the re-entered
+      // credential is wrong. A 401 here would make the SPA's global handler
+      // sign the user out for a simple typo.
+      return res.status(400).json({
+        success: false,
+        code: "INVALID_CURRENT_PASSWORD",
+        message: "Current password is incorrect."
+      });
+    }
+    if (currentPassword === newPassword) {
+      return res
+        .status(400)
+        .json({ success: false, message: "New password must be different from the current password." });
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    const [affected] = await User.update(
+      { password: newHash },
+      { where: { id: req.user.id, password: req.user.password } }
+    );
+    if (affected === 0) {
+      return res.status(409).json({
+        success: false,
+        message: "Your password changed elsewhere. Please sign in again."
+      });
+    }
+
+    await req.user.reload();
+    res.json({
+      success: true,
+      message: "Password updated. Other devices have been signed out.",
+      token: signAccessToken(req.user),
+      user: publicUser(req.user)
+    });
+  } catch (err) {
+    console.error("Change password error:", err);
+    res.status(500).json({ success: false, message: "Password could not be updated." });
+  }
+};
+
+// ---------- POST /api/auth/resend-verification ----------
+// Anti-enumeration: the response is identical for unknown, already-verified and
+// unverified addresses, and mail transport failures are swallowed. Only an
+// unverified account actually receives a new link.
+const RESEND_VERIFICATION_MESSAGE =
+  "If an unverified account exists for that email, a new verification link has been sent.";
+
+const resendVerification = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ where: { email } });
+
+    if (user && !user.isVerified) {
+      const token = signEmailVerificationToken(user.email);
+      const verifyLink = `${process.env.BACKEND_URL}/api/auth/verify?token=${token}`;
+      await sendMail({
+        from: process.env.EMAIL_USER,
+        to: user.email,
+        subject: "Verify Your Email",
+        html: `<p>Click <a href="${verifyLink}">here</a> to verify your email.</p>
+               <p>This link will expire in 24 hours.</p>
+               <p>If you did not request this, you can safely ignore this email.</p>`
+      });
+    } else if (!user) {
+      await bcrypt.hash("buyo-dummy-password", 10); // equalise response timing
+    }
+
+    res.status(200).json({ success: true, message: RESEND_VERIFICATION_MESSAGE });
+  } catch (err) {
+    console.error("Resend verification error:", err);
+    res.status(200).json({ success: true, message: RESEND_VERIFICATION_MESSAGE });
+  }
+};
+
+module.exports = {
+  signup,
+  verify,
+  login,
+  forgotPassword,
+  resetPassword,
+  me,
+  updateProfile,
+  changePassword,
+  resendVerification
+};

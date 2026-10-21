@@ -27,6 +27,19 @@ export interface MessageResponse {
   errors?: string[];
 }
 
+export interface UpdateProfileResponse {
+  success: true;
+  message: string;
+  user: User;
+}
+
+export interface ChangePasswordResponse {
+  success: true;
+  message: string;
+  token: string;
+  user: User;
+}
+
 export interface Address {
   id: number;
   userId?: number;

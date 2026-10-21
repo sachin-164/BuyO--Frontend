@@ -3,10 +3,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { safeNextPath } from "@/lib/auth-return";
 import { getErrorMessage } from "@/lib/errors";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { ResendVerificationForm } from "@/components/auth/resend-verification-form";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/form-field";
@@ -47,6 +48,10 @@ export default function LoginPage() {
   const verificationStatus = searchParams.get("status") ?? "";
   const { status: authStatus, signIn } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
+  // Set only when the server says the password was correct but the address is
+  // still unverified (403). That is the one case where asking for a new link is
+  // both safe and useful, and the email is known to be real.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -63,6 +68,7 @@ export default function LoginPage() {
 
   const submit = form.handleSubmit(async (values) => {
     setServerError(null);
+    setUnverifiedEmail(null);
     try {
       const response = await api.post<LoginResponse>("/api/auth/login", values);
       signIn(response);
@@ -71,6 +77,9 @@ export default function LoginPage() {
       navigate(next ?? "/", { replace: true });
     } catch (error) {
       setServerError(getErrorMessage(error));
+      if (error instanceof ApiError && error.status === 403) {
+        setUnverifiedEmail(values.email.trim());
+      }
     }
   });
 
@@ -110,6 +119,15 @@ export default function LoginPage() {
           <AlertTitle>Sign in failed</AlertTitle>
           <AlertDescription>{serverError}</AlertDescription>
         </Alert>
+      ) : null}
+
+      {unverifiedEmail ? (
+        <div className="mt-4 rounded-lg border border-border bg-secondary/40 p-4">
+          <ResendVerificationForm
+            defaultEmail={unverifiedEmail}
+            description="Your email address is not verified yet. Send yourself a new link."
+          />
+        </div>
       ) : null}
 
       <form className="mt-6 space-y-4" onSubmit={submit} noValidate>

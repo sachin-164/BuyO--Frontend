@@ -2,16 +2,17 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   BadgeCheck,
-  Info,
+  LockKeyhole,
   LogOut,
   MapPin,
   PackageOpen,
   ShieldCheck,
 } from "lucide-react";
+import { ChangePasswordForm } from "@/components/account/change-password-form";
+import { ProfileForm } from "@/components/account/profile-form";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/features/auth/auth-context";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -61,7 +62,7 @@ export default function AccountPage() {
   return (
     <div className="container-page py-8 sm:py-10">
       <div className="grid gap-8 lg:grid-cols-[2fr,1fr]">
-        <section aria-labelledby="account-overview-heading">
+        <section aria-labelledby="account-overview-heading" className="min-w-0">
           <header>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
               Account
@@ -97,33 +98,39 @@ export default function AccountPage() {
 
           <Card className="mt-8">
             <CardHeader>
-              <CardTitle>Password management</CardTitle>
+              <CardTitle>Profile details</CardTitle>
+              <CardDescription>
+                Your display name appears on this page. Your email address is tied to your verified
+                account and cannot be changed here.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>
-                Password recovery by email is available. There is no change-password endpoint in the
-                current backend, so no in-app password editor is shown.
-              </p>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/forgot-password">Request a password email</Link>
-              </Button>
+            <CardContent>
+              <ProfileForm />
+            </CardContent>
+          </Card>
+
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <LockKeyhole className="size-4 text-muted-foreground" aria-hidden="true" />
+                Password
+              </CardTitle>
+              <CardDescription>
+                Changing your password signs out every other device. Forgot it instead?{" "}
+                <Link className="underline underline-offset-2 hover:text-foreground" to="/forgot-password">
+                  Request a reset email
+                </Link>
+                .
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChangePasswordForm />
             </CardContent>
           </Card>
         </section>
 
         <aside className="space-y-4">
-          <Alert variant="info">
-            <Info aria-hidden="true" />
-            <AlertTitle>Profile editing is not available yet</AlertTitle>
-            <AlertDescription>
-              The backend only exposes <code>GET /api/auth/me</code>; it has no update endpoint. This
-              page intentionally does not pretend to edit your profile.
-            </AlertDescription>
-          </Alert>
-
-          <Card
-            aria-live="polite"
-          >
+          <Card aria-live="polite">
             <CardHeader>
               <CardTitle>Session</CardTitle>
             </CardHeader>

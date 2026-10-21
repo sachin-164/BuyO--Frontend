@@ -51,7 +51,37 @@ router.post(
   userController.resetPassword
 );
 
+// Public, rate-limited: sends a fresh verification link to unverified accounts
+// only. The response is intentionally identical for every address.
+router.post(
+  "/resend-verification",
+  authLimiter,
+  validateBody({ email: emailRule }),
+  userController.resendVerification
+);
+
 // Authenticated
 router.get("/me", requireAuth, userController.me);
+
+router.patch(
+  "/me",
+  requireAuth,
+  validateBody({
+    name: { required: true, type: "string", minLength: 1, maxLength: 100 }
+  }),
+  userController.updateProfile
+);
+
+// Rate-limited as well: guessing the current password must not be free.
+router.post(
+  "/change-password",
+  authLimiter,
+  requireAuth,
+  validateBody({
+    currentPassword: { required: true, type: "password", minLength: 1, maxLength: 200 },
+    newPassword: newPasswordRule
+  }),
+  userController.changePassword
+);
 
 module.exports = router;

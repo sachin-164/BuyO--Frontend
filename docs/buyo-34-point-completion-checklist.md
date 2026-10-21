@@ -62,10 +62,10 @@
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 8 | Profile update API | Read-only `/auth/me` | `PATCH /auth/me` for name (+ optional phone if column added by migration); email immutable in this phase | — | Empty body 400; length limits; cannot change `role`/`isVerified`; returns fresh public user | `profile.test.js` | TODO |
-| 9 | Profile edit UI | Read-only account page | Inline edit form with RHF + Zod mirroring server rules | 8 | Validation parity with server; success/error toasts; optimistic cache update | `account-page.test.tsx` | TODO |
-| 10 | Secure password change API | Only token-based reset | `POST /auth/change-password` requiring current password, new-password policy, re-hash; fails closed on wrong current password | — | Wrong current password 401; policy enforced; rate-limited; no password material in response/logs | `passwordChange.test.js` | TODO |
-| 11 | Password change UI | Missing | Account security section with current/new/confirm | 10 | Inline errors; disables while pending; success clears fields | `account-security.test.tsx` | TODO |
+| 8 | Profile update API | `PATCH /api/auth/me` (name only; email immutable, phone is per-address) | Whitelist validator drops unknown fields; returns fresh public user | - | Empty/whitespace/over-long name 400; `role`/`isVerified`/`email` in the body are ignored; no password material returned | `accountSecurity.test.js` | IMPLEMENTED |
+| 9 | Profile edit UI | Profile form on the account page | RHF + Zod mirroring the server rule; auth cache replaced from the response | 8 | Client validation blocks empty names; success toast; heading/name update without refetch; discard resets | `account-management.test.tsx` | IMPLEMENTED |
+| 10 | Secure password change API | Only token-based reset | `POST /api/auth/change-password`: current-password proof, 8–72 policy, compare-and-swap write, fresh token returned | - | Wrong current password is **400 + `INVALID_CURRENT_PASSWORD`** (not 401 — a 401 would trigger the SPA's global sign-out for a typo); old tokens die; current device keeps working; anonymous 401 | `accountSecurity.test.js` | IMPLEMENTED |
+| 11 | Password change UI | Account security card | Current / new / confirm fields with client-side match + difference checks | 10 | Field-level errors; pending state; success clears all fields and stores the replacement token; mismatch never calls the API | `account-management.test.tsx` | IMPLEMENTED |
 
 ## F. Orders: cancellation
 
@@ -78,8 +78,8 @@
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 14 | Verification resend API | Missing (documented dead end) | `POST /auth/resend-verification`, rate-limited, non-enumerating response, no-op for verified accounts | — | Same response for unknown/verified/unverified; mail captured in tests; limiter applies | `resendVerification.test.js` | TODO |
-| 15 | Verification resend UI | Missing | Resend control on login (unverified 403) and verification-failure screen | 14 | Cooldown timer; a11y live region; generic success copy | `verify-resend.test.tsx` | TODO |
+| 14 | Verification resend API | `POST /api/auth/resend-verification` (rate-limited, non-enumerating) | Sends only to unverified accounts; unknown addresses pay a bcrypt cost for timing parity; transport failures swallowed | - | Identical response for unknown/verified/unverified; verified accounts receive nothing; issued link actually verifies; payload validation 400 | `accountSecurity.test.js` | IMPLEMENTED |
+| 15 | Verification resend UI | `ResendVerificationForm` on login (after 403) and the no-token verification screen | Prefilled email, 60 s client cooldown, `role="status"` live region, verbatim generic server copy | 14 | Form only appears for a real 403 or a missing token; cooldown disables the button; success copy never implies the account exists | `account-management.test.tsx` | IMPLEMENTED |
 
 ## H. Cart: guest
 
