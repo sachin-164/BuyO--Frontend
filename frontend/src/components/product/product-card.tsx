@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ImageOff } from "lucide-react";
 import { Link } from "react-router-dom";
+import { AddToCartButton } from "@/components/commerce/add-to-cart-button";
 import { Badge } from "@/components/ui/badge";
 import { discountPercent, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -18,10 +19,15 @@ export function ProductCard({ product, className }: ProductCardProps) {
   const lowStock = product.stock > 0 && product.stock <= 5;
 
   return (
-    <article className={cn("group h-full", className)}>
+    <article
+      className={cn(
+        "group h-full overflow-hidden rounded-lg border border-border bg-card transition-[border-color] duration-200 ease-out-strong hover:border-primary/40",
+        className,
+      )}
+    >
       <Link
         to={`/product/${encodeURIComponent(product.slug)}`}
-        className="flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card transition-[border-color] duration-200 ease-out-strong hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <div className="relative aspect-square overflow-hidden bg-secondary">
           {hasImage ? (
@@ -55,7 +61,7 @@ export function ProductCard({ product, className }: ProductCardProps) {
           <h3 className="line-clamp-2 font-sans text-sm font-semibold leading-snug transition-colors group-hover:text-primary">
             {product.name}
           </h3>
-          <div className="mt-auto flex items-baseline gap-2 pt-2">
+          <div className="mt-auto flex flex-wrap items-baseline gap-x-2 pt-2">
             <span className="text-base font-semibold">
               {formatPrice(product.sellingPrice)}
             </span>
@@ -74,6 +80,9 @@ export function ProductCard({ product, className }: ProductCardProps) {
           ) : null}
         </div>
       </Link>
+      <div className="border-t border-border p-3">
+        <AddToCartButton product={product} className="w-full" variant="secondary" size="sm" />
+      </div>
     </article>
   );
 }

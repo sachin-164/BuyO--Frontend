@@ -9,9 +9,9 @@ import {
 import { StorefrontLayout } from "@/components/layout/storefront-layout";
 import { Spinner } from "@/components/ui/spinner";
 import AdminPlaceholderPage from "@/pages/admin-placeholder-page";
-import ComingSoonPage from "@/pages/coming-soon-page";
 import NotFoundPage from "@/pages/not-found-page";
 import RouteErrorPage from "@/pages/route-error-page";
+import { RequireAdmin, RequireAuth } from "@/features/auth/guards";
 
 const HomePage = lazy(() => import("@/pages/home-page"));
 const ShopPage = lazy(() => import("@/pages/shop-page"));
@@ -26,6 +26,19 @@ const ShippingPage = lazy(() => import("@/pages/info/shipping-page"));
 const ReturnsPage = lazy(() => import("@/pages/info/returns-page"));
 const PrivacyPage = lazy(() => import("@/pages/info/privacy-page"));
 const TermsPage = lazy(() => import("@/pages/info/terms-page"));
+const CartPage = lazy(() => import("@/pages/cart-page"));
+const WishlistPage = lazy(() => import("@/pages/wishlist-page"));
+const LoginPage = lazy(() => import("@/pages/auth/login-page"));
+const SignupPage = lazy(() => import("@/pages/auth/signup-page"));
+const VerifyPage = lazy(() => import("@/pages/auth/verify-page"));
+const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password-page"));
+const ResetPasswordPage = lazy(() => import("@/pages/auth/reset-password-page"));
+const AccountPage = lazy(() => import("@/pages/account-page"));
+const AddressesPage = lazy(() => import("@/pages/addresses-page"));
+const CheckoutPage = lazy(() => import("@/pages/checkout-page"));
+const OrderConfirmationPage = lazy(() => import("@/pages/order-confirmation-page"));
+const OrdersPage = lazy(() => import("@/pages/orders-page"));
+const OrderDetailPage = lazy(() => import("@/pages/order-detail-page"));
 
 function PageFallback() {
   return (
@@ -66,100 +79,6 @@ function LegacyProductRedirect() {
     />
   );
 }
-
-interface SoonRoute {
-  path: string;
-  title: string;
-  phase: string;
-  description: string;
-}
-
-const SOON_ROUTES: SoonRoute[] = [
-  {
-    path: "cart",
-    title: "Cart",
-    phase: "Phase 4",
-    description:
-      "Your server-backed cart with quantity controls, stock checks, and authoritative totals.",
-  },
-  {
-    path: "wishlist",
-    title: "Wishlist",
-    phase: "Phase 4",
-    description:
-      "Saved products tied to your account, with quick add-to-cart and removal.",
-  },
-  {
-    path: "login",
-    title: "Sign in",
-    phase: "Phase 4",
-    description:
-      "Secure sign-in with verified accounts, return-to-page behaviour, and clear error states.",
-  },
-  {
-    path: "signup",
-    title: "Create account",
-    phase: "Phase 4",
-    description:
-      "Registration with email verification, accessible validation, and no password shortcuts.",
-  },
-  {
-    path: "verify",
-    title: "Verify email",
-    phase: "Phase 4",
-    description:
-      "The verification link flow will report success, expiry, and already-verified states honestly.",
-  },
-  {
-    path: "forgot-password",
-    title: "Forgot password",
-    phase: "Phase 4",
-    description:
-      "Request a password reset link with a neutral response that does not reveal account existence.",
-  },
-  {
-    path: "reset-password",
-    title: "Reset password",
-    phase: "Phase 4",
-    description:
-      "Choose a new password with strength guidance and server-enforced token validation.",
-  },
-  {
-    path: "account",
-    title: "Your account",
-    phase: "Phase 4",
-    description:
-      "Profile details, session state, and links to addresses and order history.",
-  },
-  {
-    path: "account/addresses",
-    title: "Addresses",
-    phase: "Phase 4",
-    description:
-      "Create, edit, delete, and choose a default delivery address for checkout.",
-  },
-  {
-    path: "checkout",
-    title: "Checkout",
-    phase: "Phase 4",
-    description:
-      "Cash-on-delivery checkout with validated address selection and idempotent order placement.",
-  },
-  {
-    path: "orders",
-    title: "Order history",
-    phase: "Phase 4",
-    description:
-      "Every order with totals, item lines, and an accessible status timeline.",
-  },
-  {
-    path: "orders/:id",
-    title: "Order details",
-    phase: "Phase 4",
-    description:
-      "A single order with delivery address, itemised totals, and status events.",
-  },
-];
 
 export const router = createBrowserRouter([
   // Legacy entry points keep working during and after the cutover.
@@ -222,20 +141,51 @@ export const router = createBrowserRouter([
       { path: "returns", element: withSuspense(<ReturnsPage />) },
       { path: "privacy", element: withSuspense(<PrivacyPage />) },
       { path: "terms", element: withSuspense(<TermsPage />) },
-      ...SOON_ROUTES.map((route) => ({
-        path: route.path,
-        element: (
-          <ComingSoonPage
-            title={route.title}
-            phase={route.phase}
-            description={route.description}
-          />
+
+      // Auth flows are public; verification status is reported honestly.
+      { path: "login", element: withSuspense(<LoginPage />) },
+      { path: "signup", element: withSuspense(<SignupPage />) },
+      { path: "verify", element: withSuspense(<VerifyPage />) },
+      { path: "forgot-password", element: withSuspense(<ForgotPasswordPage />) },
+      { path: "reset-password", element: withSuspense(<ResetPasswordPage />) },
+
+      // Shopping and account sections are server-authorized at all times.
+      { path: "cart", element: withSuspense(<RequireAuth><CartPage /></RequireAuth>) },
+      { path: "wishlist", element: withSuspense(<RequireAuth><WishlistPage /></RequireAuth>) },
+      { path: "account", element: withSuspense(<RequireAuth><AccountPage /></RequireAuth>) },
+      {
+        path: "account/addresses",
+        element: withSuspense(
+          <RequireAuth>
+            <AddressesPage />
+          </RequireAuth>,
         ),
-      })),
+      },
+      { path: "checkout", element: withSuspense(<RequireAuth><CheckoutPage /></RequireAuth>) },
+      {
+        path: "checkout/confirmation/:id",
+        element: withSuspense(
+          <RequireAuth>
+            <OrderConfirmationPage />
+          </RequireAuth>,
+        ),
+      },
+      { path: "orders", element: withSuspense(<RequireAuth><OrdersPage /></RequireAuth>) },
+      {
+        path: "orders/:id",
+        element: withSuspense(
+          <RequireAuth>
+            <OrderDetailPage />
+          </RequireAuth>,
+        ),
+      },
       { path: "*", element: <NotFoundPage /> },
     ],
   },
 
   // Standalone so the storefront header is not shown on admin routes.
-  { path: "/admin/*", element: <AdminPlaceholderPage /> },
+  {
+    path: "/admin/*",
+    element: <RequireAdmin><AdminPlaceholderPage /></RequireAdmin>,
+  },
 ]);

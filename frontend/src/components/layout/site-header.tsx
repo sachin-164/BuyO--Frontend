@@ -11,6 +11,9 @@ import {
 import { Link, NavLink } from "react-router-dom";
 import { SearchCombobox } from "@/components/catalog/search-combobox";
 import { Button } from "@/components/ui/button";
+import { useCart } from "@/features/cart/queries";
+import { useWishlist } from "@/features/wishlist/queries";
+import { useAuth } from "@/features/auth/auth-context";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -29,11 +32,29 @@ function navLinkClass({ isActive }: { isActive: boolean }) {
 }
 
 const iconLinkClass =
-  "inline-flex size-10 items-center justify-center rounded-md text-foreground/80 transition-colors hover:bg-secondary hover:text-primary";
+  "relative inline-flex size-10 items-center justify-center rounded-md text-foreground/80 transition-colors hover:bg-secondary hover:text-primary";
+
+function CountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className="absolute right-0 top-0 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[0.625rem] font-semibold leading-none text-primary-foreground"
+      aria-hidden="true"
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
 
 export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const { hasToken, user } = useAuth();
+
+  const cartQuery = useCart({ enabled: hasToken });
+  const wishlistQuery = useWishlist({ enabled: hasToken });
+  const cartCount = cartQuery.data?.count ?? 0;
+  const wishlistCount = wishlistQuery.data?.count ?? 0;
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/80 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -59,15 +80,25 @@ export function SiteHeader() {
         </div>
 
         <div className="ml-auto flex items-center gap-1 md:ml-0">
-          <Link to="/wishlist" aria-label="Wishlist" className={iconLinkClass}>
+          <Link
+            to="/wishlist"
+            aria-label={wishlistCount > 0 ? `Wishlist, ${wishlistCount} items` : "Wishlist"}
+            className={iconLinkClass}
+          >
             <Heart className="size-5" aria-hidden="true" />
-          </Link>
-          <Link to="/cart" aria-label="Cart" className={iconLinkClass}>
-            <ShoppingBag className="size-5" aria-hidden="true" />
+            <CountBadge count={wishlistCount} />
           </Link>
           <Link
-            to="/account"
-            aria-label="Account"
+            to="/cart"
+            aria-label={cartCount > 0 ? `Cart, ${cartCount} items` : "Cart"}
+            className={iconLinkClass}
+          >
+            <ShoppingBag className="size-5" aria-hidden="true" />
+            <CountBadge count={cartCount} />
+          </Link>
+          <Link
+            to={user ? "/account" : "/login"}
+            aria-label={user ? `Account: ${user.name}` : "Sign in"}
             className={cn(iconLinkClass, "hidden sm:inline-flex")}
           >
             <UserRound className="size-5" aria-hidden="true" />
@@ -147,25 +178,25 @@ export function SiteHeader() {
 
                 <div className="mt-6 flex flex-col gap-1 border-t border-border pt-6">
                   <NavLink
-                    to="/account"
+                    to={user ? "/account" : "/login"}
                     className={navLinkClass}
                     onClick={() => setMenuOpen(false)}
                   >
-                    Account
+                    {user ? "Account" : "Sign in"}
                   </NavLink>
                   <NavLink
                     to="/wishlist"
                     className={navLinkClass}
                     onClick={() => setMenuOpen(false)}
                   >
-                    Wishlist
+                    Wishlist{wishlistCount > 0 ? ` (${wishlistCount})` : ""}
                   </NavLink>
                   <NavLink
                     to="/cart"
                     className={navLinkClass}
                     onClick={() => setMenuOpen(false)}
                   >
-                    Cart
+                    Cart{cartCount > 0 ? ` (${cartCount})` : ""}
                   </NavLink>
                 </div>
               </Dialog.Content>

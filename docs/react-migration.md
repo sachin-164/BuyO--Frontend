@@ -258,7 +258,40 @@ Environment:
   - [x] Verified against live read-only API response shapes and at 390/768/1440
         viewports; local preview serves `/shop`, `/product/:id`, `/search`,
         `/privacy`, and `/categories` directly with the SPA fallback
-- [ ] **Phase 4 — cart, wishlist, accounts, addresses, checkout, orders**
+- [x] **Phase 4 — cart, wishlist, accounts, addresses, checkout, orders**
+  - [x] Live cart page backed by `GET/POST /api/cart` and
+        `PUT/DELETE /api/cart/:id`; optimistic line updates with rollback, server
+        totals/`totalsNotice` always authoritative, stock/unavailable states,
+        keyboard-accessible quantity controls, and an explicit sign-in prompt for
+        anonymous visitors (no guest cart exists in the API)
+  - [x] Wishlist page and product-card quick add/toggle using the existing
+        list/add/check/remove endpoints; links resolve products by id because the
+        API does not return slugs
+  - [x] Auth flows: login, signup, email verification (server redirect),
+        forgot/reset password, session hydration via `GET /api/auth/me`, token key
+        `token` preserved, 401 clearing private query caches
+  - [x] Route guards: `RequireAuth` redirects to `/login?next=` with the original
+        path; `RequireAdmin` gates `/admin/*` and shows the 403 page for customers
+  - [x] Account overview and address book: CRUD plus
+        `PUT /api/addresses/:id/default`, validation mirrors the server (PIN
+        `^[1-9][0-9]{5}$`, 10–15 digit phone, server field limits), editing the
+        active default keeps the checkbox locked, and deletion is confirmed while
+        past orders keep their address snapshot
+  - [x] COD checkout: address selection, optional gift note, server-authoritative
+        totals, 409 stock conflict list with per-line fixes, and legacy
+        idempotency (`buyo:checkout:idempotencyKey`) reused across retries and
+        cleared only after the server accepts the order
+  - [x] Order confirmation, paginated order history with status filter, and order
+        detail with item/tax/address snapshots and the real recorded
+        `statusEvents` timeline (no invented future steps)
+  - [x] Existing URL contracts preserved, including legacy `*.html` redirects
+        already mapped in `routes.tsx`
+  - [x] Documented API gaps instead of inventing UI: no profile-edit or
+        password-change endpoint, no customer-facing order cancellation, no guest
+        cart/persistence, and no resend-verification endpoint (see risks below)
+  - [x] Verified: `tsc --noEmit` clean, production build succeeds, 96/96 Vitest
+        tests pass (cart, wishlist, auth guards, address validation, checkout
+        idempotency, conflicts, orders list/detail, protected-route 401 handling)
 - [ ] **Phase 5 — complete admin panel**
 - [ ] **Phase 6 — animation/a11y/security/performance hardening, E2E, cutover**
 
@@ -290,3 +323,17 @@ Environment:
 8. **No suggestion/facet endpoint**: search suggestions reuse
    `GET /api/products?q=&limit=5`, recent searches stay in local storage, and
    filters only use documented catalog parameters. No new endpoint was added.
+9. **No profile-edit or password-change endpoint**: the account page shows the
+   signed-in profile read-only and links to the existing forgot-password flow.
+   Adding edit/change-password UI would require a backend contract first
+   (including current-password confirmation and session invalidation rules).
+10. **No customer order cancellation endpoint**: order detail renders the real
+   lifecycle (`placed → confirmed → shipped → delivered`, cancelled shown when
+   recorded) but exposes no cancel action. Admin-side cancellation remains the
+   only supported path.
+11. **No guest cart**: cart and wishlist require a token, so anonymous visitors
+    get a sign-in prompt and nothing is persisted or merged after login. Guest
+    carts would need a backend session/cart contract.
+12. **No verification resend endpoint**: signup and login surface the server's
+    unverified-account state, and verification relies on the server redirect.
+    A "resend email" control is intentionally absent.

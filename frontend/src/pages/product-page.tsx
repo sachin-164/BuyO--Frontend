@@ -20,12 +20,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAddToCart,
-  useToggleWishlist,
-  useWishlistMembership,
-} from "@/features/catalog/mutations";
+} from "@/features/cart/mutations";
+import { useWishlistMembership } from "@/features/wishlist/queries";
+import { useToggleWishlist } from "@/features/wishlist/mutations";
 import { useProduct, useProducts } from "@/features/catalog/queries";
+import { useAuth } from "@/features/auth/auth-context";
 import { usePageTitle } from "@/hooks/use-page-title";
-import { ApiError, getToken } from "@/lib/api";
+import { ApiError } from "@/lib/api";
+import { loginHref } from "@/lib/auth-return";
 import { discountPercent, formatPrice } from "@/lib/format";
 
 type NoticeTone = "success" | "error" | "info";
@@ -45,7 +47,7 @@ const noticeVariants = {
 function SignInLink({ next }: { next: string }) {
   return (
     <Link
-      to={`/login?next=${encodeURIComponent(next)}`}
+      to={loginHref(next)}
       className="font-medium text-primary underline underline-offset-2"
     >
       Sign in
@@ -80,7 +82,7 @@ export default function ProductPage() {
   const productQuery = useProduct(identifier);
   const product = productQuery.data?.product;
 
-  const token = getToken();
+  const { hasToken: token } = useAuth();
   const [quantity, setQuantity] = useState(1);
   const [notice, setNotice] = useState<Notice | null>(null);
 

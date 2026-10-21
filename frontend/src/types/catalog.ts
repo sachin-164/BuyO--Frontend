@@ -76,20 +76,3 @@ export interface ProductQuery {
   page?: number;
   limit?: number;
 }
-
-export interface WishlistCheckResponse {
-  success: boolean;
-  productId: number;
-  inWishlist: boolean;
-}
-
-export interface WishlistToggleResponse {
-  success: boolean;
-  inWishlist: boolean;
-  count?: number;
-}
-
-export interface CartMutationResponse {
-  success: boolean;
-  message?: string;
-}

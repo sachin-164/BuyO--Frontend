@@ -7,5 +7,7 @@ window.scrollTo = () => {};
 
 afterEach(() => {
   cleanup();
+  // Tokens and the checkout idempotency key are always test-local.
   window.localStorage.clear();
+  window.sessionStorage.clear();
 });

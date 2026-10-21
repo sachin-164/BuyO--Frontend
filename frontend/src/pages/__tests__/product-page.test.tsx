@@ -37,8 +37,32 @@ function installFetch({ productStatus = 200 }: { productStatus?: number } = {}) 
       body: typeof init?.body === "string" ? init.body : undefined,
     });
 
+    if (method === "GET" && url.pathname === "/api/auth/me") {
+      return jsonResponse({
+        success: true,
+        user: {
+          id: 1,
+          name: "Test User",
+          email: "test@example.com",
+          isVerified: true,
+          role: "customer",
+          isAdmin: false,
+        },
+      });
+    }
     if (method === "POST" && url.pathname === "/api/cart") {
-      return jsonResponse({ success: true, message: "Item added to cart" }, 201);
+      return jsonResponse({
+        success: true,
+        message: "Item added to cart",
+        count: 1,
+        items: [],
+        totals: {
+          subtotal: 0,
+          tax: { total: 0, byCategory: [], preview: true },
+          grandTotal: 0,
+        },
+        totalsNotice: "Preview only.",
+      }, 201);
     }
     if (method === "POST" && url.pathname === "/api/wishlist/toggle") {
       inWishlist = !inWishlist;

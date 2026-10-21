@@ -2,6 +2,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
+import { AuthProvider } from "@/features/auth/auth-context";
+import { ToastProvider } from "@/components/ui/toast";
 
 export function LocationProbe() {
   const location = useLocation();
@@ -30,10 +32,14 @@ export function renderWithProviders(
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={[route]}>
-          {children}
-          <LocationProbe />
-        </MemoryRouter>
+        <AuthProvider>
+          <ToastProvider>
+            <MemoryRouter initialEntries={[route]}>
+              {children}
+              <LocationProbe />
+            </MemoryRouter>
+          </ToastProvider>
+        </AuthProvider>
       </QueryClientProvider>
     );
   }
