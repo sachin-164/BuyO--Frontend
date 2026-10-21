@@ -123,10 +123,51 @@ describe("AdminOrdersPage", () => {
       ),
     ).toBe(true);
 
-    await user.click(screen.getAllByRole("link", { name: "Clear filter" })[0]);
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
     await waitFor(() => {
       expect(screen.getByTestId("location")).not.toHaveTextContent("status=");
     });
+  });
+
+  it("searches by free text and keeps the term in pagination links", async () => {
+    const user = userEvent.setup();
+    const { requests } = installOrderFetch(({ url, method }) => {
+      if (method !== "GET" || url.pathname !== "/api/admin/orders") return undefined;
+      if (url.searchParams.get("q")) {
+        return orderListResponse([ORDER_SUMMARY], {
+          page: 1,
+          limit: 20,
+          total: 45,
+          totalPages: 3,
+          hasNext: true,
+          hasPrev: false,
+        });
+      }
+      return undefined;
+    });
+    renderWithProviders(<AdminOrdersPage />, { route: "/admin/orders" });
+
+    await screen.findAllByText("BO-260101-ABC123");
+    await user.type(screen.getByLabelText("Search"), "anita");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("location")).toHaveTextContent("q=anita");
+    });
+    await waitFor(() => {
+      expect(
+        requests.some(
+          (request) =>
+            request.url.pathname === "/api/admin/orders" &&
+            request.url.searchParams.get("q") === "anita",
+        ),
+      ).toBe(true);
+    });
+
+    // The term survives pagination, so the admin does not lose their search.
+    expect(await screen.findByRole("link", { name: "Page 2" })).toHaveAttribute(
+      "href",
+      "/admin/orders?q=anita&page=2",
+    );
   });
 
   it("preserves the status filter in server pagination links", async () => {

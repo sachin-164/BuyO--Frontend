@@ -14,6 +14,7 @@
 // (No DB uniqueness on (orderId, toStatus): history must stay able to record
 // future legitimate repeated statuses — see migration 004 header.)
 const sequelize = require("../config/db");
+const { Op, fn, col, where: sqlWhere } = require("sequelize");
 const { stockDelta } = require("../utils/sqlLiterals");
 const User = require("../models/user");
 const Product = require("../models/product");
@@ -22,10 +23,38 @@ const OrderItem = require("../models/orderItem");
 const OrderStatusEvent = require("../models/orderStatusEvent");
 const { HttpError, parsePositiveId } = require("../utils/apiError");
 const { ALLOWED_TRANSITIONS } = require("../utils/orderStatus");
+const { normalizeSearchTerm } = require("../utils/searchTerm");
 
 const itemInclude = [{ model: OrderItem, as: "OrderItems", order: [["id", "ASC"]] }];
 const eventInclude = [{ model: OrderStatusEvent, as: "OrderStatusEvents", order: [["id", "ASC"]] }];
 const userInclude = [{ model: User, as: "User", attributes: ["id", "name", "email"] }];
+
+// Free-text search: matches the order number OR the owning customer's name /
+// email. The customer match runs as an IN-subquery rather than a WHERE on the
+// joined User row, so `limit`/`offset` and `distinct` counting keep operating
+// on Orders alone (a join-level filter with subQuery:false can truncate pages
+// mid-order when an order has many items).
+function buildSearchCondition(term) {
+  const like = `%${term.toLowerCase()}%`;
+  const qg = sequelize.getQueryInterface().queryGenerator;
+  const usersTable = qg.quoteTable(User.getTableName());
+  const idCol = qg.quoteIdentifier("id");
+  const nameCol = qg.quoteIdentifier("name");
+  const emailCol = qg.quoteIdentifier("email");
+  const escapedLike = sequelize.escape(like); // dialect-correct string literal
+
+  return {
+    [Op.or]: [
+      sqlWhere(fn("LOWER", col("orderNumber")), { [Op.like]: like }),
+      sqlWhere(col("userId"), {
+        [Op.in]: sequelize.literal(
+          `(SELECT ${idCol} FROM ${usersTable} WHERE ` +
+            `LOWER(${nameCol}) LIKE ${escapedLike} OR LOWER(${emailCol}) LIKE ${escapedLike})`
+        )
+      })
+    ]
+  };
+}
 
 function serializeAdminOrder(order) {
   const base = require("./orderController").serializeOrder(order);
@@ -42,9 +71,24 @@ const listAdminOrders = async (req, res, next) => {
     const { status } = req.query;
     const page = req.query.page === undefined ? 1 : req.query.page;
     const limit = req.query.limit === undefined ? 20 : req.query.limit;
+    const rawQuery = req.query.q;
+    const hasSearch = typeof rawQuery === "string" && rawQuery.trim() !== "";
+    const term = hasSearch ? normalizeSearchTerm(rawQuery) : null;
+
+    // Wildcard-only queries match nothing rather than everything (see the
+    // customer directory for the same reasoning).
+    if (hasSearch && !term) {
+      return res.json({
+        success: true,
+        count: 0,
+        orders: [],
+        pagination: { page, limit, total: 0, totalPages: 1, hasNext: false, hasPrev: false }
+      });
+    }
 
     const where = {};
     if (status) where.status = status;
+    if (term) Object.assign(where, buildSearchCondition(term));
 
     // distinct:true counts DISTINCT Orders.id — without it the hasMany
     // OrderItems include multiplies rows (1 order with 3 items counted as 3),

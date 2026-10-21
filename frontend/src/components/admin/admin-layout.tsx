@@ -9,6 +9,7 @@ import {
   ReceiptText,
   Store,
   Tags,
+  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -29,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/admin/products", label: "Products", icon: Package },
   { to: "/admin/categories", label: "Categories", icon: Tags },
   { to: "/admin/orders", label: "Orders", icon: ReceiptText },
+  { to: "/admin/customers", label: "Customers", icon: Users },
 ];
 
 function sectionTitle(pathname: string): string {
@@ -39,6 +41,8 @@ function sectionTitle(pathname: string): string {
   if (pathname.startsWith("/admin/categories")) return "Categories";
   if (/^\/admin\/orders\/\d+$/.test(pathname)) return "Order details";
   if (pathname.startsWith("/admin/orders")) return "Orders";
+  if (/^\/admin\/customers\/\d+$/.test(pathname)) return "Customer details";
+  if (pathname.startsWith("/admin/customers")) return "Customers";
   return "Admin";
 }
 
@@ -151,7 +155,7 @@ function MobileNav({ open, onOpenChange }: { open: boolean; onOpenChange: (open:
         <DialogPrimitive.Content className="admin-drawer-enter fixed inset-y-0 left-0 z-50 w-[min(18rem,85vw)] border-r border-border bg-card text-card-foreground shadow-xl focus:outline-none">
           <DialogPrimitive.Title className="sr-only">Admin navigation</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            Links to dashboard, products, categories and orders.
+            Links to dashboard, products, categories, orders and customers.
           </DialogPrimitive.Description>
           <DialogPrimitive.Close
             className="absolute right-3 top-3 z-10 inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

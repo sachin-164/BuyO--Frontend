@@ -49,6 +49,8 @@ const AdminProductFormPage = lazy(() => import("@/pages/admin/product-form-page"
 const AdminCategoriesPage = lazy(() => import("@/pages/admin/categories-page"));
 const AdminOrdersPage = lazy(() => import("@/pages/admin/orders-page"));
 const AdminOrderDetailPage = lazy(() => import("@/pages/admin/order-detail-page"));
+const AdminCustomersPage = lazy(() => import("@/pages/admin/customers-page"));
+const AdminCustomerDetailPage = lazy(() => import("@/pages/admin/customer-detail-page"));
 
 function PageFallback() {
   return (
@@ -210,6 +212,8 @@ export const router = createBrowserRouter([
       { path: "categories", element: withSuspense(<AdminCategoriesPage />) },
       { path: "orders", element: withSuspense(<AdminOrdersPage />) },
       { path: "orders/:id", element: withSuspense(<AdminOrderDetailPage />) },
+      { path: "customers", element: withSuspense(<AdminCustomersPage />) },
+      { path: "customers/:id", element: withSuspense(<AdminCustomerDetailPage />) },
       { path: "*", element: <NotFoundPage /> },
     ],
   },

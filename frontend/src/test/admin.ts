@@ -1,7 +1,14 @@
 import { vi } from "vitest";
 import { jsonResponse } from "@/test/render";
 import type { Category, Pagination, Product } from "@/types/catalog";
-import type { AdminOrder, AdminOrderSummary } from "@/types/admin";
+import type {
+  AdminAnalyticsSummary,
+  AdminCustomerDetail,
+  AdminCustomerOrderRef,
+  AdminCustomerSummary,
+  AdminOrder,
+  AdminOrderSummary,
+} from "@/types/admin";
 import type { User } from "@/types/account";
 
 export const ADMIN_USER: User = {
@@ -227,4 +234,118 @@ export function orderListResponse(
 
 export function orderDetailResponse(order: AdminOrder = ORDER_DETAIL) {
   return jsonResponse({ success: true, order });
+}
+
+export const CUSTOMER_SUMMARY: AdminCustomerSummary = {
+  id: 1,
+  name: "Anita Rao",
+  email: "anita@example.com",
+  isVerified: true,
+  role: "customer",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  orderCount: 2,
+  cancelledCount: 1,
+  totalSpend: 1049,
+  lastOrderAt: "2026-01-05T10:30:00.000Z",
+};
+
+export const CUSTOMER_SUMMARY_SECOND: AdminCustomerSummary = {
+  id: 5,
+  name: "Bilal Khan",
+  email: "bilal@example.com",
+  isVerified: true,
+  role: "customer",
+  createdAt: "2026-01-03T00:00:00.000Z",
+  orderCount: 0,
+  cancelledCount: 0,
+  totalSpend: 0,
+  lastOrderAt: null,
+};
+
+export const ANALYTICS_SUMMARY: AdminAnalyticsSummary = {
+  success: true,
+  generatedAt: "2026-01-10T00:00:00.000Z",
+  range: { days: 30, from: "2025-12-12T00:00:00.000Z" },
+  products: {
+    total: 2,
+    outOfStock: 1,
+    lowStockCount: 1,
+    lowStockThreshold: 5,
+    lowStock: [
+      {
+        id: PRODUCT.id,
+        name: PRODUCT.name,
+        stock: PRODUCT.stock,
+        image: PRODUCT.image,
+        category: CATEGORY.name,
+      },
+    ],
+  },
+  categories: { total: 2 },
+  customers: { total: 2, newInRange: 2 },
+  orders: {
+    total: 2,
+    byStatus: { placed: 0, confirmed: 1, shipped: 0, delivered: 0, cancelled: 1 },
+    nonCancelledCount: 1,
+    grossOrderValue: 1049,
+    averageOrderValue: 1049,
+  },
+  revenueSeries: [
+    { day: "2026-01-05", revenue: 1049, orders: 1 },
+    { day: "2026-01-06", revenue: 500, orders: 1 },
+  ],
+  topProducts: [{ productId: PRODUCT.id, name: PRODUCT.name, revenue: 1049, units: 2 }],
+  recentOrders: [
+    {
+      id: ORDER_SUMMARY.id,
+      orderNumber: ORDER_SUMMARY.orderNumber,
+      status: ORDER_SUMMARY.status,
+      grandTotal: ORDER_SUMMARY.grandTotal,
+      createdAt: ORDER_SUMMARY.createdAt,
+      itemCount: 1,
+      user: ORDER_SUMMARY.user,
+    },
+  ],
+};
+
+export function analyticsResponse(summary: AdminAnalyticsSummary = ANALYTICS_SUMMARY) {
+  return jsonResponse(summary);
+}
+
+export function customerListResponse(
+  customers: AdminCustomerSummary[] = [CUSTOMER_SUMMARY, CUSTOMER_SUMMARY_SECOND],
+  pagination: Pagination = paginationFor(customers.length, 1, 20),
+) {
+  return jsonResponse({ success: true, count: customers.length, customers, pagination });
+}
+
+export function customerDetailResponse(
+  customer: AdminCustomerDetail = {
+    ...CUSTOMER_SUMMARY,
+    addresses: [
+      {
+        id: 7,
+        fullName: "Anita Rao",
+        phone: "9876543210",
+        line1: "12 MG Road",
+        city: "Bengaluru",
+        state: "Karnataka",
+        pincode: "560001",
+        isDefault: true,
+        label: "Home",
+      },
+    ],
+  },
+  orders: AdminCustomerOrderRef[] = [
+    {
+      id: ORDER_SUMMARY.id,
+      orderNumber: ORDER_SUMMARY.orderNumber,
+      status: ORDER_SUMMARY.status,
+      grandTotal: ORDER_SUMMARY.grandTotal,
+      createdAt: ORDER_SUMMARY.createdAt,
+      itemCount: 1,
+    },
+  ],
+) {
+  return jsonResponse({ success: true, customer, orders });
 }

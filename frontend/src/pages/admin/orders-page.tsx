@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ReceiptText, RefreshCw } from "lucide-react";
+import { ReceiptText, RefreshCw, Search } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { AdminQueryError } from "@/components/admin/admin-query-error";
 import { AdminTableSkeleton } from "@/components/admin/admin-table-skeleton";
@@ -8,12 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
 import { Pagination } from "@/components/ui/pagination";
 import { Select } from "@/components/ui/select";
 import { useAdminOrders } from "@/features/admin/queries";
 import { ORDER_STATUS_LABELS } from "@/features/admin/keys";
 import { ORDER_STATUS_VALUES } from "@/types/admin";
 import type { OrderStatus } from "@/types/commerce";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatDateTime, formatPrice } from "@/lib/format";
 import { usePageTitle } from "@/hooks/use-page-title";
 
@@ -31,11 +34,29 @@ export default function AdminOrdersPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const page = parsePage(searchParams.get("page"));
   const status = parseStatus(searchParams.get("status"));
-  const ordersQuery = useAdminOrders({ page, status });
+  const urlQuery = searchParams.get("q") ?? "";
+  const [term, setTerm] = useState(urlQuery);
+  const debouncedTerm = useDebouncedValue(term, 300);
+
+  // Debounced search is mirrored into the URL (replace, so typing does not
+  // flood history) and resets pagination whenever the term changes.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (debouncedTerm.trim()) next.set("q", debouncedTerm.trim());
+    else next.delete("q");
+    if (debouncedTerm.trim() !== urlQuery) next.delete("page");
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedTerm]);
+
+  const ordersQuery = useAdminOrders({ page, status, q: debouncedTerm });
 
   function hrefFor(nextPage: number) {
     const next = new URLSearchParams();
     if (status) next.set("status", status);
+    if (debouncedTerm.trim()) next.set("q", debouncedTerm.trim());
     if (nextPage > 1) next.set("page", String(nextPage));
     const search = next.toString();
     return search ? `/admin/orders?${search}` : "/admin/orders";
@@ -44,19 +65,20 @@ export default function AdminOrdersPage() {
   function changeStatus(nextStatus: string) {
     const next = new URLSearchParams();
     if (nextStatus) next.set("status", nextStatus);
-    const search = next.toString();
-    setSearchParams(search ? new URLSearchParams(search) : new URLSearchParams());
+    if (debouncedTerm.trim()) next.set("q", debouncedTerm.trim());
+    setSearchParams(next);
   }
 
   const data = ordersQuery.data;
   const orders = data?.orders ?? [];
   const pagination = data?.pagination;
+  const searching = debouncedTerm.trim() !== "";
 
   return (
     <>
       <AdminPageHeader
         title="Orders"
-        description="Server-filtered order queue. Open an order to review its real timeline and record the next permitted status."
+        description="Server-searched order queue. Search by order number, customer name or email, then open an order to record the next permitted status."
         breadcrumbs={[{ label: "Admin", to: "/admin" }, { label: "Orders" }]}
         actions={
           <Button
@@ -73,6 +95,16 @@ export default function AdminOrdersPage() {
 
       <Card className="mb-6 p-4">
         <div className="flex flex-wrap items-end gap-3">
+          <Field id="order-search" label="Search" className="w-full sm:w-80">
+            <Input
+              id="order-search"
+              type="search"
+              value={term}
+              placeholder="Order number, customer name or email"
+              autoComplete="off"
+              onChange={(event) => setTerm(event.target.value)}
+            />
+          </Field>
           <Field id="order-status-filter" label="Status" className="w-full sm:w-56">
             <Select
               id="order-status-filter"
@@ -87,14 +119,24 @@ export default function AdminOrdersPage() {
               ))}
             </Select>
           </Field>
-          {status ? (
-            <Button asChild variant="ghost" type="button">
-              <Link to="/admin/orders">Clear filter</Link>
+          {status || searching ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setTerm("");
+                setSearchParams(new URLSearchParams());
+              }}
+            >
+              Reset filters
             </Button>
           ) : null}
-          <p className="pb-2 text-xs text-muted-foreground">
-            The admin orders API supports status filtering and pagination; free-text search is not
-            available.
+          <p className="pb-2 text-xs text-muted-foreground" aria-live="polite">
+            {ordersQuery.isFetching && !ordersQuery.isPending
+              ? "Searching…"
+              : searching
+                ? "Matching order number, customer name or email."
+                : "Newest orders first."}
           </p>
         </div>
       </Card>
@@ -109,17 +151,32 @@ export default function AdminOrdersPage() {
         />
       ) : orders.length === 0 ? (
         <EmptyState
-          icon={ReceiptText}
-          title={status ? `No ${ORDER_STATUS_LABELS[status].toLowerCase()} orders` : "No orders yet"}
+          icon={searching ? Search : ReceiptText}
+          title={
+            searching
+              ? "No orders match that search"
+              : status
+                ? `No ${ORDER_STATUS_LABELS[status].toLowerCase()} orders`
+                : "No orders yet"
+          }
           description={
-            status
-              ? "No orders currently have this status. Clear the filter to see every order."
-              : "Orders will appear here after customers check out with cash on delivery."
+            searching
+              ? "Try a different order number, customer name or email — or clear the search."
+              : status
+                ? "No orders currently have this status. Clear the filter to see every order."
+                : "Orders will appear here after customers check out with cash on delivery."
           }
           action={
-            status ? (
-              <Button asChild variant="outline">
-                <Link to="/admin/orders">Clear filter</Link>
+            searching || status ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setTerm("");
+                  setSearchParams(new URLSearchParams());
+                }}
+              >
+                Clear filters
               </Button>
             ) : (
               <Button asChild variant="outline">
@@ -135,6 +192,7 @@ export default function AdminOrdersPage() {
               {pagination?.total.toLocaleString("en-IN") ?? orders.length} order
               {(pagination?.total ?? orders.length) === 1 ? "" : "s"}
               {status ? ` with status ${ORDER_STATUS_LABELS[status].toLowerCase()}` : ""}
+              {searching ? ` matching “${debouncedTerm.trim()}”` : ""}
             </p>
             {ordersQuery.isFetching ? <p role="status">Refreshing…</p> : null}
           </div>

@@ -10,6 +10,7 @@ const { validateBody, validateQuery } = require("../middleware/validate");
 const { STATUS_VALUES } = require("../utils/orderStatus");
 
 const listQuerySchema = {
+  q: { type: "string", maxLength: 100 },
   status: {
     type: "string",
     maxLength: 20,

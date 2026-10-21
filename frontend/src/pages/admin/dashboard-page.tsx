@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
@@ -7,6 +8,8 @@ import {
   Plus,
   ReceiptText,
   Tags,
+  TrendingUp,
+  Users,
 } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { AdminQueryError } from "@/components/admin/admin-query-error";
@@ -24,7 +27,11 @@ import { ORDER_STATUS_VALUES } from "@/types/admin";
 import { formatDateTime, formatPrice } from "@/lib/format";
 import { usePageTitle } from "@/hooks/use-page-title";
 
-const LOW_STOCK_THRESHOLD = 5;
+const RANGE_OPTIONS = [
+  { days: 7, label: "7 days" },
+  { days: 30, label: "30 days" },
+  { days: 90, label: "90 days" },
+];
 
 function StatSkeletons() {
   return (
@@ -61,28 +68,83 @@ function DashboardSkeleton() {
           </Card>
         ))}
       </div>
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-5 w-36" />
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {Array.from({ length: 4 }, (_, row) => (
-            <Skeleton key={row} className="h-12 w-full" />
+    </div>
+  );
+}
+
+/**
+ * A day-by-day revenue strip. Bars are decorative (aria-hidden) and every value
+ * is repeated in an accessible table caption, so the chart never carries
+ * information that a screen reader cannot reach. No motion is used: the data is
+ * static once fetched, so animating it would be decoration on a dashboard.
+ */
+function RevenueStrip({ series }: { series: Array<{ day: string; revenue: number; orders: number }> }) {
+  if (series.length === 0) {
+    return (
+      <p className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+        No revenue recorded in this range.
+      </p>
+    );
+  }
+
+  const peak = Math.max(...series.map((point) => point.revenue), 1);
+  const total = series.reduce((sum, point) => sum + point.revenue, 0);
+  const orderCount = series.reduce((sum, point) => sum + point.orders, 0);
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <p className="text-2xl font-semibold tabular-nums">{formatPrice(total)}</p>
+        <p className="text-xs text-muted-foreground">
+          {orderCount.toLocaleString("en-IN")} order{orderCount === 1 ? "" : "s"} ·{" "}
+          {series.length} day{series.length === 1 ? "" : "s"} with revenue
+        </p>
+      </div>
+      <div
+        className="flex h-24 items-end gap-1 overflow-hidden rounded-md border border-border bg-secondary/30 p-2"
+        aria-hidden="true"
+      >
+        {series.map((point, index) => (
+          <div
+            key={`${point.day}-${index}`}
+            className="min-w-0 flex-1 rounded-sm bg-primary/70"
+            style={{ height: `${Math.max(4, Math.round((point.revenue / peak) * 100))}%` }}
+            title={`${point.day}: ${formatPrice(point.revenue)}`}
+          />
+        ))}
+      </div>
+      <table className="sr-only">
+        <caption>Revenue by day for the selected range</caption>
+        <thead>
+          <tr>
+            <th scope="col">Day</th>
+            <th scope="col">Revenue</th>
+            <th scope="col">Orders</th>
+          </tr>
+        </thead>
+        <tbody>
+          {series.map((point) => (
+            <tr key={point.day}>
+              <th scope="row">{point.day}</th>
+              <td>{formatPrice(point.revenue)}</td>
+              <td>{point.orders}</td>
+            </tr>
           ))}
-        </CardContent>
-      </Card>
+        </tbody>
+      </table>
     </div>
   );
 }
 
 export default function AdminDashboardPage() {
   usePageTitle("Admin dashboard");
-  const dashboard = useAdminDashboard();
+  const [days, setDays] = useState(30);
+  const dashboard = useAdminDashboard(days);
 
   const header = (
     <AdminPageHeader
       title="Dashboard"
-      description="Live catalog and order health. Every figure below comes from the existing API and is labelled when a safety cap applies."
+      description="Server-side aggregates over the real catalog and order tables. No capped page walks, no estimated figures."
       actions={
         <>
           <Button asChild variant="outline">
@@ -125,12 +187,6 @@ export default function AdminDashboardPage() {
   }
 
   const data = dashboard.data;
-  const productsNote = data.productsTruncated
-    ? `Counted in the first ${data.products.length.toLocaleString("en-IN")} products`
-    : "Total catalog records";
-  const orderValueNote = data.ordersTruncated
-    ? `Non-cancelled, first ${data.orders.length.toLocaleString("en-IN")} orders`
-    : "Non-cancelled gross order value (COD)";
 
   return (
     <>
@@ -139,55 +195,74 @@ export default function AdminDashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <AdminStat
           label="Products"
-          value={data.productTotal.toLocaleString("en-IN")}
-          note={productsNote}
+          value={data.products.total.toLocaleString("en-IN")}
+          note={`${data.products.lowStockCount} low · ${data.products.outOfStock} out of stock`}
           icon={Package}
           to="/admin/products"
         />
         <AdminStat
-          label="Categories"
-          value={String(data.categories.length)}
-          note="Configured catalog taxonomy"
-          icon={Tags}
-          to="/admin/categories"
+          label="Customers"
+          value={data.customers.total.toLocaleString("en-IN")}
+          note={`${data.customers.newInRange.toLocaleString("en-IN")} new in ${days} days`}
+          icon={Users}
+          to="/admin/customers"
         />
         <AdminStat
           label="Orders"
-          value={data.orderTotal.toLocaleString("en-IN")}
-          note={
-            data.ordersTruncated
-              ? `Status/value based on ${data.orders.length.toLocaleString("en-IN")} fetched`
-              : "All statuses"
-          }
+          value={data.orders.total.toLocaleString("en-IN")}
+          note={`${data.orders.nonCancelledCount.toLocaleString("en-IN")} non-cancelled`}
           icon={ReceiptText}
           to="/admin/orders"
         />
         <AdminStat
           label="Order value"
-          value={formatPrice(data.orderValue)}
-          note={orderValueNote}
+          value={formatPrice(data.orders.grossOrderValue)}
+          note="Non-cancelled gross value (COD)"
           icon={IndianRupee}
         />
         <AdminStat
-          label="Out of stock"
-          value={String(data.outOfStock)}
-          note={
-            data.productsTruncated
-              ? `In the first ${data.products.length.toLocaleString("en-IN")} products`
-              : "Products with zero stock"
-          }
-          icon={PackageX}
-          to="/admin/products?stock=out"
+          label="Average order"
+          value={formatPrice(data.orders.averageOrderValue)}
+          note="Non-cancelled gross ÷ orders"
+          icon={TrendingUp}
         />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+            <CardTitle className="text-lg">Revenue</CardTitle>
+            <div className="flex gap-1" role="group" aria-label="Revenue range">
+              {RANGE_OPTIONS.map((option) => (
+                <Button
+                  key={option.days}
+                  type="button"
+                  size="sm"
+                  variant={option.days === days ? "secondary" : "ghost"}
+                  aria-pressed={option.days === days}
+                  onClick={() => setDays(option.days)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {dashboard.isFetching ? (
+              <p role="status" className="mb-2 text-xs text-muted-foreground">
+                Refreshing…
+              </p>
+            ) : null}
+            <RevenueStrip series={data.revenueSeries} />
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-lg">Orders by status</CardTitle>
             <Link
               to="/admin/orders"
-              className="text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               View all
             </Link>
@@ -205,54 +280,46 @@ export default function AdminDashboardPage() {
                       <span className="text-muted-foreground">{ORDER_STATUS_LABELS[status]}</span>
                     </span>
                     <span className="inline-flex items-center gap-2 text-sm font-semibold tabular-nums">
-                      {data.statusCounts[status].toLocaleString("en-IN")}
+                      {data.orders.byStatus[status].toLocaleString("en-IN")}
                       <ArrowRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
                     </span>
                   </Link>
                 </li>
               ))}
             </ul>
-            {data.ordersTruncated ? (
-              <p className="mt-3 text-xs text-muted-foreground">
-                Counts cover the first {data.orders.length.toLocaleString("en-IN")} orders; the API
-                has no aggregate analytics endpoint.
-              </p>
-            ) : null}
           </CardContent>
         </Card>
+      </div>
 
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader className="flex-row items-center justify-between space-y-0">
             <CardTitle className="text-lg">Low stock</CardTitle>
-            <Badge variant="outline">≤ {LOW_STOCK_THRESHOLD} units</Badge>
+            <Badge variant="outline">≤ {data.products.lowStockThreshold} units</Badge>
           </CardHeader>
           <CardContent>
-            {data.lowStock.length === 0 ? (
+            {data.products.lowStock.length === 0 ? (
               <div className="rounded-md border border-dashed border-border px-4 py-8 text-center">
                 <p className="text-sm font-medium">No low-stock products</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {data.productsTruncated
-                    ? "Checked across the fetched products only."
-                    : "Every product has more than five units available."}
+                  {data.products.outOfStock === 0
+                    ? "Every product is above the low-stock threshold."
+                    : "Only out-of-stock products remain; none are low but in stock."}
                 </p>
               </div>
             ) : (
               <ul className="divide-y divide-border">
-                {data.lowStock.map((product) => (
+                {data.products.lowStock.map((product) => (
                   <li key={product.id} className="flex items-center gap-3 py-2.5">
                     <ProductThumb src={product.image} name={product.name} className="size-9" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{product.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {product.Category?.name ?? product.category}
-                      </p>
+                      <p className="truncate text-xs text-muted-foreground">{product.category ?? "—"}</p>
                     </div>
-                    <Badge variant={product.stock === 0 ? "destructive" : "outline"}>
-                      {product.stock === 0 ? "Out" : `${product.stock} left`}
-                    </Badge>
+                    <Badge variant="outline">{product.stock} left</Badge>
                     <Link
                       to={`/admin/products/${product.id}/edit`}
-                      className="text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="rounded text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       Edit
                     </Link>
@@ -260,9 +327,86 @@ export default function AdminDashboardPage() {
                 ))}
               </ul>
             )}
-            <div className="mt-4">
+            {data.products.outOfStock > 0 ? (
+              <div className="mt-4">
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/admin/products?stock=out">
+                    <PackageX aria-hidden="true" />
+                    {data.products.outOfStock} out of stock
+                  </Link>
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-lg">Top products</CardTitle>
+            <Badge variant="outline">By revenue</Badge>
+          </CardHeader>
+          <CardContent>
+            {data.topProducts.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                No sales recorded yet. Figures appear after the first non-cancelled order.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {data.topProducts.map((product, index) => (
+                  <li key={`${product.productId ?? "deleted"}-${index}`} className="flex items-center gap-3 py-2.5">
+                    <span className="w-4 text-xs tabular-nums text-muted-foreground" aria-hidden="true">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{product.name}</p>
+                      <p className="text-xs text-muted-foreground">{product.units} sold</p>
+                    </div>
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatPrice(product.revenue)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-3 text-xs text-muted-foreground">
+              Computed from purchase snapshots, so renamed or deleted products still report their
+              historical revenue.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-lg">Catalog</CardTitle>
+            <Tags className="size-4 text-muted-foreground" aria-hidden="true" />
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-border">
+              <li className="flex items-center justify-between py-2.5 text-sm">
+                <span>Categories</span>
+                <span className="font-semibold tabular-nums">{data.categories.total}</span>
+              </li>
+              <li className="flex items-center justify-between py-2.5 text-sm">
+                <span>Products</span>
+                <span className="font-semibold tabular-nums">{data.products.total}</span>
+              </li>
+              <li className="flex items-center justify-between py-2.5 text-sm">
+                <span>In stock</span>
+                <span className="font-semibold tabular-nums">
+                  {Math.max(0, data.products.total - data.products.outOfStock)}
+                </span>
+              </li>
+              <li className="flex items-center justify-between py-2.5 text-sm">
+                <span>Out of stock</span>
+                <span className="font-semibold tabular-nums">{data.products.outOfStock}</span>
+              </li>
+            </ul>
+            <div className="mt-4 flex gap-2">
               <Button asChild variant="outline" size="sm">
-                <Link to="/admin/products?stock=in">Manage inventory</Link>
+                <Link to="/admin/categories">Categories</Link>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/admin/products">Products</Link>
               </Button>
             </div>
           </CardContent>
@@ -274,7 +418,7 @@ export default function AdminDashboardPage() {
           <CardTitle className="text-lg">Recent orders</CardTitle>
           <Link
             to="/admin/orders"
-            className="text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded text-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             View all
           </Link>
@@ -311,7 +455,7 @@ export default function AdminDashboardPage() {
                         <td className="py-3 pr-3">
                           <Link
                             to={`/admin/orders/${order.id}`}
-                            className="font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="rounded font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             {order.orderNumber}
                           </Link>
@@ -344,7 +488,7 @@ export default function AdminDashboardPage() {
                     <div className="flex items-center justify-between gap-2">
                       <Link
                         to={`/admin/orders/${order.id}`}
-                        className="font-medium text-primary hover:underline"
+                        className="rounded font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {order.orderNumber}
                       </Link>
@@ -358,11 +502,6 @@ export default function AdminDashboardPage() {
                   </li>
                 ))}
               </ul>
-              {data.ordersTruncated ? (
-                <p className="mt-3 text-xs text-muted-foreground">
-                  This preview uses the fetched order set, not an analytics endpoint.
-                </p>
-              ) : null}
             </>
           )}
         </CardContent>
