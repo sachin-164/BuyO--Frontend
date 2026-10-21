@@ -18,6 +18,18 @@ const FIELD_NAMES = new Set([
   "notes",
   "qty",
   "productId",
+  // Admin product/category fields (server validation messages start with them).
+  "category",
+  "categoryId",
+  "description",
+  "mrpPrice",
+  "sellingPrice",
+  "stock",
+  "slug",
+  "image",
+  "imageMeta",
+  "imageMeta.alt",
+  "taxRate",
 ]);
 
 /**
@@ -36,7 +48,8 @@ export function getFieldErrors(error: unknown): Record<string, string> {
   const result: Record<string, string> = {};
   for (const entry of raw) {
     if (typeof entry !== "string") continue;
-    const match = /^([A-Za-z][A-Za-z0-9_]*)\s+(.+)$/.exec(entry.trim());
+    // Dotted names are real (e.g. "imageMeta.alt must be a string").
+    const match = /^([A-Za-z][A-Za-z0-9_.]*)\s+(.+)$/.exec(entry.trim());
     if (!match || !FIELD_NAMES.has(match[1])) continue;
     const field = match[1];
     // Keep the first message for a field; server order is intentional.

@@ -1,6 +1,6 @@
 # BuyO — React Migration: Audit, Architecture, and Plan
 
-Status: **Phases 1–2 complete** (audit + React foundation/design system).
+Status: **Phases 1–5 complete** (audit, React foundation, storefront, commerce, admin).
 The deployed static frontend and Express API are **untouched** by this migration
 until the Phase 6 cutover is explicitly approved.
 
@@ -292,16 +292,53 @@ Environment:
   - [x] Verified: `tsc --noEmit` clean, production build succeeds, 96/96 Vitest
         tests pass (cart, wishlist, auth guards, address validation, checkout
         idempotency, conflicts, orders list/detail, protected-route 401 handling)
-- [ ] **Phase 5 — complete admin panel**
+- [x] **Phase 5 — complete admin panel**
+  - [x] Responsive admin shell: sidebar, mobile navigation drawer, sticky header,
+        account menu, breadcrumbs, skip link, route-change focus, and consistent
+        page headers; `/admin/*` stays behind `RequireAdmin`
+  - [x] Dashboard backed entirely by existing endpoints: catalog, category and
+        order totals, status breakdown, non-cancelled COD value, recent orders,
+        low-stock list and out-of-stock count. Page-through collection is capped
+        at 2,500 products / 5,000 orders and every capped figure is labelled; no
+        analytics endpoint or invented metric was added
+  - [x] Product list with URL-driven search, category, stock, price, sort and
+        server pagination; desktop table and mobile cards; delete confirmation
+        and explicit empty/error/forbidden/loading states
+  - [x] Product create/edit forms mirror server validation, support existing or
+        free-text categories, prevent duplicate submits, map server field errors,
+        and handle image URL/alt text. Hosted uploads use
+        `POST /api/uploads/authorize` → signed direct PUT → object path; the app
+        session header is never sent to storage
+  - [x] Category CRUD dialog with GST/tax rate, client filtering (the API returns
+        the complete list), product counts, and a delete warning explaining that
+        linked products are unlinked but never deleted
+  - [x] Admin order queue with server status filter/pagination, responsive rows,
+        and detail view with real customer/address/items/tax snapshots and
+        recorded `statusEvents`. Status actions mirror `ALLOWED_TRANSITIONS`
+        exactly; server re-validates every transition and cancellation restocks
+        in one transaction
+  - [x] Legacy admin URLs redirect with ids preserved
+        (`product-form.html?id=`, `order-detail.html?id=`); `token` key and API
+        contracts unchanged
+  - [x] Documented unsupported areas instead of inventing UI: customer
+        management (no customer list/detail endpoint), free-text admin order
+        search, aggregate analytics, and file replacement in local storage mode
+  - [x] Verified: `tsc --noEmit` clean, production build succeeds, 143/143
+        Vitest tests pass across 24 files (route guards, admin shell, dashboard,
+        product and category flows, order filters/detail/transitions, upload
+        authorization and failure modes, empty/error states, pagination)
 - [ ] **Phase 6 — animation/a11y/security/performance hardening, E2E, cutover**
 
 ---
 
 ## 8. Risks / open questions
 
-1. **Admin image replacement**: the backend update route is JSON-only; either
-   keep create-only uploads in the React admin or approve a small multipart
-   update change. Not changed without approval.
+1. **Admin image replacement depends on storage mode**: hosted storage supports
+   replacement through the signed-upload flow plus JSON
+   `PUT /api/products/:id` with the object path. The local-storage adapter's
+   update route is JSON-only, so the React admin explains the limitation and
+   offers an image URL/remove instead of silently changing backend behaviour. A
+   multipart update remains a separate backend change requiring approval.
 2. **Cutover is atomic**: while both frontends exist, only one can own `/`.
    A separate preview Vercel project would allow browser review before cutover
    and needs approval (new project, no production impact).
@@ -337,3 +374,19 @@ Environment:
 12. **No verification resend endpoint**: signup and login surface the server's
     unverified-account state, and verification relies on the server redirect.
     A "resend email" control is intentionally absent.
+13. **No customer-management API**: the backend exposes customer data only as
+    the `user` reference embedded in admin orders. There is no list, detail,
+    order-history, edit, role, password or delete endpoint, so the admin panel
+    does not publish a customer screen that would be read-only in name only.
+14. **No aggregate analytics endpoint**: dashboard status/value figures are
+    collected by walking paginated product/order endpoints. Caps keep the load
+    bounded (2,500 products, 5,000 orders), and every affected card/panel says
+    when it is based on a partial set. True totals would need a backend
+    aggregation contract.
+15. **No admin order free-text search**: `GET /api/admin/orders` supports only
+    `page` and `status`. The queue documents this and does not filter the current
+    page client-side, which would produce misleading results.
+16. **Admin page-through cost**: a large catalog/order set can trigger many
+    sequential list requests when the dashboard is first opened. TanStack Query
+    caches the result for the session; a future aggregate endpoint should replace
+    this approach before the caps are raised.

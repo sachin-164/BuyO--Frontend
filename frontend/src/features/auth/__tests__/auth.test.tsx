@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "@/pages/auth/login-page";
 import SignupPage from "@/pages/auth/signup-page";
 import CartPage from "@/pages/cart-page";
-import AdminPlaceholderPage from "@/pages/admin-placeholder-page";
 import { RequireAdmin, RequireAuth } from "@/features/auth/guards";
 import {
   jsonResponse,
@@ -170,7 +169,7 @@ describe("route guards", () => {
           path="/admin"
           element={
             <RequireAdmin>
-              <AdminPlaceholderPage />
+              <p>Admin workspace</p>
             </RequireAdmin>
           }
         />

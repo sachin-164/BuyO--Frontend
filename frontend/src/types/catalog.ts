@@ -3,6 +3,8 @@ export interface Category {
   name: string;
   slug: string;
   description?: string | null;
+  /** GST percentage configured per category (DECIMAL(5,2) on the server). */
+  taxRate?: number;
   productCount?: number;
   createdAt?: string;
   updatedAt?: string;

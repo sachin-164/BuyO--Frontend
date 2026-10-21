@@ -7,8 +7,12 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { StorefrontLayout } from "@/components/layout/storefront-layout";
+import { AdminLayout } from "@/components/admin/admin-layout";
+import {
+  LegacyAdminOrderRedirect,
+  LegacyAdminProductRedirect,
+} from "@/components/admin/legacy-admin-redirect";
 import { Spinner } from "@/components/ui/spinner";
-import AdminPlaceholderPage from "@/pages/admin-placeholder-page";
 import NotFoundPage from "@/pages/not-found-page";
 import RouteErrorPage from "@/pages/route-error-page";
 import { RequireAdmin, RequireAuth } from "@/features/auth/guards";
@@ -39,6 +43,12 @@ const CheckoutPage = lazy(() => import("@/pages/checkout-page"));
 const OrderConfirmationPage = lazy(() => import("@/pages/order-confirmation-page"));
 const OrdersPage = lazy(() => import("@/pages/orders-page"));
 const OrderDetailPage = lazy(() => import("@/pages/order-detail-page"));
+const AdminDashboardPage = lazy(() => import("@/pages/admin/dashboard-page"));
+const AdminProductsPage = lazy(() => import("@/pages/admin/products-page"));
+const AdminProductFormPage = lazy(() => import("@/pages/admin/product-form-page"));
+const AdminCategoriesPage = lazy(() => import("@/pages/admin/categories-page"));
+const AdminOrdersPage = lazy(() => import("@/pages/admin/orders-page"));
+const AdminOrderDetailPage = lazy(() => import("@/pages/admin/order-detail-page"));
 
 function PageFallback() {
   return (
@@ -118,8 +128,8 @@ export const router = createBrowserRouter([
   { path: "/admin/products.html", element: <Navigate to="/admin/products" replace /> },
   { path: "/admin/categories.html", element: <Navigate to="/admin/categories" replace /> },
   { path: "/admin/orders.html", element: <Navigate to="/admin/orders" replace /> },
-  { path: "/admin/order-detail.html", element: <Navigate to="/admin/orders" replace /> },
-  { path: "/admin/product-form.html", element: <Navigate to="/admin/products" replace /> },
+  { path: "/admin/order-detail.html", element: <LegacyAdminOrderRedirect /> },
+  { path: "/admin/product-form.html", element: <LegacyAdminProductRedirect /> },
   { path: "/admin/add-product.html", element: <Navigate to="/admin/products/new" replace /> },
 
   {
@@ -185,7 +195,22 @@ export const router = createBrowserRouter([
 
   // Standalone so the storefront header is not shown on admin routes.
   {
-    path: "/admin/*",
-    element: <RequireAdmin><AdminPlaceholderPage /></RequireAdmin>,
+    path: "/admin",
+    element: (
+      <RequireAdmin>
+        <AdminLayout />
+      </RequireAdmin>
+    ),
+    errorElement: <RouteErrorPage />,
+    children: [
+      { index: true, element: withSuspense(<AdminDashboardPage />) },
+      { path: "products", element: withSuspense(<AdminProductsPage />) },
+      { path: "products/new", element: withSuspense(<AdminProductFormPage />) },
+      { path: "products/:id/edit", element: withSuspense(<AdminProductFormPage />) },
+      { path: "categories", element: withSuspense(<AdminCategoriesPage />) },
+      { path: "orders", element: withSuspense(<AdminOrdersPage />) },
+      { path: "orders/:id", element: withSuspense(<AdminOrderDetailPage />) },
+      { path: "*", element: <NotFoundPage /> },
+    ],
   },
 ]);
