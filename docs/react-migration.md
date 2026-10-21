@@ -1,8 +1,10 @@
 # BuyO — React Migration: Audit, Architecture, and Plan
 
-Status: **Phases 1–5 complete** (audit, React foundation, storefront, commerce, admin).
-The deployed static frontend and Express API are **untouched** by this migration
-until the Phase 6 cutover is explicitly approved.
+Status: **Phases 1–6 verified locally** (audit, React foundation, storefront,
+commerce, admin, release readiness). The deployed static frontend and Express API
+are **untouched** by this migration until the Phase 6 cutover is explicitly
+approved. Isolated preview and cutover remain blocked pending approval; see
+`docs/react-phase-6-release-readiness.md`.
 
 Firm decision: the entire frontend (storefront + admin) moves to one React +
 TypeScript + Vite application. The Express/PostgreSQL/Supabase backend is reused.
@@ -51,7 +53,7 @@ TypeScript + Vite application. The Express/PostgreSQL/Supabase backend is reused
 | GET | `/auth/me` | user | fresh DB reload; password-version binding |
 | GET | `/categories` | public | `{ categories: [...], count }`, includes `productCount` |
 | POST/PUT/DELETE | `/categories[/:id]` | admin | create/update/delete |
-| GET | `/products` | public | list; `page`, `limit`, `search`, `category`, `sort`; returns `pagination` |
+| GET | `/products` | public | list; `page`, `limit`, `q`, `category`, `minPrice`, `maxPrice`, `inStock`, `sort`; returns `pagination` |
 | GET | `/products/:idOrSlug` | public | detail |
 | POST | `/products` | admin | JSON or multipart `image` (create only) |
 | PUT | `/products/:id` | admin | **JSON only today** (no image replacement) |
@@ -186,20 +188,25 @@ Data flow:
 
 Current production constraint: the repository root is the published static
 site, and `/api/*` rewrites to `api/app.js`. Adding SPA rewrites now would
-break live pages, so **Phases 2–5 build and verify locally/CI only**.
+break live pages, so **Phases 2–6 build and verify locally/CI only until the
+approved cutover**.
 
 Cutover (Phase 6, requires explicit approval):
 
-1. Install frontend dependencies in CI (workspace or `npm ci --prefix frontend`).
+1. Install frontend dependencies in CI (workspace or
+   `npm ci --prefix frontend --include=dev`).
 2. Build `frontend/dist`.
 3. Set Vercel build settings to publish that directory while keeping the
-   existing `api/app.js` function and `/api/:path*` rewrite.
+   existing `api/app.js` function and `/api/:path*` rewrite. The exact candidate
+   `vercel.json` is in `docs/react-phase-6-release-readiness.md` and is **not**
+   applied yet.
 4. Add SPA fallback (`/(.*)` → `/index.html`) **after** static asset and API
    routes; keep `admin` deep links working.
 5. Verify: health/readiness, catalog, auth, cart, checkout, admin order flow,
    storage upload, legacy redirects, 404, security headers.
 6. Roll back by reverting `vercel.json`/build settings to the previous
-   deployment (static frontend remains in git, untouched).
+   deployment (static frontend remains in git, untouched), or use the recorded
+   Vercel rollback deployment in `docs/react-phase-6-release-readiness.md`.
 
 Environment:
 
@@ -327,7 +334,22 @@ Environment:
         Vitest tests pass across 24 files (route guards, admin shell, dashboard,
         product and category flows, order filters/detail/transitions, upload
         authorization and failure modes, empty/error states, pagination)
-- [ ] **Phase 6 — animation/a11y/security/performance hardening, E2E, cutover**
+- [x] **Phase 6 — local release verification and hardening**
+  - [x] Full TypeScript, 143/143 Vitest, production build, secret and whitespace
+        gates clean; bundle and dependency/security review recorded
+  - [x] 30/30 browser checks against the production bundle: customer, auth,
+        admin, error/empty states, responsive layouts, keyboard/focus, reduced
+        motion, deep-route refresh, legacy redirects and console/request sweep
+  - [x] Per-route document titles completed across customer, auth and error pages
+  - [x] Production source maps disabled; no `.map` files shipped
+  - [x] Production API inspected read-only; zero Category rows and a transient
+        readiness cold start recorded honestly
+  - [x] Isolated preview requirements, candidate config, cutover and rollback
+        runbook written in `docs/react-phase-6-release-readiness.md`
+  - [ ] **Isolated preview acceptance** — blocked pending approval for a test
+        database/project and Vercel preview resources
+  - [ ] **Production cutover** — deliberately unexecuted; requires explicit
+        approval after preview acceptance
 
 ---
 
@@ -344,15 +366,17 @@ Environment:
    and needs approval (new project, no production impact).
 3. **Session compatibility**: token key `token` is preserved; password-version
    binding and 401 semantics must match `backend/middleware/auth.js`.
-4. **SEO**: SPA metadata must be set per route; no server rendering is planned.
+4. **SEO**: per-route document titles are set; the meta description remains the
+   static index description and no server rendering is planned. Route-specific
+   descriptions would need prerendering or SSR.
 5. **Legacy deep links**: `*.html` URLs must redirect at cutover to avoid
    breaking bookmarks and search results.
 6. **Category records are unpublished**: the read-only API currently returns
-   zero Category records, while the published product carries
-   `category: "Mobile"` and `categoryId: null`. Filtering by that legacy name
-   works, and product pages link to it, but the category index honestly shows an
-   empty state. Publishing Category records and assigning products is an owner
-   data decision (not changed in Phase 3).
+   zero Category records, while published products carry legacy category names
+   and `categoryId: null`. Filtering by a legacy name works, and product pages
+   link to it, but the category index honestly shows an empty state. Publishing
+   Category records and assigning products is an owner data decision (not changed
+   in Phase 3 or 6).
 7. **Single product image**: the API exposes one `image` (`imageMeta` optional)
    and no image array. The gallery component supports multiple thumbnails, but
    today renders one image plus the lightbox. Multi-image support requires a
@@ -390,3 +414,13 @@ Environment:
     sequential list requests when the dashboard is first opened. TanStack Query
     caches the result for the session; a future aggregate endpoint should replace
     this approach before the caps are raised.
+17. **React Router advisory**: the production dependency audit reports two
+    moderate `react-router` advisories. The only user-controlled redirect input
+    is constrained to a same-origin path and rejects `//` and backslashes. The
+    fix is a major-version upgrade, not applied without approval.
+18. **Static security headers**: the legacy HTML currently has HSTS but no CSP,
+    `X-Content-Type-Options`, `X-Frame-Options` or `Referrer-Policy`. The
+    candidate cutover config adds them; they must be verified in preview.
+19. **Readiness cold start**: `/api/health/ready` can return a single transient
+    503 while the bounded database probe warms up. Cutover monitoring should
+    retry once; a sustained 503 is a real failure.

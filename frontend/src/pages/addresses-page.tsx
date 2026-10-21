@@ -17,10 +17,12 @@ import {
   useDeleteAddress,
   useSetDefaultAddress,
 } from "@/features/addresses/mutations";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { getErrorMessage } from "@/lib/errors";
 import type { Address } from "@/types/account";
 
 export default function AddressesPage() {
+  usePageTitle("Addresses");
   const addressesQuery = useAddresses();
   const setDefault = useSetDefaultAddress();
   const deleteAddress = useDeleteAddress();

@@ -21,7 +21,10 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    // Do not publish source maps with the production bundle. They add several
+    // megabytes and expose the original source tree without an error-reporting
+    // service that needs them.
+    sourcemap: false,
   },
   test: {
     environment: "jsdom",

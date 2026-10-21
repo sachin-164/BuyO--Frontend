@@ -4,6 +4,7 @@ import { CheckCircle2, Info, MailCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants, Button } from "@/components/ui/button";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { cn } from "@/lib/utils";
 
 const STATUS_MESSAGES: Record<string, { title: string; description: string; tone: "success" | "info" }> = {
@@ -20,6 +21,7 @@ const STATUS_MESSAGES: Record<string, { title: string; description: string; tone
 };
 
 export default function VerifyPage() {
+  usePageTitle("Email verification");
   const [searchParams] = useSearchParams();
   const status = searchParams.get("status");
   const token = searchParams.get("token");

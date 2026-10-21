@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/features/auth/auth-context";
+import { usePageTitle } from "@/hooks/use-page-title";
 import type { LoginResponse } from "@/types/account";
 
 const schema = z.object({
@@ -38,6 +39,7 @@ const STATUS_MESSAGES: Record<
 };
 
 export default function LoginPage() {
+  usePageTitle("Sign in");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestedNext = safeNextPath(searchParams.get("next"));

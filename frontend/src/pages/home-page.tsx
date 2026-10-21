@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCategories, useLatestProducts } from "@/features/catalog/queries";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { fadeUp, staggerChildren } from "@/lib/motion";
 
 const VALUE_PROPS = [
@@ -51,6 +52,7 @@ function ProductGridSkeleton() {
 }
 
 export default function HomePage() {
+  usePageTitle();
   const categories = useCategories();
   const products = useLatestProducts(8);
 

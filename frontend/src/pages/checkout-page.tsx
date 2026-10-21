@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { useCart } from "@/features/cart/queries";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useAddresses } from "@/features/addresses/queries";
 import { useCreateOrder } from "@/features/orders/mutations";
 import { getApiErrorDetails, getErrorMessage } from "@/lib/errors";
@@ -97,6 +98,7 @@ function AddressRadio({
 }
 
 export default function CheckoutPage() {
+  usePageTitle("Checkout");
   const cartQuery = useCart();
   const addressesQuery = useAddresses();
   const createOrder = useCreateOrder();

@@ -1,8 +1,10 @@
 import { Compass } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 export default function NotFoundPage() {
+  usePageTitle("Page not found");
   return (
     <div className="container-page flex min-h-[60vh] items-center justify-center py-16">
       <div className="max-w-md text-center">

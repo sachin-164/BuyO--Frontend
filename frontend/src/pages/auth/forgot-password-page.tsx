@@ -11,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 const schema = z.object({
   email: z.string().trim().min(1, "Email is required").email("Enter a valid email address"),
@@ -19,6 +20,7 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export default function ForgotPasswordPage() {
+  usePageTitle("Forgot password");
   const [requestAttempted, setRequestAttempted] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 

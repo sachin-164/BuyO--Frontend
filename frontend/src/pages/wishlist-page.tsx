@@ -10,6 +10,7 @@ import {
   useAddToCartFromWishlist,
   useRemoveWishlistItem,
 } from "@/features/wishlist/mutations";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -136,6 +137,7 @@ function WishlistCard({
 }
 
 export default function WishlistPage() {
+  usePageTitle("Your wishlist");
   const wishlistQuery = useWishlist();
   const removeFromWishlist = useRemoveWishlistItem();
   const addToCart = useAddToCartFromWishlist();

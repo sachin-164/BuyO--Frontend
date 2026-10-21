@@ -2,6 +2,7 @@ import { Construction } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 interface ComingSoonPageProps {
   title: string;
@@ -14,6 +15,7 @@ interface ComingSoonPageProps {
  * It is never linked as if it were finished functionality.
  */
 export default function ComingSoonPage({ title, description, phase }: ComingSoonPageProps) {
+  usePageTitle(title);
   return (
     <div className="container-page py-20">
       <div className="mx-auto max-w-xl text-center">

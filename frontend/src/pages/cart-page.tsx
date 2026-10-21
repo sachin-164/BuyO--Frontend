@@ -16,6 +16,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useCart } from "@/features/cart/queries";
+import { usePageTitle } from "@/hooks/use-page-title";
 import {
   useRemoveCartItem,
   useUpdateCartItem,
@@ -154,6 +155,7 @@ function CartLine({
 }
 
 export default function CartPage() {
+  usePageTitle("Your cart");
   const cartQuery = useCart();
   const updateCart = useUpdateCartItem();
   const removeCart = useRemoveCartItem();

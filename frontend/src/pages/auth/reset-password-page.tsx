@@ -11,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 const baseSchema = z.object({
   password: z
@@ -29,6 +30,7 @@ const schema = baseSchema
 type FormValues = z.infer<typeof schema>;
 
 export default function ResetPasswordPage() {
+  usePageTitle("Reset password");
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token") ?? "";
   const [resetComplete, setResetComplete] = useState(false);

@@ -1,7 +1,9 @@
 import { isRouteErrorResponse, Link, useRouteError } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 export default function RouteErrorPage() {
+  usePageTitle("Something went wrong");
   const error = useRouteError();
   const status = isRouteErrorResponse(error) ? error.status : null;
   const message =

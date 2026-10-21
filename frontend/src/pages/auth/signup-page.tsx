@@ -11,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
+import { usePageTitle } from "@/hooks/use-page-title";
 
 const baseSchema = z.object({
   name: z
@@ -37,6 +38,7 @@ const schema = baseSchema
 type FormValues = z.infer<typeof schema>;
 
 export default function SignupPage() {
+  usePageTitle("Create account");
   const [searchParams] = useSearchParams();
   const next = searchParams.get("next");
   const [createdEmail, setCreatedEmail] = useState<string | null>(null);
