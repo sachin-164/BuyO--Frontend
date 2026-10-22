@@ -28,6 +28,7 @@ const { toMoney, buildTotals } = require("../utils/pricing");
 const { HttpError, parsePositiveId } = require("../utils/apiError");
 
 const MAX_LINE_QTY = 99;
+const MAX_MERGE_ITEMS = 50;
 const categoryInclude = [{ model: Category, as: "Category" }];
 
 // Serializes this user's cart mutations for the duration of the transaction.
@@ -223,4 +224,100 @@ const removeFromCart = async (req, res, next) => {
   }
 };
 
-module.exports = { getCart, addToCart, updateCartItem, removeFromCart, MAX_LINE_QTY };
+// ---------- POST /api/cart/merge — absorb the browser's guest cart ----------
+// Items are replayed through the same locked upsert as addToCart:
+//   - duplicate productIds in one payload are summed
+//   - quantities are clamped to available stock, never exceeded
+//   - products that no longer exist (or are out of stock) are skipped and
+//     reported, so the client can tell the shopper what was dropped
+// Re-submitting an empty list is a no-op, which makes the client flow safe to
+// retry after a partial failure.
+const mergeCart = async (req, res, next) => {
+  try {
+    const raw = req.body.items;
+    if (!Array.isArray(raw)) {
+      throw new HttpError(400, "Validation failed", ["items must be an array"]);
+    }
+    if (raw.length > MAX_MERGE_ITEMS) {
+      throw new HttpError(400, "Validation failed", [`items may contain at most ${MAX_MERGE_ITEMS} entries`]);
+    }
+
+    const wanted = new Map();
+    for (let index = 0; index < raw.length; index += 1) {
+      const entry = raw[index];
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        throw new HttpError(400, "Validation failed", [`items[${index}] must be an object`]);
+      }
+      const productId = Number(entry.productId);
+      if (!Number.isInteger(productId) || productId <= 0 || productId > 2147483647) {
+        throw new HttpError(400, "Validation failed", [`items[${index}].productId must be a positive integer`]);
+      }
+      const qty = entry.qty === undefined ? 1 : Number(entry.qty);
+      if (!Number.isInteger(qty) || qty < 1 || qty > MAX_LINE_QTY) {
+        throw new HttpError(400, "Validation failed", [
+          `items[${index}].qty must be an integer between 1 and ${MAX_LINE_QTY}`
+        ]);
+      }
+      // Two guest lines for the same product (possible after a tab race) are
+      // one cart line once merged.
+      wanted.set(productId, Math.min(MAX_LINE_QTY, (wanted.get(productId) || 0) + qty));
+    }
+
+    const skipped = [];
+    const clamped = [];
+    const merged = [];
+
+    await sequelize.transaction(async (transaction) => {
+      await lockUserCart(req.user.id, transaction);
+
+      for (const [productId, guestQty] of wanted) {
+        const product = await Product.findByPk(productId, { transaction, lock: transaction.LOCK.UPDATE });
+        if (!product) {
+          skipped.push({ productId, reason: "not_found" });
+          continue;
+        }
+        if (product.stock <= 0) {
+          skipped.push({ productId, reason: "out_of_stock" });
+          continue;
+        }
+
+        const rows = await CartItem.findAll({
+          where: { UserId: req.user.id, productId },
+          order: [["id", "ASC"]],
+          transaction,
+          lock: transaction.LOCK.UPDATE
+        });
+        const existingQty = rows.reduce((sum, row) => sum + row.qty, 0);
+        const requested = existingQty + guestQty;
+        const targetQty = Math.min(requested, product.stock, MAX_LINE_QTY);
+
+        if (requested > targetQty) {
+          clamped.push({ productId, available: Math.min(product.stock, MAX_LINE_QTY), requested });
+        }
+        if (targetQty <= existingQty) {
+          // Already at the ceiling: keep the cart line as it is.
+          continue;
+        }
+
+        const snapshot = { name: product.name, price: toMoney(product.sellingPrice), image: product.image };
+        if (!rows.length) {
+          await CartItem.create({ UserId: req.user.id, productId, qty: targetQty, ...snapshot }, { transaction });
+        } else {
+          const [primary, ...duplicates] = rows;
+          for (const duplicate of duplicates) {
+            await duplicate.destroy({ transaction });
+          }
+          await primary.update({ qty: targetQty, ...snapshot }, { transaction });
+        }
+        merged.push({ productId, qty: targetQty, added: targetQty - existingQty });
+      }
+    });
+
+    const cart = await buildCartResponse(req.user.id);
+    res.json({ success: true, message: "Cart merged", merged, skipped, clamped, ...cart });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getCart, addToCart, updateCartItem, removeFromCart, mergeCart, MAX_LINE_QTY, MAX_MERGE_ITEMS };

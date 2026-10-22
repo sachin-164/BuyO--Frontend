@@ -7,6 +7,7 @@ const {
   addToCart,
   updateCartItem,
   removeFromCart,
+  mergeCart,
   MAX_LINE_QTY
 } = require("../controllers/cartController");
 const { requireAuth } = require("../middleware/auth");
@@ -25,6 +26,7 @@ router.use(requireAuth);
 
 router.get("/", getCart);                                       // list + authoritative totals
 router.post("/", validateBody(addToCartSchema), addToCart);     // add / increment (dedup-safe)
+router.post("/merge", mergeCart);                               // absorb a guest cart (validated in-controller)
 router.put("/:id", validateBody(updateCartSchema), updateCartItem); // set quantity
 router.delete("/:id", removeFromCart);                          // remove one line
 

@@ -85,8 +85,8 @@
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 16 | Guest cart persistence + merge support | Server cart only | Guest cart in `localStorage`; `POST /cart/merge` accepting `[{productId, qty}]`, clamping to stock, summing with the server cart | — | Merge is idempotent on re-submit after clear; deleted products skipped and reported; stock clamped, never exceeded | `cartMerge.test.js` | TODO |
-| 17 | Guest cart merge client flow | Missing | Hydrate guest cart on boot, merge on login/signup, clear local copy on success | 16 | No double-add across tabs; failed merge keeps the guest cart; header count correct | `guest-cart.test.tsx` | TODO |
+| 16 | Guest cart persistence + merge support | Server cart only | `POST /api/cart/merge` replays `[{productId, qty}]` through the same locked upsert as `POST /api/cart`: duplicate ids summed, qty clamped to stock and 99, deleted/out-of-stock products skipped with a reason, empty payload a no-op | — | Merge is additive and safe to re-submit (stock ceiling never exceeded); deleted products skipped and reported; the whole cart stays scoped to the caller | `cartMerge.test.js` (9) | DONE |
+| 17 | Guest cart merge client flow | Missing | localStorage guest cart (`buyo.guestCart.v1`) with the same `CartResponse` shape and preview totals; add/update/remove work signed-out; `AuthProvider` merges on sign-in/boot and clears the local copy only after success; `storage` events keep tabs in sync; cart page asks guests to sign in to check out | 16 | No double-add across tabs; failed merge keeps the guest cart; header count uses the same store; nothing is ordered before authentication | `guest-cart.test.tsx` (11) | DONE |
 
 ## I. Notifications
 

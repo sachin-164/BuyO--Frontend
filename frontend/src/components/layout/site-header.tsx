@@ -51,7 +51,7 @@ export function SiteHeader() {
   const [searchOpen, setSearchOpen] = useState(false);
   const { hasToken, user } = useAuth();
 
-  const cartQuery = useCart({ enabled: hasToken });
+  const cartQuery = useCart();
   const wishlistQuery = useWishlist({ enabled: hasToken });
   const cartCount = cartQuery.data?.count ?? 0;
   const wishlistCount = wishlistQuery.data?.count ?? 0;

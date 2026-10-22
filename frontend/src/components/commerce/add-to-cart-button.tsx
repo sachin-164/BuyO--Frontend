@@ -1,9 +1,7 @@
-import { useLocation, useNavigate } from "react-router-dom";
 import { ShoppingBag } from "lucide-react";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useAddToCart } from "@/features/cart/mutations";
-import { loginHref } from "@/lib/auth-return";
 import { getErrorMessage } from "@/lib/errors";
 import { useAuth } from "@/features/auth/auth-context";
 import type { Product } from "@/types/catalog";
@@ -15,8 +13,9 @@ interface AddToCartButtonProps extends Omit<ButtonProps, "disabled"> {
 }
 
 /**
- * Quick cart action used on product cards. Guests are sent to sign-in with a
- * return-to path; the server remains authoritative about stock and limits.
+ * Quick cart action used on product cards. Guests get a localStorage cart
+ * immediately (merged into their account on sign-in) instead of being sent
+ * away from the product they were looking at.
  */
 export function AddToCartButton({
   product,
@@ -25,34 +24,24 @@ export function AddToCartButton({
   children,
   ...props
 }: AddToCartButtonProps) {
-  const location = useLocation();
-  const navigate = useNavigate();
   const toast = useToast();
   const { hasToken } = useAuth();
   const addToCart = useAddToCart();
   const disabled = product.stock <= 0 || addToCart.isPending;
-  const currentPath = `${location.pathname}${location.search}`;
 
   function handleClick() {
     if (disabled) return;
-    if (!hasToken) {
-      toast({
-        tone: "info",
-        title: "Sign in to use your cart",
-        description: "Server-backed carts are tied to a BuyO account.",
-      });
-      navigate(loginHref(currentPath));
-      return;
-    }
 
     addToCart.mutate(
-      { productId: product.id, qty },
+      { productId: product.id, qty, product },
       {
         onSuccess: () => {
           toast({
             tone: "success",
             title: `Added ${qty} × ${product.name} to your cart`,
-            description: "Stock and totals are confirmed at checkout.",
+            description: hasToken
+              ? "Stock and totals are confirmed at checkout."
+              : "Saved in this browser — sign in to check out.",
           });
         },
         onError: (error) => {

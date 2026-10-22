@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api, clearToken, getToken, onUnauthorized, setToken } from "@/lib/api";
+import { mergeGuestCart } from "@/features/cart/merge";
 import type { AuthMeResponse, LoginResponse, User } from "@/types/account";
 
 export const authKeys = {
@@ -38,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [token, setTokenState] = useState<string | null>(() => getToken());
   const clearing = useRef(false);
+  const mergingGuestCart = useRef(false);
 
   const meQuery = useQuery<AuthMeResponse>({
     queryKey: authKeys.me(),
@@ -82,6 +84,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [queryClient],
   );
+
+  // Adopt the browser's guest cart after sign-in (and after a reload while
+  // still signed in). Failures leave the local copy untouched for a retry.
+  useEffect(() => {
+    if (!token || mergingGuestCart.current) return;
+    mergingGuestCart.current = true;
+    void mergeGuestCart(queryClient).finally(() => {
+      mergingGuestCart.current = false;
+    });
+  }, [token, queryClient]);
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: authKeys.me() });
