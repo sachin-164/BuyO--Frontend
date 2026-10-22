@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Pencil, Plus, Search, Tags, Trash2 } from "lucide-react";
+import { CornerDownRight, Pencil, Plus, Search, Tags, Trash2 } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { AdminQueryError } from "@/components/admin/admin-query-error";
 import { AdminTableSkeleton } from "@/components/admin/admin-table-skeleton";
@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { useCategories } from "@/features/catalog/queries";
 import { useDeleteCategory } from "@/features/admin/mutations";
+import { flattenTree } from "@/lib/category-tree";
 import { getErrorMessage } from "@/lib/errors";
 import { usePageTitle } from "@/hooks/use-page-title";
 import type { Category } from "@/types/catalog";
@@ -22,6 +23,10 @@ import type { Category } from "@/types/catalog";
 function taxLabel(value: number | undefined): string {
   const rate = Number(value ?? 0);
   return `${Number.isInteger(rate) ? rate : rate.toFixed(2)}%`;
+}
+
+function depthOf(category: Category): number {
+  return Math.max(1, category.depth ?? 1);
 }
 
 export default function AdminCategoriesPage() {
@@ -35,16 +40,26 @@ export default function AdminCategoriesPage() {
   const [deleting, setDeleting] = useState<Category | null>(null);
 
   const categories = categoriesQuery.data?.categories ?? [];
+  const ordered = useMemo(() => flattenTree(categories), [categories]);
+  const byId = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories],
+  );
   const filtered = useMemo(() => {
     const needle = filter.trim().toLowerCase();
-    if (!needle) return categories;
-    return categories.filter((category) =>
+    if (!needle) return ordered;
+    return ordered.filter((category) =>
       [category.name, category.slug, category.description ?? ""]
         .join(" ")
         .toLowerCase()
         .includes(needle),
     );
-  }, [categories, filter]);
+  }, [ordered, filter]);
+
+  const subcategoryCount = useMemo(
+    () => (deleting ? categories.filter((category) => category.parentId === deleting.id).length : 0),
+    [deleting, categories],
+  );
 
   function openCreate() {
     setEditing(undefined);
@@ -60,12 +75,24 @@ export default function AdminCategoriesPage() {
     if (!deleting) return;
     deleteMutation.mutate(deleting.id, {
       onSuccess: (data) => {
+        const notes: string[] = [];
+        if (data.affectedProducts > 0) {
+          notes.push(
+            `${data.affectedProducts} product${data.affectedProducts === 1 ? "" : "s"} unlinked`,
+          );
+        }
+        if ((data.reparentedChildren ?? 0) > 0) {
+          notes.push(
+            `${data.reparentedChildren} subcategor${
+              data.reparentedChildren === 1 ? "y" : "ies"
+            } moved to top level`,
+          );
+        }
         toast({
           title: "Category deleted",
-          description:
-            data.affectedProducts > 0
-              ? `${data.affectedProducts} product${data.affectedProducts === 1 ? "" : "s"} unlinked. Products themselves were not deleted.`
-              : "No products were linked to this category.",
+          description: notes.length
+            ? `${notes.join(". ")}. Products themselves were not deleted.`
+            : "No products were linked to this category.",
           tone: "success",
         });
         setDeleting(null);
@@ -81,7 +108,7 @@ export default function AdminCategoriesPage() {
     <>
       <AdminPageHeader
         title="Categories"
-        description="Manage the catalog taxonomy and per-category GST. Deleting a category never deletes its products."
+        description="Manage the catalog taxonomy and per-category GST. Categories can be nested up to three levels. Deleting a category never deletes its products or subcategories."
         breadcrumbs={[{ label: "Admin", to: "/admin" }, { label: "Categories" }]}
         actions={
           <Button type="button" onClick={openCreate}>
@@ -112,7 +139,7 @@ export default function AdminCategoriesPage() {
       </Card>
 
       {categoriesQuery.isPending ? (
-        <AdminTableSkeleton rows={5} columns={5} />
+        <AdminTableSkeleton rows={5} columns={6} />
       ) : categoriesQuery.isError ? (
         <AdminQueryError
           error={categoriesQuery.error}
@@ -150,11 +177,12 @@ export default function AdminCategoriesPage() {
 
           <div className="hidden overflow-hidden rounded-lg border border-border bg-card md:block">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[44rem] text-sm">
+              <table className="w-full min-w-[50rem] text-sm">
                 <caption className="sr-only">Catalog categories</caption>
                 <thead>
                   <tr className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                     <th scope="col" className="px-3 py-3 font-medium">Name</th>
+                    <th scope="col" className="px-3 py-3 font-medium">Parent</th>
                     <th scope="col" className="px-3 py-3 font-medium">Slug</th>
                     <th scope="col" className="px-3 py-3 font-medium">GST</th>
                     <th scope="col" className="px-3 py-3 font-medium">Products</th>
@@ -163,44 +191,75 @@ export default function AdminCategoriesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filtered.map((category) => (
-                    <tr key={category.id} className="transition-colors hover:bg-secondary/30">
-                      <td className="px-3 py-3 font-medium">{category.name}</td>
-                      <td className="px-3 py-3">
-                        <code className="rounded bg-secondary px-1.5 py-0.5 text-xs">{category.slug}</code>
-                      </td>
-                      <td className="px-3 py-3 tabular-nums">{taxLabel(category.taxRate)}</td>
-                      <td className="px-3 py-3">
-                        <Badge variant="outline">{category.productCount ?? 0}</Badge>
-                      </td>
-                      <td className="max-w-[18rem] px-3 py-3">
-                        <p className="truncate text-muted-foreground">
-                          {category.description || "—"}
-                        </p>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button type="button" variant="ghost" size="sm" onClick={() => openEdit(category)}>
-                            <Pencil aria-hidden="true" />
-                            Edit
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Delete ${category.name}`}
-                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() => {
-                              deleteMutation.reset();
-                              setDeleting(category);
-                            }}
+                  {filtered.map((category) => {
+                    const depth = depthOf(category);
+                    const parent = category.parentId != null ? byId.get(category.parentId) : undefined;
+                    return (
+                      <tr key={category.id} className="transition-colors hover:bg-secondary/30">
+                        <td className="px-3 py-3 font-medium">
+                          <span
+                            className="inline-flex items-center gap-1.5"
+                            style={{ paddingLeft: `${(depth - 1) * 14}px` }}
                           >
-                            <Trash2 aria-hidden="true" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            {depth > 1 ? (
+                              <CornerDownRight
+                                className="size-3.5 shrink-0 text-muted-foreground"
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                            {category.name}
+                            {depth > 1 ? <span className="sr-only"> (subcategory)</span> : null}
+                          </span>
+                        </td>
+                        <td className="max-w-[12rem] truncate px-3 py-3 text-muted-foreground">
+                          {parent ? parent.name : category.parentId != null ? "Unknown parent" : "Top level"}
+                        </td>
+                        <td className="px-3 py-3">
+                          <code className="rounded bg-secondary px-1.5 py-0.5 text-xs">{category.slug}</code>
+                        </td>
+                        <td className="px-3 py-3 tabular-nums">{taxLabel(category.taxRate)}</td>
+                        <td className="px-3 py-3">
+                          <Badge
+                            variant="outline"
+                            title={
+                              typeof category.totalProductCount === "number" &&
+                              category.totalProductCount !== (category.productCount ?? 0)
+                                ? `${category.productCount ?? 0} direct, ${category.totalProductCount} including subcategories`
+                                : undefined
+                            }
+                          >
+                            {category.productCount ?? 0}
+                          </Badge>
+                        </td>
+                        <td className="max-w-[18rem] px-3 py-3">
+                          <p className="truncate text-muted-foreground">
+                            {category.description || "—"}
+                          </p>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button type="button" variant="ghost" size="sm" onClick={() => openEdit(category)}>
+                              <Pencil aria-hidden="true" />
+                              Edit
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Delete ${category.name}`}
+                              className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => {
+                                deleteMutation.reset();
+                                setDeleting(category);
+                              }}
+                            >
+                              <Trash2 aria-hidden="true" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -211,7 +270,20 @@ export default function AdminCategoriesPage() {
               <li key={category.id} className="rounded-lg border border-border bg-card p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="truncate font-medium">{category.name}</p>
+                    <p className="flex items-center gap-1.5 truncate font-medium">
+                      {depthOf(category) > 1 ? (
+                        <CornerDownRight
+                          className="size-3.5 shrink-0 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      {category.name}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {category.parentId != null
+                        ? `in ${byId.get(category.parentId)?.name ?? "Unknown parent"}`
+                        : "Top level"}
+                    </p>
                     <code className="mt-1 inline-block rounded bg-secondary px-1.5 py-0.5 text-xs">
                       {category.slug}
                     </code>
@@ -262,6 +334,10 @@ export default function AdminCategoriesPage() {
             ? `“${deleting.name}” will be removed. ${
                 (deleting.productCount ?? 0) > 0
                   ? `${deleting.productCount} linked product${deleting.productCount === 1 ? "" : "s"} keep their existing free-text category name but lose the taxonomy link. `
+                  : ""
+              }${
+                subcategoryCount > 0
+                  ? `${subcategoryCount} subcategor${subcategoryCount === 1 ? "y" : "ies"} move to top level instead of being deleted. `
                   : ""
               }Products are never deleted.`
             : ""

@@ -25,6 +25,14 @@ export const categoryFormSchema = z.object({
     .refine((value) => Number.isFinite(Number(value)), "GST rate must be a number")
     .refine((value) => Number(value) >= 0, "GST rate cannot be negative")
     .refine((value) => Number(value) <= 999.99, "GST rate must be 999.99 or lower"),
+  // Select value: "" = top level, otherwise the parent's id. The server
+  // re-checks depth and cycles; this only guards the transport shape.
+  parentId: z
+    .string()
+    .refine(
+      (value) => value === "" || /^\d+$/.test(value),
+      "Choose a valid parent category",
+    ),
 });
 
 export type CategoryFormValues = z.infer<typeof categoryFormSchema>;
@@ -35,5 +43,8 @@ export function categoryFormDefaults(category?: Category): CategoryFormValues {
     slug: category?.slug ?? "",
     description: category?.description ?? "",
     taxRate: String(category?.taxRate ?? 0),
+    parentId: category?.parentId !== null && category?.parentId !== undefined
+      ? String(category.parentId)
+      : "",
   };
 }

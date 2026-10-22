@@ -25,9 +25,31 @@ const Category = sequelize.define("Category", {
     type: DataTypes.DECIMAL(5, 2), // percentage, e.g. 18.00 — max 999.99
     allowNull: false,
     defaultValue: 0.0
+  },
+  // Optional self-reference for the taxonomy tree (Phase G). NULL = root.
+  // The API enforces a maximum depth and rejects cycles (a plain FK cannot).
+  parentId: {
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   timestamps: true
+});
+
+// Self-association: one query can load the whole hierarchy; the FK is
+// ON DELETE SET NULL so deleting a parent promotes its children to roots
+// instead of deleting or orphaning them.
+Category.belongsTo(Category, {
+  as: "parent",
+  foreignKey: { name: "parentId", allowNull: true },
+  onDelete: "SET NULL",
+  onUpdate: "CASCADE"
+});
+Category.hasMany(Category, {
+  as: "children",
+  foreignKey: { name: "parentId", allowNull: true },
+  onDelete: "SET NULL",
+  onUpdate: "CASCADE"
 });
 
 module.exports = Category;

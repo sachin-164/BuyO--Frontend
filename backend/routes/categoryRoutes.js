@@ -21,13 +21,17 @@ const nameRule = { type: "string", minLength: 1, maxLength: 100 };
 const slugRule = { type: "string", maxLength: 160, validate: validateSlugField };
 const descriptionRule = { type: "string", maxLength: 2000 };
 const taxRateRule = { type: "number", min: 0, max: 999.99 }; // percentage (e.g. GST), DECIMAL(5,2)
+// Optional self-reference. Explicit null = move to root; depth/cycle rules are
+// enforced in the controller because they depend on the rest of the tree.
+const parentIdRule = { type: "integer", min: 1, max: 2147483647, nullable: true };
 
 // POST: name required; slug auto-generated from name when omitted
 const createCategorySchema = {
   name: { required: true, ...nameRule },
   slug: slugRule,
   description: descriptionRule,
-  taxRate: taxRateRule
+  taxRate: taxRateRule,
+  parentId: parentIdRule
 };
 
 // PUT: everything optional; slug changes only when explicitly provided

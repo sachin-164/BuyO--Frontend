@@ -52,7 +52,8 @@ const PG_MIGRATIONS = [
   "005_pg_cart_items_user_product_unique.pgsql",
   "006_pg_wishlist_items_user_product_unique.pgsql",
   "007_pg_ci_unique_email_and_category.pgsql",
-  "008_create_product_images.pgsql"
+  "008_create_product_images.pgsql",
+  "009_categories_parent.pgsql"
 ];
 const NEW_INDEXES = [
   "uq_cartitems_user_product",

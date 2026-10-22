@@ -1,9 +1,10 @@
 import { useSearchParams } from "react-router-dom";
-import { Breadcrumbs } from "@/components/layout/breadcrumbs";
+import { Breadcrumbs, type Crumb } from "@/components/layout/breadcrumbs";
 import { CatalogView } from "@/components/catalog/catalog-view";
 import { useCategories } from "@/features/catalog/queries";
 import { parseCatalogQuery } from "@/features/catalog/params";
 import { usePageTitle } from "@/hooks/use-page-title";
+import { categoryPath } from "@/lib/category-tree";
 
 export default function ShopPage() {
   const [searchParams] = useSearchParams();
@@ -23,19 +24,28 @@ export default function ShopPage() {
   const title = categoryName || "Shop all products";
   usePageTitle(title);
 
+  // Ancestors are part of the trail, so a deep link shows where it sits.
+  const ancestors = query.category
+    ? categoryPath(categories.data?.categories ?? [], query.category)
+    : [];
+  const breadcrumbs: Crumb[] = [{ label: "Home", to: "/" }, { label: "Shop", to: "/shop" }];
+  if (categoryName) {
+    if (ancestors.length > 0) {
+      for (const [index, category] of ancestors.entries()) {
+        const isLast = index === ancestors.length - 1;
+        breadcrumbs.push({
+          label: category.name,
+          to: isLast ? undefined : `/shop?category=${encodeURIComponent(category.slug)}`,
+        });
+      }
+    } else {
+      breadcrumbs.push({ label: categoryName });
+    }
+  }
+
   return (
     <div className="container-page py-8 sm:py-10">
-      <Breadcrumbs
-        items={
-          categoryName
-            ? [
-                { label: "Home", to: "/" },
-                { label: "Shop", to: "/shop" },
-                { label: categoryName },
-              ]
-            : [{ label: "Home", to: "/" }, { label: "Shop" }]
-        }
-      />
+      <Breadcrumbs items={breadcrumbs} />
 
       <header className="mt-6 max-w-2xl">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">

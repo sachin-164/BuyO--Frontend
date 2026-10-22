@@ -40,7 +40,8 @@ const EXPECTED_MIGRATIONS = [
   "005_pg_cart_items_user_product_unique.pgsql",
   "006_pg_wishlist_items_user_product_unique.pgsql",
   "007_pg_ci_unique_email_and_category.pgsql",
-  "008_create_product_images.pgsql"
+  "008_create_product_images.pgsql",
+  "009_categories_parent.pgsql"
 ];
 
 const APP_TABLES = [
@@ -194,11 +195,11 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
 
   // ------------------------------------------------------------------ tests
 
-  it("migrations alone initialize an empty database (000, 005, 006, 007, 008)", async () => {
-    assert.deepEqual(emptyResult.applied, EXPECTED_MIGRATIONS, "all five files must apply in order on an empty DB");
+  it("migrations alone initialize an empty database (000, 005, 006, 007, 008, 009)", async () => {
+    assert.deepEqual(emptyResult.applied, EXPECTED_MIGRATIONS, "all six files must apply in order on an empty DB");
 
     const bookkeeping = (await query(`SELECT id FROM "schema_migrations" ORDER BY id`)).map((r) => r.id);
-    assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "bookkeeping must record exactly the five files");
+    assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "bookkeeping must record exactly the six files");
 
     // External proof (independent of the in-file verify directives): every
     // application table and enum type physically exists.

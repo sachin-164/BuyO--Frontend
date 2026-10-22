@@ -80,6 +80,8 @@ export interface AdminCategoryInput {
   slug?: string;
   description?: string;
   taxRate: number;
+  /** Omit/null = top level. Validated server-side for depth and cycles. */
+  parentId?: number | null;
 }
 
 export interface CategoryMutationResponse {
@@ -92,6 +94,8 @@ export interface CategoryDeleteResponse {
   success: true;
   message: string;
   affectedProducts: number;
+  /** Children promoted to top level instead of being deleted. */
+  reparentedChildren?: number;
 }
 
 /** POST /api/uploads/authorize response (hosted storage mode only). */

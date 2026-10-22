@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, SlidersHorizontal, X } from "lucide-react";
+import { ChevronLeft, Search, SlidersHorizontal, X } from "lucide-react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { ProductCard } from "@/components/product/product-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -22,6 +22,7 @@ import {
   type CatalogQuery,
 } from "@/features/catalog/params";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { flattenTree } from "@/lib/category-tree";
 import { cn } from "@/lib/utils";
 import type { ProductSort } from "@/types/catalog";
 
@@ -143,6 +144,18 @@ export function CatalogView({ className }: CatalogViewProps) {
       String(category.id) === query.category,
   );
   const categoryLabel = selectedCategory?.name ?? query.category;
+
+  // Parent/child navigation for the current filter. Filtering itself stays
+  // exact (the API's contract); these links let a shopper widen or narrow it.
+  const allCategories = categories.data?.categories ?? [];
+  const childCategories = selectedCategory
+    ? allCategories.filter((category) => category.parentId === selectedCategory.id)
+    : [];
+  const parentCategory =
+    selectedCategory?.parentId !== null && selectedCategory?.parentId !== undefined
+      ? allCategories.find((category) => category.id === selectedCategory.parentId)
+      : undefined;
+  const categoryOptions = flattenTree(allCategories);
 
   const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
   if (query.q) {
@@ -277,14 +290,17 @@ export function CatalogView({ className }: CatalogViewProps) {
                 {query.category && !selectedCategory ? (
                   <option value={query.category}>{query.category}</option>
                 ) : null}
-                {categories.data?.categories.map((category) => (
-                  <option key={category.id} value={category.slug}>
-                    {category.name}
-                    {typeof category.productCount === "number"
-                      ? ` (${category.productCount})`
-                      : ""}
-                  </option>
-                ))}
+                {categoryOptions.map((category) => {
+                  const depth = category.depth ?? 1;
+                  return (
+                    <option key={category.id} value={category.slug}>
+                      {`${"— ".repeat(Math.max(0, depth - 1))}${category.name}`}
+                      {typeof category.productCount === "number"
+                        ? ` (${category.productCount})`
+                        : ""}
+                    </option>
+                  );
+                })}
               </Select>
               {categories.isError ? (
                 <p className="mt-1 text-xs text-muted-foreground" role="status">
@@ -367,6 +383,51 @@ export function CatalogView({ className }: CatalogViewProps) {
           </p>
         ) : null}
       </div>
+
+      {selectedCategory && (parentCategory || childCategories.length > 0) ? (
+        <nav
+          aria-label={`Category navigation for ${selectedCategory.name}`}
+          className="flex flex-col gap-3 rounded-lg border border-border bg-secondary/30 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          {parentCategory ? (
+            <Link
+              to={buildCatalogHref(location.pathname, {
+                ...query,
+                category: parentCategory.slug,
+                page: 1,
+              })}
+              className="inline-flex items-center gap-1.5 self-start rounded-md text-sm font-medium text-foreground/80 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <ChevronLeft className="size-4" aria-hidden="true" />
+              {parentCategory.name}
+            </Link>
+          ) : null}
+
+          {childCategories.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Subcategories
+              </span>
+              {childCategories.map((child) => (
+                <Link
+                  key={child.id}
+                  to={buildCatalogHref(location.pathname, {
+                    ...query,
+                    category: child.slug,
+                    page: 1,
+                  })}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  {child.name}
+                  <span className="tabular-nums text-muted-foreground">
+                    {child.productCount ?? 0}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : null}
+        </nav>
+      ) : null}
 
       {priceError ? (
         <Alert variant="warning">

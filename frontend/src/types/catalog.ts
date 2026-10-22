@@ -6,8 +6,19 @@ export interface Category {
   /** GST percentage configured per category (DECIMAL(5,2) on the server). */
   taxRate?: number;
   productCount?: number;
+  /** NULL/absent = top-level category. */
+  parentId?: number | null;
+  /** 1-based position in the tree (server-computed; root = 1). */
+  depth?: number;
+  /** This category plus every descendant (server rollup). */
+  totalProductCount?: number;
   createdAt?: string;
   updatedAt?: string;
+}
+
+/** One node of the server-built category tree. */
+export interface CategoryNode extends Category {
+  children: CategoryNode[];
 }
 
 export type ProductSort =
@@ -99,7 +110,11 @@ export interface RelatedProductsResponse {
 export interface CategoryListResponse {
   success: boolean;
   count: number;
+  /** Maximum supported nesting depth (root = 1). */
+  maxDepth?: number;
   categories: Category[];
+  /** Derived from `categories`; absent only on pre-hierarchy servers. */
+  tree?: CategoryNode[];
 }
 
 export interface ProductQuery {

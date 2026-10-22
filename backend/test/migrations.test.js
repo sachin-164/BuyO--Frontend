@@ -337,7 +337,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
       "002_create_categories.sql",
       "003_products_catalog_fields.sql",
       "004_orders_addresses.sql",
-      "008_create_product_images.sql"
+      "008_create_product_images.sql",
+      "009_categories_parent.sql"
     ]);
 
     // role column: additive; existing users default to customer (admins keep the allowlist fallback)
@@ -363,8 +364,9 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     assert.deepEqual(products.map((p) => p.categoryId), [1, 1, 2]);
 
     const applied = await queryDb(LEGACY_DB, "SELECT id FROM `schema_migrations` ORDER BY id");
-    assert.equal(applied.length, 5);
+    assert.equal(applied.length, 6);
     assert.ok(applied.some((row) => row.id === "008_create_product_images.sql"));
+    assert.ok(applied.some((row) => row.id === "009_categories_parent.sql"));
   });
 
   it("constraints are enforced (unique, FK set-null, enum, NOT NULL)", async () => {
@@ -551,7 +553,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
       "002_create_categories.sql",
       "003_products_catalog_fields.sql",
       "004_orders_addresses.sql",
-      "008_create_product_images.sql"
+      "008_create_product_images.sql",
+      "009_categories_parent.sql"
     ]);
     const second = await runMigrations({ settings: settingsFor(SYNC_DB), quiet: true });
     assert.equal(second.applied.length, 0);
