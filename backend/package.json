@@ -17,7 +17,7 @@
     "migrate:data": "node scripts/migrate-data.js",
     "migrate:storage": "node scripts/storage-migrate.js",
     "test:user": "node scripts/test-user.js",
-    "test": "node --test --test-concurrency=1 test/auth.test.js test/security.test.js test/migrations.test.js test/catalog.test.js test/cartWishlist.test.js test/cartMerge.test.js test/orders.test.js test/adminReadModels.test.js test/orderCancelAndNotifications.test.js test/accountSecurity.test.js test/productImageReplace.test.js test/productGallery.test.js test/dialect.test.js test/frontendConfig.test.js test/adminUploadFlow.test.js test/storageAdapter.test.js test/storageUpload.test.js test/storageMigrate.test.js test/deployReadiness.test.js test/pgRuntime.test.js test/health.test.js test/remoteMigrationGate.test.js test/remoteGateCli.test.js",
+    "test": "node --test --test-concurrency=1 test/auth.test.js test/security.test.js test/migrations.test.js test/catalog.test.js test/cartWishlist.test.js test/cartMerge.test.js test/orders.test.js test/adminReadModels.test.js test/orderCancelAndNotifications.test.js test/accountSecurity.test.js test/productImageReplace.test.js test/productGallery.test.js test/productDiscovery.test.js test/dialect.test.js test/frontendConfig.test.js test/adminUploadFlow.test.js test/storageAdapter.test.js test/storageUpload.test.js test/storageMigrate.test.js test/deployReadiness.test.js test/pgRuntime.test.js test/health.test.js test/remoteMigrationGate.test.js test/remoteGateCli.test.js",
     "test:pg": "node --test --env-file=test/pg-smoke.env test/pgSmoke.test.js",
     "test:pg:catalog": "node test/pgSuite.js test/catalog.test.js",
     "test:pg:orders": "node test/pgSuite.js test/orders.test.js",

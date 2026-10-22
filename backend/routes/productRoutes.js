@@ -15,6 +15,8 @@ const {
   replaceProductImages,
   appendProductImage,
   deleteProductImage,
+  getSuggestions,
+  getRelatedProducts,
   MAX_LIMIT
 } = require("../controllers/productController");
 const { requireAuth, requireAdmin } = require("../middleware/auth");
@@ -257,7 +259,11 @@ for (const field of ["name", "category", "mrpPrice", "sellingPrice"]) {
 
 // ---------- routes ----------
 router.get("/", validateQuery(listQuerySchema), getProducts); // GET /api/products (public)
+// Suggestions MUST be declared before /:identifier, or "suggestions" would be
+// resolved as a product slug.
+router.get("/suggestions", getSuggestions);                   // GET /api/products/suggestions?q= (public)
 router.get("/:identifier", getProduct);                       // GET /api/products/:id or :slug (public)
+router.get("/:identifier/related", getRelatedProducts);       // same-category siblings (public)
 
 // Admin-only: multipart "image" field OR JSON body.
 // Multer runs before validation because multipart text fields only exist after parsing.

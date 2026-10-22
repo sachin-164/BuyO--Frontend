@@ -2,16 +2,16 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Clock3, Search, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Input } from "@/components/ui/input";
-import { useProducts } from "@/features/catalog/queries";
+import { useSearchSuggestions } from "@/features/catalog/queries";
 import { useRecentSearches } from "@/features/search/recent-searches";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Product } from "@/types/catalog";
+import type { SearchSuggestion } from "@/types/catalog";
 
 type Suggestion =
   | { kind: "recent"; value: string }
-  | { kind: "product"; product: Product }
+  | { kind: "product"; product: SearchSuggestion }
   | { kind: "search"; value: string };
 
 interface SearchComboboxProps {
@@ -39,16 +39,15 @@ export function SearchCombobox({
   const listboxId = useId();
 
   const debounced = useDebouncedValue(value.trim(), 250);
-  const suggestionsQuery = useProducts(
-    { q: debounced, limit: 5, sort: "newest", page: 1 },
-    { enabled: debounced.length >= 2 },
-  );
+  // The suggestions endpoint is bounded and name-only; the query key includes
+  // the term, so a slow response for an older term cannot overwrite a newer one.
+  const suggestionsQuery = useSearchSuggestions(debounced, { enabled: debounced.length >= 2 });
   const { searches, add } = useRecentSearches();
 
   const isTyping = value.trim().length > 0;
   const items: Suggestion[] = isTyping
     ? [
-        ...(suggestionsQuery.data?.products ?? []).map(
+        ...(suggestionsQuery.data?.suggestions ?? []).map(
           (product): Suggestion => ({ kind: "product", product }),
         ),
         ...(value.trim()
@@ -265,11 +264,11 @@ export function SearchCombobox({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{item.product.name}</span>
                     <span className="block truncate text-xs text-muted-foreground">
-                      {item.product.category}
+                      Product
                     </span>
                   </span>
                   <span className="shrink-0 text-sm font-semibold">
-                    {formatPrice(item.product.sellingPrice)}
+                    {formatPrice(item.product.price)}
                   </span>
                 </li>
               );
@@ -282,9 +281,13 @@ export function SearchCombobox({
                 ? "Searching…"
                 : suggestionsQuery.isError
                   ? "Suggestions are unavailable — press Enter to search."
-                  : suggestionsQuery.isSuccess && suggestionsQuery.data.products.length === 0
-                    ? "No matching products yet — press Enter to search."
-                    : "Use ↑ ↓ to choose, Enter to open."}
+                  : suggestionsQuery.isSuccess && suggestionsQuery.data.count === 0
+                    ? "No matching products — press Enter to search."
+                    : suggestionsQuery.isSuccess
+                      ? `${suggestionsQuery.data.count} suggestion${
+                          suggestionsQuery.data.count === 1 ? "" : "s"
+                        } — use ↑ ↓ to choose, Enter to open.`
+                      : "Use ↑ ↓ to choose, Enter to open."}
             </p>
           ) : null}
         </div>

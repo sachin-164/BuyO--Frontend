@@ -115,9 +115,9 @@
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 26 | Related products | Missing | Same-category siblings, deterministic order, exclude self, exclude out-of-stock optionally | — | Never invents products; empty state hides the section; bounded query | `related.test.js` | TODO |
-| 27 | Search suggestions API | Catalog list only | `GET /products/suggestions?q=` — bounded, prefix/contains over name, returns id/slug/name/price/image | — | `q` min length; max 8 results; escaped LIKE; no N+1 | `suggestions.test.js` | TODO |
-| 28 | Autocomplete combobox UI | Basic combobox exists | Wire to suggestions with debounce, keyboard nav, ARIA combobox semantics, recent searches | 27 | Full keyboard operation; announces result count; no stale render races | `search-combobox.test.tsx` | TODO |
+| 26 | Related products | PDP fetched a category list and filtered out itself in the browser | `GET /api/products/:identifier/related?limit=` (4 default, 12 cap): same `categoryId` (legacy name fallback), self excluded, in-stock siblings first, deterministic newest/id order; PDP renders only what the endpoint returns and hides the section when empty | — | Never invents products; empty state hides the section; bounded query | `productDiscovery.test.js` (5 related), `product-related.test.tsx` (2) | DONE |
+| 27 | Search suggestions API | Catalog list only | `GET /products/suggestions?q=` — name-only, case-insensitive on both dialects, LIKE metacharacters literal, <2 chars returns an empty list, max 8 results, only id/slug/name/price/image selected | — | `q` min length; max 8 results; escaped LIKE; no N+1 | `productDiscovery.test.js` (5 suggestions) | DONE |
+| 28 | Autocomplete combobox UI | Basic combobox exists | Wired to the suggestions endpoint (250 ms debounce, term-scoped query keys so late responses cannot overwrite newer ones); full ARIA combobox pattern, arrow wrap, Escape, result-count announcement, recent searches, manual Enter still works when suggestions fail | 27 | Full keyboard operation; announces result count; no stale render races | `search-combobox.test.tsx` (6) | DONE |
 
 ## M. Catalog: taxonomy
 

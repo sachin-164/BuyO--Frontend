@@ -24,7 +24,7 @@ import {
 } from "@/features/cart/mutations";
 import { useWishlistMembership } from "@/features/wishlist/queries";
 import { useToggleWishlist } from "@/features/wishlist/mutations";
-import { useProduct, useProducts } from "@/features/catalog/queries";
+import { useProduct, useRelatedProducts } from "@/features/catalog/queries";
 import { useAuth } from "@/features/auth/auth-context";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { ApiError } from "@/lib/api";
@@ -89,10 +89,7 @@ export default function ProductPage() {
 
   const productId = product?.id ?? 0;
   const categoryValue = product?.Category?.slug ?? product?.category ?? "";
-  const relatedQuery = useProducts(
-    { category: categoryValue || undefined, limit: 5, sort: "newest", page: 1 },
-    { enabled: Boolean(product && categoryValue) },
-  );
+  const relatedQuery = useRelatedProducts(product?.id, 4);
 
   const wishlistMembership = useWishlistMembership(productId, Boolean(token && productId));
   const addToCart = useAddToCart();
@@ -126,8 +123,9 @@ export default function ProductPage() {
     : null;
   const saved = wishlistMembership.data?.inWishlist ?? false;
 
-  const related =
-    relatedQuery.data?.products.filter((item) => item.id !== productId).slice(0, 4) ?? [];
+  // The server already excludes this product, prefers in-stock siblings and
+  // bounds the list, so the UI renders exactly what exists.
+  const related = relatedQuery.data?.products ?? [];
 
   function errorMessage(error: unknown): ReactNode {
     if (error instanceof ApiError) {
@@ -153,22 +151,10 @@ export default function ProductPage() {
 
   function handleAddToCart() {
     if (!product) return;
-    if (!token) {
-      setNotice({
-        tone: "info",
-        title: "Sign in to add this item to your cart",
-        message: (
-          <>
-            <SignInLink next={loginNext} /> or create an account to continue.
-          </>
-        ),
-      });
-      return;
-    }
     if (outOfStock) return;
 
     addToCart.mutate(
-      { productId: product.id, qty: quantity },
+      { productId: product.id, qty: quantity, product },
       {
         onSuccess: () => {
           setNotice({
@@ -176,7 +162,9 @@ export default function ProductPage() {
             title: `Added ${quantity} × ${product.name} to your cart`,
             message: (
               <>
-                Stock and totals are confirmed at checkout.{" "}
+                {token
+                  ? "Stock and totals are confirmed at checkout."
+                  : "Saved in this browser — sign in to check out."}{" "}
                 <Link to="/cart" className="font-medium text-primary underline underline-offset-2">
                   View cart
                 </Link>

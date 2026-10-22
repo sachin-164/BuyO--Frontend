@@ -4,6 +4,8 @@ import { Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ProductPage from "@/pages/product-page";
 import { jsonResponse, renderWithProviders } from "@/test/render";
+import { clearToken } from "@/lib/api";
+import { clearGuestCart } from "@/features/cart/guest-cart";
 
 const LAMP = {
   id: 1,
@@ -104,9 +106,11 @@ function renderProductPage() {
 describe("ProductPage", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    clearGuestCart();
+    clearToken();
   });
 
-  it("renders pricing, stock, and description, and asks signed-out users to sign in", async () => {
+  it("renders pricing, stock, and description, and saves a guest cart item in this browser", async () => {
     const user = userEvent.setup();
     const requests = installFetch();
 
@@ -128,14 +132,20 @@ describe("ProductPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Add to cart" }));
 
-    expect(
-      await screen.findByText("Sign in to add this item to your cart"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Added 1 × Test Lamp/)).toBeInTheDocument();
+    expect(screen.getByText(/Saved in this browser/)).toBeInTheDocument();
+    // Guests never hit the server cart: the line lives in localStorage until
+    // they sign in and the merge endpoint runs.
     expect(
       requests.filter(
         (request) => request.method === "POST" && request.url.pathname === "/api/cart",
       ),
     ).toHaveLength(0);
+    const guestLines = JSON.parse(
+      window.localStorage.getItem("buyo.guestCart.v1") ?? "[]",
+    ) as Array<{ productId: number; qty: number }>;
+    expect(guestLines).toHaveLength(1);
+    expect(guestLines[0]).toMatchObject({ productId: 1, qty: 1 });
   });
 
   it("adds the chosen quantity to the cart and toggles the wishlist when signed in", async () => {

@@ -73,6 +73,29 @@ export interface ProductDetailResponse {
   product: Product;
 }
 
+/** One row of the bounded typeahead endpoint. */
+export interface SearchSuggestion {
+  id: number;
+  slug: string;
+  name: string;
+  price: number;
+  image: string;
+}
+
+export interface SearchSuggestionsResponse {
+  success: boolean;
+  query: string;
+  count: number;
+  suggestions: SearchSuggestion[];
+}
+
+export interface RelatedProductsResponse {
+  success: boolean;
+  productId: number;
+  count: number;
+  products: Product[];
+}
+
 export interface CategoryListResponse {
   success: boolean;
   count: number;

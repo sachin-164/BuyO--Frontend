@@ -281,28 +281,29 @@ const getProducts = async (req, res) => {
 };
 
 // ---------- Get One Product (GET /api/products/:identifier — numeric id OR slug) ----------
+// Shared by the detail page, suggestions callers and related-products lookups so
+// id-vs-slug resolution can never drift between endpoints.
+async function findProductByIdentifier(identifier, options = {}) {
+  const value = String(identifier || "").trim();
+  if (!value) return null;
+
+  const numericId = /^\d+$/.test(value) ? Number(value) : null;
+  if (numericId !== null && Number.isSafeInteger(numericId) && numericId > 0 && numericId <= 2147483647) {
+    const byId = await Product.findByPk(numericId, options);
+    if (byId) return byId;
+  }
+  if (value.length <= 160) {
+    return Product.findOne({ where: { slug: value }, ...options });
+  }
+  return null;
+}
+
 const getProduct = async (req, res) => {
   try {
-    const identifier = String(req.params.identifier || "").trim();
-    if (!identifier) {
-      return res.status(404).json({ success: false, message: "Product not found" });
-    }
-
-    let product = null;
-    const numericId = /^\d+$/.test(identifier) ? Number(identifier) : null;
-    if (numericId !== null && Number.isSafeInteger(numericId) && numericId > 0 && numericId <= 2147483647) {
-      product = await Product.findByPk(numericId, {
-        include: [...categoryInclude, imagesInclude],
-        order: imagesOrder
-      });
-    }
-    if (!product && identifier.length <= 160) {
-      product = await Product.findOne({
-        where: { slug: identifier },
-        include: [...categoryInclude, imagesInclude],
-        order: imagesOrder
-      });
-    }
+    const product = await findProductByIdentifier(req.params.identifier, {
+      include: [...categoryInclude, imagesInclude],
+      order: imagesOrder
+    });
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
@@ -311,6 +312,120 @@ const getProduct = async (req, res) => {
   } catch (error) {
     console.error("❌ Error fetching product:", error);
     res.status(500).json({ success: false, message: "Error fetching product" });
+  }
+};
+
+// ---------- Search suggestions (GET /api/products/suggestions?q=) ----------
+// Bounded typeahead: a short query returns an empty list instead of scanning the
+// catalog, and at most eight name matches come back. Only the fields a
+// suggestion needs are selected.
+const SUGGESTION_MIN_LENGTH = 2;
+const SUGGESTION_LIMIT = 8;
+const SUGGESTION_MAX_QUERY = 100;
+
+const getSuggestions = async (req, res) => {
+  try {
+    const raw = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (raw.length < SUGGESTION_MIN_LENGTH) {
+      return res.json({ success: true, query: raw, count: 0, suggestions: [] });
+    }
+
+    const term = raw.slice(0, SUGGESTION_MAX_QUERY);
+    const like = `%${escapeLike(term)}%`;
+    const searchOp = resolveDialect() === "postgres" ? Op.iLike : Op.like;
+
+    const rows = await Product.findAll({
+      where: { name: { [searchOp]: like } },
+      attributes: ["id", "slug", "name", "sellingPrice", "image"],
+      order: [
+        ["name", "ASC"],
+        ["id", "ASC"]
+      ],
+      limit: SUGGESTION_LIMIT
+    });
+
+    res.json({
+      success: true,
+      query: term,
+      count: rows.length,
+      suggestions: rows.map((row) => ({
+        id: row.id,
+        slug: row.slug,
+        name: row.name,
+        price: Number(row.sellingPrice),
+        image: row.image || ""
+      }))
+    });
+  } catch (error) {
+    console.error("❌ Error fetching search suggestions:", error);
+    res.status(500).json({ success: false, message: "Error fetching search suggestions" });
+  }
+};
+
+// ---------- Related products (GET /api/products/:identifier/related) ----------
+// Same-category siblings only: nothing is invented, a product without a
+// category has no related section, and in-stock items are preferred. Ordering is
+// deterministic (newest, id) so the same product page always shows the same set.
+const RELATED_DEFAULT_LIMIT = 4;
+const RELATED_MAX_LIMIT = 12;
+
+const getRelatedProducts = async (req, res) => {
+  try {
+    const product = await findProductByIdentifier(req.params.identifier, {
+      attributes: ["id", "category", "categoryId"]
+    });
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    const requested = Number(req.query.limit);
+    const limit =
+      Number.isInteger(requested) && requested > 0
+        ? Math.min(requested, RELATED_MAX_LIMIT)
+        : RELATED_DEFAULT_LIMIT;
+
+    let categoryWhere;
+    if (product.categoryId) {
+      categoryWhere = { categoryId: product.categoryId };
+    } else if (product.category && String(product.category).trim()) {
+      // Legacy rows created before Categories existed still relate by name.
+      categoryWhere = { category: String(product.category).trim() };
+    } else {
+      return res.json({ success: true, productId: product.id, count: 0, products: [] });
+    }
+
+    const base = { ...categoryWhere, id: { [Op.ne]: product.id } };
+    const select = {
+      include: categoryInclude,
+      order: [
+        ["createdAt", "DESC"],
+        ["id", "DESC"]
+      ]
+    };
+
+    const rows = await Product.findAll({
+      ...select,
+      where: { ...base, stock: { [Op.gt]: 0 } },
+      limit
+    });
+
+    if (rows.length < limit) {
+      const remainder = await Product.findAll({
+        ...select,
+        where: {
+          ...base,
+          stock: { [Op.lte]: 0 },
+          ...(rows.length ? { id: { [Op.ne]: product.id, [Op.notIn]: rows.map((row) => row.id) } } : {})
+        },
+        limit: limit - rows.length
+      });
+      rows.push(...remainder);
+    }
+
+    res.json({ success: true, productId: product.id, count: rows.length, products: rows });
+  } catch (error) {
+    console.error("❌ Error fetching related products:", error);
+    res.status(500).json({ success: false, message: "Error fetching related products" });
   }
 };
 
@@ -780,6 +895,8 @@ module.exports = {
   replaceProductImages,
   appendProductImage,
   deleteProductImage,
+  getSuggestions,
+  getRelatedProducts,
   DEFAULT_LIMIT,
   MAX_LIMIT
 };

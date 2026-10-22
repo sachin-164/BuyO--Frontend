@@ -5,6 +5,8 @@ import type {
   ProductDetailResponse,
   ProductListResponse,
   ProductQuery,
+  RelatedProductsResponse,
+  SearchSuggestionsResponse,
 } from "@/types/catalog";
 
 export const catalogKeys = {
@@ -12,6 +14,9 @@ export const catalogKeys = {
   categories: () => [...catalogKeys.all, "categories"] as const,
   products: (search: string) => [...catalogKeys.all, "products", search] as const,
   product: (identifier: string) => [...catalogKeys.all, "product", identifier] as const,
+  suggestions: (term: string) => [...catalogKeys.all, "suggestions", term] as const,
+  related: (identifier: string, limit: number) =>
+    [...catalogKeys.all, "related", identifier, limit] as const,
 };
 
 function productSearch(params: ProductQuery): string {
@@ -66,4 +71,38 @@ export function useCategories() {
 
 export function useLatestProducts(limit = 8) {
   return useProducts({ limit, sort: "newest", page: 1 });
+}
+
+/**
+ * Typeahead suggestions. The term is part of the query key, so a slower
+ * response for an older term can never overwrite a newer one.
+ */
+export function useSearchSuggestions(term: string, { enabled = true }: { enabled?: boolean } = {}) {
+  const query = term.trim();
+  return useQuery({
+    queryKey: catalogKeys.suggestions(query),
+    queryFn: ({ signal }) =>
+      api.get<SearchSuggestionsResponse>(
+        `/api/products/suggestions?q=${encodeURIComponent(query)}`,
+        signal,
+      ),
+    enabled: enabled && query.length >= 2,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/** Same-category siblings, excluding the product itself (server-side rule). */
+export function useRelatedProducts(identifier: number | string | undefined, limit = 4) {
+  return useQuery({
+    queryKey: catalogKeys.related(String(identifier ?? ""), limit),
+    queryFn: ({ signal }) =>
+      api.get<RelatedProductsResponse>(
+        `/api/products/${encodeURIComponent(String(identifier ?? ""))}/related?limit=${limit}`,
+        signal,
+      ),
+    enabled: Boolean(identifier),
+    retry: false,
+    staleTime: 60_000,
+  });
 }
