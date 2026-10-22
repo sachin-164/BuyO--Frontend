@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { ProductThumb } from "@/components/admin/product-thumb";
+import { ProductGalleryEditor } from "@/components/admin/product-gallery-editor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,10 +30,10 @@ import {
   type ProductFormValues,
 } from "@/features/admin/product-form-schema";
 import { uploadProductImage, validateImageFile } from "@/features/admin/upload";
-import { ApiError, api } from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { getErrorMessage, getFieldErrors } from "@/lib/errors";
 import { discountPercent, formatPrice } from "@/lib/format";
-import type { AdminProductInput, ProductMutationResponse } from "@/types/admin";
+import type { AdminProductInput } from "@/types/admin";
 import type { Category, Product } from "@/types/catalog";
 
 interface ProductFormProps {
@@ -57,16 +58,19 @@ const FORM_FIELDS: Array<keyof ProductFormValues> = [
 
 function buildFormData(payload: AdminProductInput, file: File): FormData {
   const form = new FormData();
-  form.set("name", payload.name);
-  form.set("category", payload.category);
+  if (payload.name !== undefined) form.set("name", payload.name);
+  if (payload.category !== undefined) form.set("category", payload.category);
   if (payload.categoryId !== undefined && payload.categoryId !== null) {
     form.set("categoryId", String(payload.categoryId));
   }
   if (payload.description !== undefined) form.set("description", payload.description);
-  form.set("mrpPrice", String(payload.mrpPrice));
-  form.set("sellingPrice", String(payload.sellingPrice));
-  form.set("stock", String(payload.stock));
+  if (payload.mrpPrice !== undefined) form.set("mrpPrice", String(payload.mrpPrice));
+  if (payload.sellingPrice !== undefined) form.set("sellingPrice", String(payload.sellingPrice));
+  if (payload.stock !== undefined) form.set("stock", String(payload.stock));
   if (payload.slug) form.set("slug", payload.slug);
+  // Objects cannot travel as form fields; the server parses this back into
+  // imageMeta before validating, so alt text is saved in the same request.
+  if (payload.imageMeta !== undefined) form.set("imageMeta", JSON.stringify(payload.imageMeta));
   form.set("image", file);
   return form;
 }
@@ -231,13 +235,9 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
           return;
         }
         if (result.mode === "local") {
-          if (isEdit) {
-            const message =
-              "File replacement needs hosted storage. In local storage mode the update endpoint accepts JSON only — enter an image URL or remove the image instead.";
-            setFileError(message);
-            toast({ title: "File replacement unavailable", description: message, tone: "info" });
-            return;
-          }
+          // Local disk has no signed-upload flow, so the bytes travel with the
+          // product form. Both create and update accept multipart now, which is
+          // what makes image replacement work without hosted storage.
           localFile = file;
         } else {
           uploadedPath = result.objectPath;
@@ -267,14 +267,18 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
       if (formValues.slug.trim()) payload.slug = formValues.slug.trim();
 
       const originalImage = product?.image ?? "";
-      if (uploadedPath) {
-        payload.image = uploadedPath;
-      } else if (!isEdit) {
-        if (formValues.imageUrl.trim()) payload.image = formValues.imageUrl.trim();
-      } else if (removeImage) {
-        payload.image = "";
-      } else if (formValues.imageUrl.trim() !== originalImage) {
-        payload.image = formValues.imageUrl.trim();
+      // A selected local file wins over any URL field: it is sent as the
+      // multipart payload, not as a text field.
+      if (!localFile) {
+        if (uploadedPath) {
+          payload.image = uploadedPath;
+        } else if (!isEdit) {
+          if (formValues.imageUrl.trim()) payload.image = formValues.imageUrl.trim();
+        } else if (removeImage) {
+          payload.image = "";
+        } else if (formValues.imageUrl.trim() !== originalImage) {
+          payload.image = formValues.imageUrl.trim();
+        }
       }
 
       const finalImage = uploadedPath ?? payload.image ?? (removeImage ? "" : originalImage);
@@ -282,41 +286,29 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
       const alt = formValues.imageAlt.trim();
       if (hasImage && alt) {
         payload.imageMeta = { alt };
-      } else if (isEdit && (removeImage || product?.imageMeta?.alt)) {
-        // An empty object clears the previous metadata without inventing a new alt.
+      } else if (isEdit && (removeImage || localFile || product?.imageMeta?.alt)) {
+        // An empty object clears the previous metadata without inventing a new
+        // alt. Replacing the image also drops a description that was about the
+        // old picture.
         payload.imageMeta = {};
       }
 
+      const body: AdminProductInput | FormData = localFile
+        ? buildFormData(payload, localFile)
+        : payload;
+
       if (!isEdit) {
-        let response: ProductMutationResponse;
-        if (localFile) {
-          const formData = buildFormData(payload, localFile);
-          response = await createMutation.mutateAsync(formData);
-          if (hasImage && alt) {
-            try {
-              await api.put(`/api/products/${response.product.id}`, { imageMeta: { alt } });
-            } catch {
-              toast({
-                title: "Product saved",
-                description: "The image was saved, but its alt text could not be stored.",
-                tone: "info",
-              });
-            }
-          }
-        } else {
-          response = await createMutation.mutateAsync(payload);
-        }
+        const response = await createMutation.mutateAsync(body);
         toast({
           title: "Product created",
           description: `“${response.product.name}” is now in the catalog.`,
           tone: "success",
         });
-        navigate("/admin/products");
       } else {
-        await updateMutation.mutateAsync(payload);
+        await updateMutation.mutateAsync(body);
         toast({ title: "Product updated", description: "The catalog has been refreshed.", tone: "success" });
-        navigate("/admin/products");
       }
+      navigate("/admin/products");
     } catch (error) {
       applyServerErrors(error);
     } finally {
@@ -571,11 +563,9 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
                   className="block w-full cursor-pointer rounded-md border border-input bg-card text-sm text-muted-foreground file:mr-3 file:cursor-pointer file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 />
                 <p className="text-xs text-muted-foreground">
-                  JPEG, PNG, WebP or GIF, up to 5 MB. Hosted storage uploads directly with a
-                  short-lived signed URL; the service-role key never reaches the browser.
-                  {isEdit
-                    ? " In local storage mode, file replacement is unavailable — use a URL instead."
-                    : " In local storage mode, create falls back to a multipart upload."}
+                  JPEG, PNG, WebP or GIF, up to 5 MB. With hosted storage the file uploads directly
+                  through a short-lived signed URL; with local disk it is submitted with this form.
+                  The service-role key never reaches the browser.
                 </p>
                 {file ? (
                   <p className="flex flex-wrap items-center gap-2 text-xs">
@@ -629,6 +619,20 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
               ) : null}
             </CardContent>
           </Card>
+
+          {isEdit && product ? (
+            <ProductGalleryEditor
+              productId={product.id}
+              images={product.images ?? []}
+              onPrimaryChange={(imageUrl, imageAlt) => {
+                // Adding or promoting a gallery image changes the primary, so
+                // the form fields follow instead of showing a stale preview.
+                setValue("imageUrl", imageUrl);
+                setValue("imageAlt", imageAlt);
+                setRemoveImage(false);
+              }}
+            />
+          ) : null}
         </div>
 
         <aside className="space-y-4">

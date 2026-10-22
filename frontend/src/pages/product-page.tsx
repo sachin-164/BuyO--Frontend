@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ProductGallery } from "@/components/product/product-gallery";
+import { productGalleryImages } from "@/features/catalog/gallery";
 import { ProductCard } from "@/components/product/product-card";
 import { QuantitySelector } from "@/components/product/quantity-selector";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
@@ -300,11 +301,7 @@ export default function ProductPage() {
           <div className="mt-6 grid gap-8 lg:grid-cols-2 lg:gap-12">
             <div className="lg:sticky lg:top-24 lg:self-start">
               <ProductGallery
-                images={
-                  product.image
-                    ? [{ src: product.image, alt: product.imageMeta?.alt || product.name }]
-                    : []
-                }
+                images={productGalleryImages(product)}
                 productName={product.name}
               />
             </div>

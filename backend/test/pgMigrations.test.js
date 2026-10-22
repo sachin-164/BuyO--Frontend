@@ -46,12 +46,13 @@ const BACKEND_DIR = path.join(__dirname, "..");
 // The full .pgsql namespace in filename order. 000 bootstraps the base
 // schema (a complete no-op on the sync-built scratch DB — the DO type guards
 // and IF NOT EXISTS skip everything — so it is recorded but changes nothing),
-// then 005-007 layer their indexes on top.
+// then 008 adds the product gallery table and 005-007 layer their indexes on top.
 const PG_MIGRATIONS = [
   "000_pg_base_schema.pgsql",
   "005_pg_cart_items_user_product_unique.pgsql",
   "006_pg_wishlist_items_user_product_unique.pgsql",
-  "007_pg_ci_unique_email_and_category.pgsql"
+  "007_pg_ci_unique_email_and_category.pgsql",
+  "008_create_product_images.pgsql"
 ];
 const NEW_INDEXES = [
   "uq_cartitems_user_product",

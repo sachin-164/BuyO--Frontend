@@ -336,7 +336,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
       "001_add_users_role.sql",
       "002_create_categories.sql",
       "003_products_catalog_fields.sql",
-      "004_orders_addresses.sql"
+      "004_orders_addresses.sql",
+      "008_create_product_images.sql"
     ]);
 
     // role column: additive; existing users default to customer (admins keep the allowlist fallback)
@@ -362,7 +363,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     assert.deepEqual(products.map((p) => p.categoryId), [1, 1, 2]);
 
     const applied = await queryDb(LEGACY_DB, "SELECT id FROM `schema_migrations` ORDER BY id");
-    assert.equal(applied.length, 4);
+    assert.equal(applied.length, 5);
+    assert.ok(applied.some((row) => row.id === "008_create_product_images.sql"));
   });
 
   it("constraints are enforced (unique, FK set-null, enum, NOT NULL)", async () => {
@@ -537,6 +539,7 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     require("../models/cart");
     require("../models/wishlist");
     require("../models/address");
+    require("../models/productImage"); // gallery table must exist in both shapes
     require("../models/order"); // pulls in orderItem + orderStatusEvent
     await seq.sync();
     sequelize = seq;
@@ -547,7 +550,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
       "001_add_users_role.sql",
       "002_create_categories.sql",
       "003_products_catalog_fields.sql",
-      "004_orders_addresses.sql"
+      "004_orders_addresses.sql",
+      "008_create_product_images.sql"
     ]);
     const second = await runMigrations({ settings: settingsFor(SYNC_DB), quiet: true });
     assert.equal(second.applied.length, 0);

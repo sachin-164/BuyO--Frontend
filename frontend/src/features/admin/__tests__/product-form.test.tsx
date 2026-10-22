@@ -237,7 +237,7 @@ describe("AdminProductFormPage", () => {
     });
   });
 
-  it("falls back to multipart on create when storage is local, then stores alt text", async () => {
+  it("falls back to multipart on create when storage is local, saving alt text in the same request", async () => {
     const user = userEvent.setup();
     const { requests } = installFormFetch(({ url, method }) => {
       if (method === "POST" && url.pathname === "/api/uploads/authorize") {
@@ -263,12 +263,17 @@ describe("AdminProductFormPage", () => {
     expect(created.formData?.get("categoryId")).toBe("1");
     expect(created.formData?.get("mrpPrice")).toBe("1500");
     expect(created.formData?.get("image")).toBeInstanceOf(File);
+    expect(JSON.parse(String(created.formData?.get("imageMeta")))).toEqual({
+      alt: "Local bottle",
+    });
 
-    const altUpdate = requests.find(
-      (request) => request.method === "PUT" && request.url.pathname === "/api/products/99",
-    );
-    expect(altUpdate).toBeDefined();
-    expect(JSON.parse(altUpdate?.body ?? "{}")).toEqual({ imageMeta: { alt: "Local bottle" } });
+    // Alt text now travels with the upload: no second request that could fail
+    // after the product was already saved.
+    expect(
+      requests.some(
+        (request) => request.method === "PUT" && request.url.pathname === "/api/products/99",
+      ),
+    ).toBe(false);
   });
 
   it("loads an existing product and updates it without resending an unchanged image", async () => {
@@ -316,7 +321,7 @@ describe("AdminProductFormPage", () => {
     expect(JSON.parse(update?.body ?? "{}")).toMatchObject({ image: "", imageMeta: {} });
   });
 
-  it("blocks file replacement on edit in local storage mode without changing the product", async () => {
+  it("replaces an existing image on edit through multipart when storage is local", async () => {
     const user = userEvent.setup();
     const { requests } = installFormFetch(({ url, method }) => {
       if (method === "POST" && url.pathname === "/api/uploads/authorize") {
@@ -330,15 +335,45 @@ describe("AdminProductFormPage", () => {
     await user.upload(screen.getByLabelText(/replace image with a file/i), imageFile());
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
-    expect(await screen.findByText("File replacement unavailable")).toBeInTheDocument();
-    expect(
-      screen.getAllByText(/File replacement needs hosted storage/i).length,
-    ).toBeGreaterThan(0);
-    expect(
-      requests.some(
-        (request) => request.method === "PUT" && request.url.pathname === "/api/products/3",
-      ),
-    ).toBe(false);
+    expect(await screen.findByText("Product updated")).toBeInTheDocument();
+
+    const update = requests.find(
+      (request) => request.method === "PUT" && request.url.pathname === "/api/products/3",
+    );
+    expect(update?.formData).toBeInstanceOf(FormData);
+    expect(update?.formData?.get("image")).toBeInstanceOf(File);
+    expect(update?.formData?.get("name")).toBe("Steel Bottle");
+    // The alt field is prefilled from the product, so the visible value is
+    // preserved unless the admin edits it.
+    expect(JSON.parse(String(update?.formData?.get("imageMeta")))).toEqual({
+      alt: "A steel bottle",
+    });
+  });
+
+  it("keeps the typed alt text when the image is replaced", async () => {
+    const user = userEvent.setup();
+    const { requests } = installFormFetch(({ url, method }) => {
+      if (method === "POST" && url.pathname === "/api/uploads/authorize") {
+        return jsonResponse({ success: false, code: "local-storage", message: "local" }, 409);
+      }
+      return undefined;
+    });
+    renderForm("/admin/products/3/edit");
+
+    expect(await screen.findByDisplayValue("Steel Bottle")).toBeInTheDocument();
+    const alt = screen.getByLabelText(/Image alt text/);
+    await user.clear(alt);
+    await user.type(alt, "Matte steel bottle on concrete");
+    await user.upload(screen.getByLabelText(/replace image with a file/i), imageFile());
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Product updated")).toBeInTheDocument();
+    const update = requests.find(
+      (request) => request.method === "PUT" && request.url.pathname === "/api/products/3",
+    );
+    expect(JSON.parse(String(update?.formData?.get("imageMeta")))).toEqual({
+      alt: "Matte steel bottle on concrete",
+    });
   });
 
   it("maps server validation errors back onto the form", async () => {

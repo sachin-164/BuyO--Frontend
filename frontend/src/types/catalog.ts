@@ -24,6 +24,15 @@ export interface ProductImageMeta {
   height?: number;
 }
 
+/** One ordered gallery image (server table `ProductImages`). */
+export interface ProductImage {
+  id: number;
+  productId: number;
+  url: string;
+  alt?: string | null;
+  position: number;
+}
+
 export interface Product {
   id: number;
   name: string;
@@ -36,6 +45,8 @@ export interface Product {
   image?: string | null;
   imageMeta?: ProductImageMeta | null;
   description?: string | null;
+  /** Ordered gallery; absent on list responses. */
+  images?: ProductImage[];
   createdAt?: string;
   updatedAt?: string;
   Category?: Category | null;

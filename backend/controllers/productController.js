@@ -5,16 +5,73 @@
 // written, kept in sync with `categoryId` on create/update, and still works
 // as a filter when no Categories row matches.
 const { Op } = require("sequelize");
+const fs = require("fs");
+const sequelize = require("../config/db");
 const Product = require("../models/product");
+const ProductImage = require("../models/productImage");
 const Category = require("../models/category");
 const { resolveDialect } = require("../config/dbConnectionOptions");
 const { slugify, uniqueSlug } = require("../utils/slugify");
 const { uniqueConflictMessage } = require("../utils/uniqueErrors");
 // Phase 12: hosted-mode image verification (ledger + stored-object checks).
 // Local mode is a byte-identical passthrough inside this helper.
-const { resolveProductImageValue, bestEffortRemoveImage } = require("../lib/imageStore");
+const {
+  resolveProductImageValue,
+  bestEffortRemoveImage,
+  getImageStore
+} = require("../lib/imageStore");
 
 const categoryInclude = [{ model: Category, as: "Category" }];
+const imagesInclude = { model: ProductImage, as: "images" };
+const imagesOrder = [
+  [{ model: ProductImage, as: "images" }, "position", "ASC"],
+  [{ model: ProductImage, as: "images" }, "id", "ASC"]
+];
+
+// Removes a file multer just wrote (only ever used on a failed request).
+function removeUploadedFile(file) {
+  if (!file || !file.path) return;
+  try {
+    fs.rmSync(file.path, { force: true });
+  } catch (err) {
+    console.error("⚠️ failed to remove uploaded file:", err.message);
+  }
+}
+
+/**
+ * Deletes a product image we host, but only when no other product still points
+ * at it. Runs AFTER the database write committed, so a failed update can never
+ * leave a product referencing a file that is already gone.
+ *
+ * External URLs and other drivers' references are left alone: they are not ours
+ * to delete.
+ */
+async function releaseImageIfUnused(reference, exceptProductId) {
+  if (!reference) return;
+  try {
+    const store = getImageStore();
+    if (!store.isOwnReference(reference)) return;
+
+    const stillUsed = await Product.count({
+      where: {
+        image: reference,
+        ...(exceptProductId ? { id: { [Op.ne]: exceptProductId } } : {})
+      }
+    });
+    // A gallery row of any product also owns the file.
+    const usedInGallery = await ProductImage.count({ where: { url: reference } });
+    if (stillUsed + usedInGallery > 0) return;
+
+    if (store.driver === "supabase") {
+      await store.removeImage({ path: store.objectPathFromOwnReference(reference) });
+    } else {
+      await store.removeImage({ reference });
+    }
+  } catch (err) {
+    // Best effort: an orphaned file is harmless; a broken product is not.
+    console.error("⚠️ replaced image cleanup failed:", err.message);
+  }
+}
 
 const DEFAULT_SORT = "newest";
 const DEFAULT_LIMIT = 50;
@@ -139,12 +196,17 @@ const addProduct = async (req, res) => {
       categoryId: resolvedCategoryId
     });
 
-    const withCategory = await Product.findByPk(product.id, { include: categoryInclude });
+    const withCategory = await Product.findByPk(product.id, {
+      include: [...categoryInclude, imagesInclude],
+      order: imagesOrder
+    });
     res.status(201).json({ success: true, message: "✅ Product added successfully!", product: withCategory });
   } catch (error) {
     // DB write failed after a direct upload was verified: best-effort remove
     // the just-uploaded object so it cannot linger as an orphan.
     if (verifiedUploadPath) await bestEffortRemoveImage(verifiedUploadPath);
+    // Same for a multipart file: it only becomes the product image on success.
+    removeUploadedFile(req.file);
     const conflict = uniqueConflictMessage(error, "product");
     if (conflict) return res.status(409).json({ success: false, message: conflict });
     console.error("❌ Error adding product:", error);
@@ -229,10 +291,17 @@ const getProduct = async (req, res) => {
     let product = null;
     const numericId = /^\d+$/.test(identifier) ? Number(identifier) : null;
     if (numericId !== null && Number.isSafeInteger(numericId) && numericId > 0 && numericId <= 2147483647) {
-      product = await Product.findByPk(numericId, { include: categoryInclude });
+      product = await Product.findByPk(numericId, {
+        include: [...categoryInclude, imagesInclude],
+        order: imagesOrder
+      });
     }
     if (!product && identifier.length <= 160) {
-      product = await Product.findOne({ where: { slug: identifier }, include: categoryInclude });
+      product = await Product.findOne({
+        where: { slug: identifier },
+        include: [...categoryInclude, imagesInclude],
+        order: imagesOrder
+      });
     }
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
@@ -262,6 +331,12 @@ const updateProduct = async (req, res) => {
 
     const updates = { ...req.body };
     const has = (field) => Object.prototype.hasOwnProperty.call(updates, field);
+
+    // A multipart file is the new image. It already passed the mimetype
+    // allowlist + magic-byte check in the route, so it skips the hosted-upload
+    // resolver (which is for storage objects, not local disk).
+    if (req.file) updates.image = `/uploads/${req.file.filename}`;
+
     if (!Object.keys(updates).length) {
       return res.status(400).json({
         success: false,
@@ -314,7 +389,9 @@ const updateProduct = async (req, res) => {
     // upload (or an external URL). Re-sending the product's current image
     // value is a no-op and never consumes an authorization; local mode is a
     // passthrough. Verification runs right before the write (verify-then-save).
-    if (has("image") && updates.image !== product.image) {
+    // A multipart file needs none of this: its bytes are already on disk and
+    // magic-verified, exactly like create.
+    if (!req.file && has("image") && updates.image !== product.image) {
       try {
         const resolved = await resolveProductImageValue(updates.image || "", req.user.id);
         updates.image = resolved.value;
@@ -327,13 +404,26 @@ const updateProduct = async (req, res) => {
       }
     }
 
+    const previousImage = product.image;
     await product.update(updates);
-    const refreshed = await Product.findByPk(product.id, { include: categoryInclude });
+    // Keep an existing gallery consistent with the primary image: row 0 mirrors
+    // Products.image (or is removed when the image is cleared).
+    if (previousImage !== product.image) {
+      await syncGalleryWithLegacyImage(product, product.image);
+      // The old file is deleted only now that the row committed. If another
+      // product or gallery still uses the same reference it is kept.
+      await releaseImageIfUnused(previousImage, product.id);
+    }
+    const refreshed = await Product.findByPk(product.id, {
+      include: [...categoryInclude, imagesInclude],
+      order: imagesOrder
+    });
     res.json({ success: true, message: "Product updated", product: refreshed });
   } catch (error) {
     // DB write failed after a direct upload was verified: best-effort remove
     // the just-uploaded object so it cannot linger as an orphan.
     if (verifiedUploadPath) await bestEffortRemoveImage(verifiedUploadPath);
+    removeUploadedFile(req.file);
     const conflict = uniqueConflictMessage(error, "product");
     if (conflict) return res.status(409).json({ success: false, message: conflict });
     console.error("❌ Error updating product:", error);
@@ -352,11 +442,332 @@ const deleteProduct = async (req, res) => {
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
+    const gallery = await ProductImage.findAll({ where: { productId: id } });
+    // Row is gone before the files are: deleting first would leave a product
+    // pointing at a missing image if the DELETE then failed. Gallery rows are
+    // removed by the ON DELETE CASCADE constraint.
     await product.destroy();
+    for (const candidate of [product.image, ...gallery.map((row) => row.url)]) {
+      await releaseImageIfUnused(candidate, null);
+    }
     res.json({ success: true, message: "Product deleted" });
   } catch (error) {
     console.error("❌ Error deleting product:", error);
     res.status(500).json({ success: false, message: "Error deleting product" });
+  }
+};
+
+// ---------- Product gallery (items 32–33) ----------
+
+// Products.image stays the primary for compatibility, so every gallery write
+// mirrors row 0 into it (and clears it when the gallery becomes empty).
+async function syncPrimaryImage(product, images, transaction) {
+  const primary = images[0] || null;
+  const meta =
+    product.imageMeta && typeof product.imageMeta === "object" && !Array.isArray(product.imageMeta)
+      ? { ...product.imageMeta }
+      : {};
+  if (primary && primary.alt) meta.alt = primary.alt;
+  else delete meta.alt;
+
+  await product.update(
+    { image: primary ? primary.url : "", imageMeta: Object.keys(meta).length ? meta : null },
+    { transaction }
+  );
+}
+
+// An edit through the legacy `image` field must not leave a disagreeing
+// gallery behind: row 0 follows the primary (and is dropped when it clears).
+async function syncGalleryWithLegacyImage(product, image) {
+  const rows = await ProductImage.findAll({
+    where: { productId: product.id },
+    order: [
+      ["position", "ASC"],
+      ["id", "ASC"]
+    ]
+  });
+  if (!rows.length) return;
+
+  if (image) {
+    if (rows[0].url !== image) await rows[0].update({ url: image });
+    return;
+  }
+
+  await rows[0].destroy();
+  const rest = rows.slice(1);
+  for (let index = 0; index < rest.length; index += 1) {
+    if (rest[index].position !== index) await rest[index].update({ position: index });
+  }
+  if (rest.length) {
+    await syncPrimaryImage(
+      product,
+      rest.map((row) => ({ url: row.url, alt: row.alt }))
+    );
+  }
+}
+
+function parseImagesPayload(raw) {
+  if (!Array.isArray(raw)) return { error: "images must be an array" };
+  if (raw.length > ProductImage.MAX_IMAGES) {
+    return { error: `images may contain at most ${ProductImage.MAX_IMAGES} entries` };
+  }
+
+  const seen = new Set();
+  const images = [];
+  for (let index = 0; index < raw.length; index += 1) {
+    const entry = raw[index];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return { error: `images[${index}] must be an object` };
+    }
+    const url = typeof entry.url === "string" ? entry.url.trim() : "";
+    if (!url) return { error: `images[${index}].url is required` };
+    if (url.length > 500) return { error: `images[${index}].url must be at most 500 characters` };
+    if (seen.has(url)) return { error: "images must not contain duplicate urls" };
+    seen.add(url);
+
+    const rawAlt = entry.alt === undefined || entry.alt === null ? "" : String(entry.alt).trim();
+    if (rawAlt.length > 255) {
+      return { error: `images[${index}].alt must be at most 255 characters` };
+    }
+    images.push({ url, alt: rawAlt || null });
+  }
+  return { images };
+}
+
+async function loadProductWithImages(id) {
+  return Product.findByPk(id, {
+    include: [...categoryInclude, imagesInclude],
+    order: imagesOrder
+  });
+}
+
+const productIdParam = (raw) => {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+};
+
+// PUT /api/products/:id/images — replace the ordered gallery in one request.
+const replaceProductImages = async (req, res) => {
+  const cleanupPaths = [];
+  try {
+    const id = productIdParam(req.params.id);
+    if (!id) return res.status(400).json({ success: false, message: "Invalid product id" });
+
+    const product = await Product.findByPk(id);
+    if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+
+    const parsed = parseImagesPayload(req.body.images);
+    if (parsed.error) {
+      return res.status(400).json({ success: false, message: "Validation failed", errors: [parsed.error] });
+    }
+
+    const current = await ProductImage.findAll({
+      where: { productId: id },
+      order: [
+        ["position", "ASC"],
+        ["id", "ASC"]
+      ]
+    });
+    // Re-sending an already stored value must not consume a second upload
+    // authorization: only genuinely new references are resolved.
+    const known = new Set(current.map((row) => row.url));
+
+    const resolved = [];
+    try {
+      for (const entry of parsed.images) {
+        if (known.has(entry.url)) {
+          resolved.push(entry);
+          continue;
+        }
+        const value = await resolveProductImageValue(entry.url, req.user.id);
+        if (value.cleanupPath) cleanupPaths.push(value.cleanupPath);
+        resolved.push({ url: value.value, alt: entry.alt });
+      }
+    } catch (err) {
+      for (const cleanup of cleanupPaths) await bestEffortRemoveImage(cleanup);
+      if (err.exposeToClient) {
+        return res.status(err.status).json({ success: false, message: err.publicMessage });
+      }
+      throw err;
+    }
+
+    await sequelize.transaction(async (transaction) => {
+      await ProductImage.destroy({ where: { productId: id }, transaction });
+      if (resolved.length) {
+        await ProductImage.bulkCreate(
+          resolved.map((entry, position) => ({
+            productId: id,
+            url: entry.url,
+            alt: entry.alt,
+            position
+          })),
+          { transaction }
+        );
+      }
+      await syncPrimaryImage(product, resolved, transaction);
+    });
+
+    // Files are only released after the rows committed, and only when no other
+    // product — primary position or gallery — still references them.
+    const kept = new Set(resolved.map((entry) => entry.url));
+    for (const row of current) {
+      if (!kept.has(row.url)) await releaseImageIfUnused(row.url, null);
+    }
+
+    const refreshed = await loadProductWithImages(id);
+    res.json({ success: true, message: "Product images updated", product: refreshed });
+  } catch (error) {
+    console.error("❌ Error updating product images:", error);
+    res.status(500).json({ success: false, message: "Error updating product images" });
+  }
+};
+
+// POST /api/products/:id/images — append one image (JSON url, or one uploaded
+// file in local storage mode). Appending keeps positions and clients simple.
+const appendProductImage = async (req, res) => {
+  let cleanupPath = null;
+  try {
+    const id = productIdParam(req.params.id);
+    if (!id) {
+      removeUploadedFile(req.file);
+      return res.status(400).json({ success: false, message: "Invalid product id" });
+    }
+
+    const product = await Product.findByPk(id);
+    if (!product) {
+      removeUploadedFile(req.file);
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+
+    const count = await ProductImage.count({ where: { productId: id } });
+    if (count >= ProductImage.MAX_IMAGES) {
+      removeUploadedFile(req.file);
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: [`A product can have at most ${ProductImage.MAX_IMAGES} images`]
+      });
+    }
+
+    const rawAlt = req.body.alt === undefined || req.body.alt === null ? "" : String(req.body.alt).trim();
+    if (rawAlt.length > 255) {
+      removeUploadedFile(req.file);
+      return res.status(400).json({ success: false, message: "Validation failed", errors: ["alt must be at most 255 characters"] });
+    }
+    const alt = rawAlt || null;
+
+    let url;
+    if (req.file) {
+      url = `/uploads/${req.file.filename}`;
+    } else {
+      url = typeof req.body.url === "string" ? req.body.url.trim() : "";
+      if (!url) {
+        return res.status(400).json({ success: false, message: "Validation failed", errors: ["url is required"] });
+      }
+      if (url.length > 500) {
+        return res.status(400).json({ success: false, message: "Validation failed", errors: ["url must be at most 500 characters"] });
+      }
+      try {
+        const value = await resolveProductImageValue(url, req.user.id);
+        url = value.value;
+        cleanupPath = value.cleanupPath;
+      } catch (err) {
+        if (err.exposeToClient) {
+          return res.status(err.status).json({ success: false, message: err.publicMessage });
+        }
+        throw err;
+      }
+    }
+
+    try {
+      await sequelize.transaction(async (transaction) => {
+        const highest = await ProductImage.max("position", {
+          where: { productId: id },
+          transaction
+        });
+        await ProductImage.create(
+          {
+            productId: id,
+            url,
+            alt,
+            position: Number.isFinite(highest) ? highest + 1 : 0
+          },
+          { transaction }
+        );
+        const rows = await ProductImage.findAll({
+          where: { productId: id },
+          order: [
+            ["position", "ASC"],
+            ["id", "ASC"]
+          ],
+          transaction
+        });
+        // First image appended to a product becomes its primary.
+        await syncPrimaryImage(
+          product,
+          rows.map((row) => ({ url: row.url, alt: row.alt })),
+          transaction
+        );
+      });
+    } catch (err) {
+      // The row did not commit, so neither reference is owned by the catalog.
+      if (cleanupPath) await bestEffortRemoveImage(cleanupPath);
+      removeUploadedFile(req.file);
+      throw err;
+    }
+
+    const refreshed = await loadProductWithImages(id);
+    res.status(201).json({ success: true, message: "Product image added", product: refreshed });
+  } catch (error) {
+    removeUploadedFile(req.file);
+    console.error("❌ Error adding product image:", error);
+    res.status(500).json({ success: false, message: "Error adding product image" });
+  }
+};
+
+// DELETE /api/products/:id/images/:imageId — remove one image and re-index.
+const deleteProductImage = async (req, res) => {
+  try {
+    const id = productIdParam(req.params.id);
+    const imageId = productIdParam(req.params.imageId);
+    if (!id || !imageId) {
+      return res.status(400).json({ success: false, message: "Invalid product image id" });
+    }
+
+    const product = await Product.findByPk(id);
+    if (!product) return res.status(404).json({ success: false, message: "Product not found" });
+
+    const row = await ProductImage.findOne({ where: { id: imageId, productId: id } });
+    if (!row) return res.status(404).json({ success: false, message: "Product image not found" });
+
+    const removedUrl = row.url;
+    await sequelize.transaction(async (transaction) => {
+      await row.destroy({ transaction });
+      const rows = await ProductImage.findAll({
+        where: { productId: id },
+        order: [
+          ["position", "ASC"],
+          ["id", "ASC"]
+        ],
+        transaction
+      });
+      for (let index = 0; index < rows.length; index += 1) {
+        if (rows[index].position !== index) await rows[index].update({ position: index }, { transaction });
+      }
+      await syncPrimaryImage(
+        product,
+        rows.map((entry) => ({ url: entry.url, alt: entry.alt })),
+        transaction
+      );
+    });
+
+    // Released only after the transaction committed.
+    await releaseImageIfUnused(removedUrl, null);
+    const refreshed = await loadProductWithImages(id);
+    res.json({ success: true, message: "Product image removed", product: refreshed });
+  } catch (error) {
+    console.error("❌ Error deleting product image:", error);
+    res.status(500).json({ success: false, message: "Error removing product image" });
   }
 };
 
@@ -366,6 +777,9 @@ module.exports = {
   getProduct,
   updateProduct,
   deleteProduct,
+  replaceProductImages,
+  appendProductImage,
+  deleteProductImage,
   DEFAULT_LIMIT,
   MAX_LIMIT
 };

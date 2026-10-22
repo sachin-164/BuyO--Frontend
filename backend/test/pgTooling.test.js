@@ -53,7 +53,8 @@ const PG_MIGRATIONS = [
   "000_pg_base_schema.pgsql",
   "005_pg_cart_items_user_product_unique.pgsql",
   "006_pg_wishlist_items_user_product_unique.pgsql",
-  "007_pg_ci_unique_email_and_category.pgsql"
+  "007_pg_ci_unique_email_and_category.pgsql",
+  "008_create_product_images.pgsql"
 ];
 
 const CANDIDATE = "admin.candidate@buyotest.local";
@@ -295,7 +296,7 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
 
     // Representative tables: rows, serial sequences, catalog-built CREATE TABLE.
     assert.equal(dump.tables.Users.rowCount, 2);
-    assert.equal(dump.tables.schema_migrations.rowCount, 4, "applied .pgsql migrations must be in the backup");
+    assert.equal(dump.tables.schema_migrations.rowCount, 5, "applied .pgsql migrations must be in the backup");
     assert.equal(dump.tables.Products.rowCount, 0, "empty tables are backed up too");
     assert.match(dump.tables.Users.createSql, /DEFAULT nextval\('"Users_id_seq"'::regclass\)/);
     assert.ok(

@@ -33,7 +33,7 @@ export function useCreateProduct() {
 
 export function useUpdateProduct(id: number) {
   const invalidate = useInvalidateAdminCatalog();
-  return useMutation<ProductMutationResponse, unknown, Partial<AdminProductInput>>({
+  return useMutation<ProductMutationResponse, unknown, Partial<AdminProductInput> | FormData>({
     mutationFn: (body) => api.put<ProductMutationResponse>(`/api/products/${id}`, body),
     onSuccess: invalidate,
   });
@@ -43,6 +43,41 @@ export function useDeleteProduct() {
   const invalidate = useInvalidateAdminCatalog();
   return useMutation<ProductDeleteResponse, unknown, number>({
     mutationFn: (id) => api.delete<ProductDeleteResponse>(`/api/products/${id}`),
+    onSuccess: invalidate,
+  });
+}
+
+export interface AppendProductImageInput {
+  url?: string;
+  alt?: string;
+}
+
+/** Append one gallery image: a JSON URL, or one local multipart file. */
+export function useAppendProductImage(id: number) {
+  const invalidate = useInvalidateAdminCatalog();
+  return useMutation<ProductMutationResponse, unknown, AppendProductImageInput | FormData>({
+    mutationFn: (body) => api.post<ProductMutationResponse>(`/api/products/${id}/images`, body),
+    onSuccess: invalidate,
+  });
+}
+
+/** Replace the ordered gallery (reorder, alt edits, removals) in one request. */
+export function useReplaceProductImages(id: number) {
+  const invalidate = useInvalidateAdminCatalog();
+  return useMutation<
+    ProductMutationResponse,
+    unknown,
+    Array<{ url: string; alt?: string | null }>
+  >({
+    mutationFn: (images) => api.put<ProductMutationResponse>(`/api/products/${id}/images`, { images }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteProductImage(id: number) {
+  const invalidate = useInvalidateAdminCatalog();
+  return useMutation<ProductMutationResponse, unknown, number>({
+    mutationFn: (imageId) => api.delete<ProductMutationResponse>(`/api/products/${id}/images/${imageId}`),
     onSuccess: invalidate,
   });
 }

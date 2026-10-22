@@ -12,6 +12,9 @@ const {
   getProduct,
   updateProduct,
   deleteProduct,
+  replaceProductImages,
+  appendProductImage,
+  deleteProductImage,
   MAX_LIMIT
 } = require("../controllers/productController");
 const { requireAuth, requireAdmin } = require("../middleware/auth");
@@ -72,8 +75,25 @@ try {
 const upload = multer({
   storage,
   limits: { fileSize: multerMaxBytes },
-  fileFilter: (req, file, cb) => cb(null, Boolean(ALLOWED_IMAGE_TYPES[file.mimetype]))
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_IMAGE_TYPES[file.mimetype]) return cb(null, true);
+    // Remember why the file was skipped: silently ignoring it would let an
+    // admin believe an image was replaced when the bytes never left the client.
+    req.rejectedFileType = file.mimetype;
+    cb(null, false);
+  }
 });
+
+// Reject a request whose only/attached file failed the mimetype allowlist.
+// Must run before the handler so nothing else is written for that request.
+function rejectDisallowedFile(req, res, next) {
+  if (!req.rejectedFileType) return next();
+  return res.status(400).json({
+    success: false,
+    message: "Validation failed",
+    errors: [`Unsupported image type "${req.rejectedFileType}"; use JPEG, PNG, WebP or GIF`]
+  });
+}
 
 // HOSTED STORAGE SAFETY (Phase 12): with STORAGE_DRIVER=supabase the multipart
 // path must never land image bytes on the ephemeral function disk. Files are
@@ -127,6 +147,43 @@ function verifyImageFile(req, res, next) {
     return fail();
   }
   if (!matches || read < 4 || !matches(buffer.subarray(0, read))) return fail();
+  next();
+}
+
+// A multipart request that ends in an error response must not leave its file
+// behind. This runs for every route that accepts a file: if the handler (or a
+// later validator) responds 4xx/5xx, the just-written upload is removed. On
+// success the file IS the new product image, so it stays.
+function cleanupUploadOnFailure(req, res, next) {
+  if (!req.file) return next();
+  res.on("finish", () => {
+    if (res.statusCode >= 400) {
+      try {
+        fs.rmSync(req.file.path, { force: true });
+      } catch (err) {
+        console.error("⚠️ failed to remove rejected upload:", err.message);
+      }
+    }
+  });
+  next();
+}
+
+// Multipart text fields arrive as strings. `imageMeta` is a JSON object in the
+// JSON API, so parse it back when it arrives through a form. Anything else
+// (numbers, booleans) is already coerced by validateBody.
+function parseMultipartJsonFields(req, res, next) {
+  if (!req.file) return next(); // JSON body: already an object
+  if (typeof req.body.imageMeta === "string" && req.body.imageMeta.trim() !== "") {
+    try {
+      req.body.imageMeta = JSON.parse(req.body.imageMeta);
+    } catch {
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: ["imageMeta must be valid JSON"]
+      });
+    }
+  }
   next();
 }
 
@@ -209,14 +266,47 @@ router.post(
   requireAuth,
   requireAdmin,
   upload.single("image"),
+  rejectDisallowedFile,
   rejectMultipartWhenHosted,
   verifyImageFile,
+  cleanupUploadOnFailure,
+  parseMultipartJsonFields,
   validateBody(createProductSchema),
   addProduct
 );
 
-// Admin-only: partial update (JSON body; multipart image replacement comes later)
-router.put("/:id", requireAuth, requireAdmin, validateBody(updateProductSchema), updateProduct);
+// Admin-only: partial update. Accepts the same multipart "image" field as
+// create, so an existing product's image can be replaced without a hosted
+// storage account; JSON bodies keep working unchanged.
+router.put(
+  "/:id",
+  requireAuth,
+  requireAdmin,
+  upload.single("image"),
+  rejectDisallowedFile,
+  rejectMultipartWhenHosted,
+  verifyImageFile,
+  cleanupUploadOnFailure,
+  parseMultipartJsonFields,
+  validateBody(updateProductSchema),
+  updateProduct
+);
+
+// Admin-only gallery. PUT replaces the ordered set (reorder/alt/remove), POST
+// appends one image (JSON url or a local multipart file), DELETE removes one.
+router.put("/:id/images", requireAuth, requireAdmin, replaceProductImages);
+router.post(
+  "/:id/images",
+  requireAuth,
+  requireAdmin,
+  upload.single("image"),
+  rejectDisallowedFile,
+  rejectMultipartWhenHosted,
+  verifyImageFile,
+  cleanupUploadOnFailure,
+  appendProductImage
+);
+router.delete("/:id/images/:imageId", requireAuth, requireAdmin, deleteProductImage);
 
 // Admin-only
 router.delete("/:id", requireAuth, requireAdmin, deleteProduct);

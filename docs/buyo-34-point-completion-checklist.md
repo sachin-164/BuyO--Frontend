@@ -55,8 +55,8 @@
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 6 | Secure product image replacement (backend) | `PUT /products/:id` is JSON-only | Accept multipart on update with the same auth/magic-byte/allowlist checks; reject hosted-storage multipart; delete the replaced local file only after a successful commit | — | Invalid type/signature rejected; non-admin 403; old file removed, new file served; failure leaves the product unchanged | `productImageReplace.test.js` | TODO |
-| 7 | Product image replacement UI | Create-only upload | Replace/remove image on `/admin/products/:id/edit` with progress + error states | 6 | Works for local and authorized hosted flow; preview updates; a11y-labelled | `product-form.test.tsx` | TODO |
+| 6 | Secure product image replacement (backend) | `PUT /products/:id` accepts multipart with the same auth/magic-byte/allowlist checks; hosted storage still answers 409 and deletes the file; the replaced local file is deleted only after commit and only when no other product (primary or gallery) references it | Done — an unsupported/silently-skipped file type is now a 400 instead of a product saved without the chosen image | — | Invalid type/signature rejected; non-admin 403; old file removed, new file served; failure leaves the product unchanged; rejected bytes never stay on disk | `productImageReplace.test.js` (9) | DONE |
+| 7 | Product image replacement UI | Replace/remove image on `/admin/products/:id/edit`, including local-disk multipart replacement (the old "hosted storage only" block is gone); alt text travels with the upload in one request | Done | 6 | Works for local and authorized hosted flow; preview updates; a11y-labelled; no second request that could fail after the product saved | `product-form.test.tsx` (11) | DONE |
 
 ## E. Account
 
@@ -131,8 +131,8 @@
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 32 | Multi-image product media (data + API) | Single `image` string | Reversible migration `product_images` (url, alt, position) + API; `image` remains the primary for compatibility | 6 | Ordering stable; first image is primary; deleting a product removes its rows | `productImages.test.js` | TODO |
-| 33 | Gallery UI (storefront + admin) | Single image | PDP gallery from real images only; admin add/reorder/alt editor | 32 | Keyboard/swipe; reduced-motion safe; no placeholder invented captions | `product-gallery.test.tsx` | TODO |
+| 32 | Multi-image product media (data + API) | `ProductImages` table (`url`, `alt`, `position`, FK `ON DELETE CASCADE`) + reversible migrations 008 (MySQL + PostgreSQL); `Products.image` is still the primary and is mirrored from row 0 | Done — `GET /products/:identifier` returns `images`; admin `PUT/POST/DELETE /products/:id/images`; max 8; re-sending stored URLs consumes no new upload authorization | 6 | Ordering stable; first image is primary; deleting a product removes its rows; replacing the legacy `image` keeps row 0 in sync | `productGallery.test.js` (13) | DONE |
+| 33 | Gallery UI (storefront + admin) | PDP renders the server gallery in order (falls back to the primary for products without rows); admin editor adds by URL/file, reorders, edits alt, removes — each action returns the refreshed gallery | Done — duplicate sources collapsed; no invented captions; arrow buttons are labelled and disabled at the ends; first image marked "Primary" | 32 | Keyboard reachable; no motion beyond existing transitions (reduced-motion safe); real images only | `product-gallery-editor.test.tsx` (9), `gallery.test.ts` (6) | DONE |
 
 ## O. Release
 
@@ -177,3 +177,10 @@ Media ships before multi-image so there is one upload path, not two.
 | Hosted image upload (7,33) | Supabase Storage credentials | Local driver verified; hosted path verified with the Supabase mock + owner smoke test |
 | Production authenticated journeys | No production test account; creating one is prohibited | Local real-backend browser acceptance; production read-only smoke |
 | Any production migration / deploy | Explicit approval required | Present migration + risk + rollback plan (item 34) |
+
+## Migrations waiting for production approval
+
+| Migration | Change | Risk | Rollback |
+| --- | --- | --- | --- |
+| `008_create_product_images.sql` / `.pgsql` (item 32) | Additive `ProductImages` table (`productId`, `url`, `alt`, `position`) with `ON DELETE CASCADE` FK to `Products` and index `idx_product_images_product_position` | Low: `CREATE TABLE IF NOT EXISTS` only; no existing column, row or index is touched. Old code ignores the table entirely. Runs in a single transaction on PostgreSQL | `DROP TABLE "ProductImages";` (MySQL: ``DROP TABLE `ProductImages`;``) — `Products.image` is untouched by the migration, so the storefront keeps rendering with or without it |
+

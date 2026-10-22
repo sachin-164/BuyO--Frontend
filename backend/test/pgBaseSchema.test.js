@@ -39,12 +39,13 @@ const EXPECTED_MIGRATIONS = [
   "000_pg_base_schema.pgsql",
   "005_pg_cart_items_user_product_unique.pgsql",
   "006_pg_wishlist_items_user_product_unique.pgsql",
-  "007_pg_ci_unique_email_and_category.pgsql"
+  "007_pg_ci_unique_email_and_category.pgsql",
+  "008_create_product_images.pgsql"
 ];
 
 const APP_TABLES = [
   "Addresses", "CartItems", "Categories", "OrderItems", "OrderStatusEvents",
-  "Orders", "Products", "Users", "WishlistItems"
+  "Orders", "ProductImages", "Products", "Users", "WishlistItems"
 ];
 
 const APP_ENUMS = [
@@ -193,11 +194,11 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
 
   // ------------------------------------------------------------------ tests
 
-  it("migrations alone initialize an empty database (000, 005, 006, 007)", async () => {
-    assert.deepEqual(emptyResult.applied, EXPECTED_MIGRATIONS, "all four files must apply in order on an empty DB");
+  it("migrations alone initialize an empty database (000, 005, 006, 007, 008)", async () => {
+    assert.deepEqual(emptyResult.applied, EXPECTED_MIGRATIONS, "all five files must apply in order on an empty DB");
 
     const bookkeeping = (await query(`SELECT id FROM "schema_migrations" ORDER BY id`)).map((r) => r.id);
-    assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "bookkeeping must record exactly the four files");
+    assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "bookkeeping must record exactly the five files");
 
     // External proof (independent of the in-file verify directives): every
     // application table and enum type physically exists.
@@ -208,7 +209,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
          WHERE n.nspname = current_schema() AND c.relkind = 'r'`
       )
     ).map((r) => r.relname).sort();
-    assert.deepEqual(tables, [...APP_TABLES, "schema_migrations"].sort(), "exactly the nine app tables + bookkeeping");
+    assert.deepEqual(tables, [...APP_TABLES, "schema_migrations"].sort(), "exactly the ten app tables + bookkeeping");
 
     const enums = (
       await query(
@@ -264,6 +265,28 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     assert.equal(product.status, 201, product.text);
     const productId = Number(product.json.product.id);
     assert.ok(productId > 0, "serial id default must produce a real id");
+
+    // ---- product gallery (008): rows, ordering, first-is-primary sync ----
+    const galleryOne = await helpers.api(ctx.baseUrl, `/api/products/${productId}/images`, {
+      method: "POST",
+      token: admin.token,
+      body: { url: "https://cdn.example.test/base/one.png", alt: "Base one" }
+    });
+    assert.equal(galleryOne.status, 201, galleryOne.text);
+    const galleryTwo = await helpers.api(ctx.baseUrl, `/api/products/${productId}/images`, {
+      method: "POST",
+      token: admin.token,
+      body: { url: "https://cdn.example.test/base/two.png" }
+    });
+    assert.equal(galleryTwo.status, 201, galleryTwo.text);
+    assert.deepEqual(
+      galleryTwo.json.product.images.map((image) => image.position),
+      [0, 1]
+    );
+    assert.equal(galleryTwo.json.product.image, "https://cdn.example.test/base/one.png");
+    // ON DELETE CASCADE is a database rule, not an application rule.
+    const galleryRows = await query(`SELECT COUNT(*)::int AS c FROM "ProductImages" WHERE "productId" = ${productId}`);
+    assert.equal(galleryRows[0].c, 2);
 
     // ---- cart double-add collapses to ONE line (005 composite unique) ----
     for (let i = 0; i < 2; i++) {
@@ -365,7 +388,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     assert.match(enumErr.message, /enum_Orders_status|invalid input value for enum/);
   });
 
-  it("rerun is a no-op and the sync-built twin applied the same four files", async () => {
+  it("rerun is a no-op and the sync-built twin applied the same five files", async () => {
     const again = await runMigrations({ quiet: true });
     assert.deepEqual(again.applied, []);
     assert.equal(again.upToDate, true);
@@ -374,8 +397,8 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "000 must be recorded exactly once");
 
     // The twin child ran sync FIRST, then the same migrations — 000 must have
-    // no-op'd there and all four files must be recorded (applied_pgsql=4).
+    // no-op'd there and all five files must be recorded (applied_pgsql=5).
     assert.match(twinStdout, new RegExp(`SCHEMA_OK ${TWIN_DB}`));
-    assert.match(twinStdout, /applied_pgsql=4/);
+    assert.match(twinStdout, /applied_pgsql=5/);
   });
 });

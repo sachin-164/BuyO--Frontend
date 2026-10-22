@@ -236,7 +236,8 @@ describe("Security hardening (headers, CORS, authz, validation, limits)", () => 
     assert.deepEqual(leaked, [], `rejected upload left files behind: ${leaked.join(", ")}`);
   });
 
-  it("upload hardening: non-image mimetypes are ignored (no file stored, product still created)", async () => {
+  it("upload hardening: non-image mimetypes are rejected instead of silently ignored", async () => {
+    const uploadsBefore = new Set(fs.readdirSync(path.join(__dirname, "..", "uploads")));
     const form = new FormData();
     form.append("name", "Sec No Image");
     form.append("category", "home");
@@ -250,8 +251,19 @@ describe("Security hardening (headers, CORS, authz, validation, limits)", () => 
       body: form
     });
     const json = await res.json();
-    assert.equal(res.status, 201, JSON.stringify(json));
-    assert.equal(json.product.image, "", "non-image part must not become the product image");
+    // Silently dropping the file used to create the product without the image
+    // the admin chose. The request now fails loudly and writes nothing.
+    assert.equal(res.status, 400, JSON.stringify(json));
+    assert.ok(
+      Array.isArray(json.errors) && json.errors.some((e) => /Unsupported image type/i.test(e)),
+      JSON.stringify(json)
+    );
+
+    const leaked = fs.readdirSync(path.join(__dirname, "..", "uploads")).filter((f) => !uploadsBefore.has(f));
+    assert.deepEqual(leaked, [], `rejected upload left files behind: ${leaked.join(", ")}`);
+
+    const list = await helpers.api(ctx.baseUrl + "/api/products?q=Sec%20No%20Image");
+    assert.equal(list.json.count, 0, "nothing may be created by a rejected upload");
   });
 
   // ---------------- Phase 12: storage driver behavior in LOCAL mode ----------------
