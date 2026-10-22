@@ -166,7 +166,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
     const schema = await run("test/pgSchemaFor.js", [TARGET_DB]);
     assert.equal(schema.code, 0, `schema setup failed:\n${schema.stdout}${schema.stderr}`);
     assert.match(schema.stdout, new RegExp(`SCHEMA_OK ${TARGET_DB}`));
-    assert.match(schema.stdout, /applied_pgsql=5/); // 000, 005, 006, 007, 008
+    assert.match(schema.stdout, /applied_pgsql=8/); // 000, 005, 006, 007, 008, 009, 010, 011
   });
 
   after(async () => {
@@ -177,7 +177,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
 
   // ------------------------------------------------------------ §5 schema
 
-  it("fresh scratch target: all tables, migration indexes, 9 FKs and key types", async (t) => {
+  it("fresh scratch target: all tables, migration indexes, 14 FKs and key types", async (t) => {
     const client = new Client(pgClientOptions({ ...resolvePostgresSettings(), database: TARGET_DB }));
     await client.connect();
     try {
@@ -194,14 +194,14 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
       }
       assert.ok(pgNames.includes("schema_migrations"), "bookkeeping table exists");
       const bookkeeping = await client.query(`SELECT count(*)::int AS n FROM "schema_migrations"`);
-      assert.equal(bookkeeping.rows[0].n, 5, "numbered .pgsql migrations recorded");
+      assert.equal(bookkeeping.rows[0].n, 8, "numbered .pgsql migrations recorded");
 
       const idx = await client.query(
         `SELECT indexname FROM pg_indexes WHERE schemaname='public'`
       );
       const idxNames = idx.rows.map((r) => r.indexname);
       for (const name of [
-        "uq_cartitems_user_product",
+        "uq_cartitems_user_product_variant",
         "uq_wishlistitems_user_product",
         "uq_users_email_lower",
         "uq_categories_name_lower"
@@ -215,7 +215,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
       const fks = await client.query(
         `SELECT count(*)::int AS n FROM pg_constraint WHERE contype='f' AND connamespace='public'::regnamespace`
       );
-      assert.equal(fks.rows[0].n, 9, "exactly 9 foreign keys");
+      assert.equal(fks.rows[0].n, 14, "exactly 14 foreign keys");
 
       const types = await client.query(
         `SELECT table_name, column_name, data_type, udt_name FROM information_schema.columns

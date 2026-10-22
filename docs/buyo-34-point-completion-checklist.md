@@ -102,21 +102,44 @@ register rather than claimed as verified.
 | 18 | Order placed confirmation email | Auth mail only | Send receipt on successful checkout (non-blocking, failure never rolls back the order) | — | Exactly one mail per order, including idempotent replay; totals/items match the order | `orderCancelAndNotifications.test.js` | DONE |
 | 19 | Order status / cancellation notifications | Missing | Mail on each admin status change and customer cancellation, in the same transaction's success path | 12 | Sent after commit only; failure logged, not surfaced as order failure; one mail per transition | `orderCancelAndNotifications.test.js` | DONE |
 
-## J. Catalog: variants — **owner-gated**
+## J. Catalog: variants — **owner-approved 2026-10-22**
+
+Owner decisions recorded before implementation:
+- Option types are **size** and **colour** (either or both per variant).
+- Every variant has a unique SKU enforced by the database.
+- Stock is independent per variant; the legacy `Products.stock` remains the
+  aggregate cache for variant-managed products so existing list filters,
+  analytics and quick-add checks keep working. A product with no variants is
+  unchanged.
+- Price is `Products.sellingPrice + variant.priceAdjustment` (optional delta,
+  may be negative, but the final unit price must stay positive).
+- Variants are deactivated, never hard-deleted; order items snapshot the
+  variant id, SKU, size, colour, adjustment and actual unit price.
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 20 | Variant data model + migration | Missing | Reversible migration: `product_variants` (sku, name, option values, price delta, stock, active) + indexes | Owner confirms which option types exist | Migration up/down both tested; existing products untouched | `migrations.test.js` | BLOCKED (owner) |
-| 21 | Variant API + admin editor | Missing | CRUD under `/products/:id/variants` (admin), public read on PDP; validation; stock/price integrity | 20 | Non-admin 403; cannot orphan a variant; pricing derives from base + delta | `variants.test.js` | BLOCKED (owner) |
-| 22 | Variant storefront selection | Missing | PDP option selector that maps to a real variant/SKU; no fabricated options | 21 + owner content | Selector only shows variants that exist; cart line records the variant; out-of-stock variant blocked | `variants-ui.test.tsx` | BLOCKED (owner) |
+| 20 | Variant data model + migration | Missing | Additive `ProductVariants` table (size, colour, unique SKU, price delta, stock, active) + `CartItems.variantId` + order-item snapshots. Reversible migrations `010_product_variants.sql` / `.pgsql`; PostgreSQL cart uniqueness moves to `(UserId, productId, variantId)` | — | Migration up/down documented and exercised on a disposable DB; existing products/orders untouched; duplicate SKU rejected by the DB; sync-built and migration-built PostgreSQL schemas stay catalog-identical | `migrations.test.js`, `pgBaseSchema.test.js` | TODO |
+| 21 | Variant API + admin editor | Missing | Admin `GET/POST /api/products/:id/variants`, `PUT /api/products/:id/variants/:variantId`; public active variants on product detail; validation of options, SKU, stock, price delta, final price; aggregate stock kept transactional | 20 | Non-admin 403; duplicate SKU 409; negative stock / invalid delta / empty options / missing variant rejected 400; deactivation removes a variant from public sale but preserves order history | `variants.test.js` | TODO |
+| 22 | Variant storefront selection | Missing | PDP size/colour selector that resolves a real variant/SKU; price, availability and quantity bound to that variant; cart/checkout/order/cancellation preserve it | 21 | Selector only shows variants that exist; out-of-stock/inactive/stale variants cannot be added or checked out; cart line records variant; guest merge keeps variant identity | `variants-ui.test.tsx`, acceptance run | TODO |
 
-## K. Catalog: reviews — **owner-gated**
+## K. Catalog: reviews — **owner-approved 2026-10-22**
+
+Owner decisions recorded before implementation:
+- Any signed-in customer may review any product. **No verified-purchase
+  requirement** (explicitly waived by the owner).
+- Every new review starts `pending`; only `approved` reviews are public or
+  contribute to rating aggregates.
+- One review per customer per product, enforced by a database unique index.
+- Admins may approve or reject, and may change an already-moderated review;
+  moderation records status, timestamp and administrator id.
+- Customer sees their own review and moderation status; no customer edit or
+  delete endpoint (avoiding unmoderated changes).
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 23 | Review data model + migration | Missing | Reversible migration: `product_reviews` (rating 1–5, title, body, verified purchase, status) + unique (user, product) | Owner confirms review policy + moderation stance | Up/down tested; no seeded/fake reviews | `migrations.test.js` | BLOCKED (owner) |
-| 24 | Review API | Missing | Public list w/ pagination + rating summary; authenticated create (verified purchase only); admin moderation | 23 + owner policy | One review per user/product; rating aggregate is computed, never stored stale; unverified buyers rejected per policy | `reviews.test.js` | BLOCKED (owner) |
-| 25 | Review UI | Missing | PDP rating summary + list + form; admin moderation queue | 24 | Empty state says "no reviews yet" — never fabricated; a11y form errors | `reviews-ui.test.tsx` | BLOCKED (owner) |
+| 23 | Review data model + migration | Missing | Additive `ProductReviews` table (rating 1–5, title, body, status, moderatedBy/moderatedAt) + unique `(userId, productId)`. Reversible `011_product_reviews.sql` / `.pgsql` | — | Up/down documented and exercised on a disposable DB; no seeded/fake reviews; pending rows can never be selected by public code paths | `migrations.test.js`, `pgBaseSchema.test.js` | TODO |
+| 24 | Review API | Missing | Public approved-only list + live rating aggregate; authenticated create with server validation and forced pending status; own-review endpoint; admin moderation list/update | 23 | Unauth 401; invalid rating/length 400; duplicate 409; status/userId mass assignment ignored; public list/aggregate exclude pending/rejected; non-admin moderation 403; repeated moderation is safe | `reviews.test.js` | TODO |
+| 25 | Review UI | Missing | PDP approved-review list, rating summary, signed-in submission form + own pending/rejected status; admin moderation queue with loading/empty/error/success states and approve/reject | 24 | Empty state says "no reviews yet" — never fabricated; pending review is visible only to its author; a11y-labelled form errors; admin actions authorized server-side | `reviews-ui.test.tsx`, acceptance run | TODO |
 
 ## L. Catalog: discovery
 

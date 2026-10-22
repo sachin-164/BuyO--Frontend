@@ -5,9 +5,17 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../config/db");
 const Product = require("./product");
+const ProductVariant = require("./productVariant");
 
 const OrderItem = sequelize.define("OrderItem", {
   productId: { type: DataTypes.INTEGER, allowNull: true },
+  variantId: { type: DataTypes.INTEGER, allowNull: true },
+  // Frozen variant snapshots: the product/variant may change or be deactivated
+  // later, but the order must keep showing exactly what was bought.
+  variantSku: { type: DataTypes.STRING(64), allowNull: true },
+  variantSize: { type: DataTypes.STRING(40), allowNull: true },
+  variantColor: { type: DataTypes.STRING(40), allowNull: true },
+  variantPriceAdjustment: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
   name: { type: DataTypes.STRING(200), allowNull: false },
   image: { type: DataTypes.STRING(500), allowNull: true },
   unitPrice: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
@@ -26,5 +34,10 @@ const OrderItem = sequelize.define("OrderItem", {
 });
 
 OrderItem.belongsTo(Product, { foreignKey: { name: "productId", allowNull: true }, onDelete: "SET NULL" });
+OrderItem.belongsTo(ProductVariant, {
+  foreignKey: { name: "variantId", allowNull: true },
+  onDelete: "SET NULL",
+  onUpdate: "CASCADE"
+});
 
 module.exports = OrderItem;

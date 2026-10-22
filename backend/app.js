@@ -20,6 +20,8 @@ const adminOrderRoutes = require("./routes/adminOrderRoutes");
 const adminCustomerRoutes = require("./routes/adminCustomerRoutes");
 const adminAnalyticsRoutes = require("./routes/adminAnalyticsRoutes");
 const uploadRoutes = require("./routes/uploadRoutes"); // Phase 12: direct-to-storage authorization
+const reviewRoutes = require("./routes/reviewRoutes");
+const adminReviewRoutes = require("./routes/adminReviewRoutes");
 
 // Parses TRUST_PROXY (see call site in createApp). Exported for unit tests.
 // Values are deliberately restricted: Express's trust-all (`true`) and the
@@ -89,6 +91,8 @@ function createApp() {
   app.use("/api/admin/orders", adminOrderRoutes);
   app.use("/api/admin/customers", adminCustomerRoutes);
   app.use("/api/admin/analytics", adminAnalyticsRoutes);
+  app.use("/api/admin/reviews", adminReviewRoutes);
+  app.use("/api/reviews", reviewRoutes);
   app.use("/api/uploads", uploadRoutes); // POST /api/uploads/authorize (admin-only)
 
   // 404 for unknown API routes (clean JSON instead of HTML errors)

@@ -15,6 +15,7 @@ const { validateBody } = require("../middleware/validate");
 
 const addToCartSchema = {
   productId: { required: true, type: "integer", min: 1, max: 2147483647 },
+  variantId: { type: "integer", min: 1, max: 2147483647 },
   qty: { type: "integer", min: 1, max: MAX_LINE_QTY }
 };
 

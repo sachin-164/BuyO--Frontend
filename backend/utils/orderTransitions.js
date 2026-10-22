@@ -20,15 +20,26 @@
 //     so a cancellation can never deadlock a concurrent purchase.
 const { stockDelta } = require("./sqlLiterals");
 const Product = require("../models/product");
+const ProductVariant = require("../models/productVariant");
 const OrderItem = require("../models/orderItem");
 const OrderStatusEvent = require("../models/orderStatusEvent");
+const { syncProductStock } = require("./variants");
 const { HttpError } = require("./apiError");
 const { ALLOWED_TRANSITIONS } = require("./orderStatus");
 
 /**
- * Restores stock for every line of an order. Lines whose product was deleted
- * (productId === null, ON DELETE SET NULL) are skipped — there is nothing left
- * to restock, and the snapshot keeps the history readable.
+ * Restores stock for every line of an order.
+ *
+ * - Variant lines increment the variant row; Products.stock is then recomputed
+ *   as SUM(active variant stock), because it is only a cache for products that
+ *   have variants.
+ * - A product with no variants still restocks its legacy Products.stock.
+ * - Lines whose product was deleted are skipped. A line whose variant was
+ *   deleted (variantId SET NULL, snapshot kept) is also skipped: there is no
+ *   live row to restore, and restoring the base product would be wrong.
+ *
+ * Lock order is ascending productId, then ascending variantId — the same order
+ * checkout uses — so cancellation can never deadlock a concurrent purchase.
  */
 async function restockOrderItems(orderId, transaction) {
   const sequelize = Product.sequelize;
@@ -38,17 +49,57 @@ async function restockOrderItems(orderId, transaction) {
     transaction
   });
 
+  const itemsByProduct = new Map();
   for (const item of items) {
-    if (item.productId === null) continue;
     const qty = Number(item.qty);
     if (!Number.isInteger(qty) || qty < 1) {
       // Not user-triggerable: qty is a validated positive INT column.
       throw new Error(`Non-integer order item quantity during restock: ${item.qty}`);
     }
-    await Product.update(
-      { stock: sequelize.literal(stockDelta("+", qty)) },
-      { where: { id: item.productId }, transaction }
-    );
+    if (item.productId === null) continue;
+    if (!itemsByProduct.has(item.productId)) itemsByProduct.set(item.productId, []);
+    itemsByProduct.get(item.productId).push(item);
+  }
+
+  for (const productId of [...itemsByProduct.keys()].sort((a, b) => a - b)) {
+    const product = await Product.findByPk(productId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE
+    });
+    if (!product) continue;
+
+    const productItems = itemsByProduct.get(productId);
+    const variantCount = await ProductVariant.count({ where: { productId }, transaction });
+
+    if (variantCount > 0) {
+      const qtyByVariant = new Map();
+      for (const item of productItems) {
+        if (item.variantId === null) continue; // deleted variant or legacy base line
+        qtyByVariant.set(item.variantId, (qtyByVariant.get(item.variantId) || 0) + Number(item.qty));
+      }
+      for (const variantId of [...qtyByVariant.keys()].sort((a, b) => a - b)) {
+        const qty = qtyByVariant.get(variantId);
+        await ProductVariant.update(
+          { stock: sequelize.literal(stockDelta("+", qty)) },
+          { where: { id: variantId, productId }, transaction }
+        );
+      }
+      await syncProductStock(productId, transaction);
+      continue;
+    }
+
+    // No variants exist for this product: only legacy base lines restock the
+    // product row. Variant snapshots without a live variant have no row to
+    // restore and are intentionally skipped.
+    const qty = productItems
+      .filter((item) => item.variantId === null && !item.variantSku)
+      .reduce((sum, item) => sum + Number(item.qty), 0);
+    if (qty > 0) {
+      await Product.update(
+        { stock: sequelize.literal(stockDelta("+", qty)) },
+        { where: { id: productId }, transaction }
+      );
+    }
   }
 }
 

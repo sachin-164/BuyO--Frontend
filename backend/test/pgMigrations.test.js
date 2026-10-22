@@ -53,10 +53,12 @@ const PG_MIGRATIONS = [
   "006_pg_wishlist_items_user_product_unique.pgsql",
   "007_pg_ci_unique_email_and_category.pgsql",
   "008_create_product_images.pgsql",
-  "009_categories_parent.pgsql"
+  "009_categories_parent.pgsql",
+  "010_product_variants.pgsql",
+  "011_product_reviews.pgsql"
 ];
 const NEW_INDEXES = [
-  "uq_cartitems_user_product",
+  "uq_cartitems_user_product_variant",
   "uq_wishlistitems_user_product",
   "uq_users_email_lower",
   "uq_categories_name_lower"
@@ -174,7 +176,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     }
 
     const result = await runMigrations({ quiet: true });
-    assert.deepEqual(result.applied, PG_MIGRATIONS, "all four migration files must apply in order");
+    assert.deepEqual(result.applied, PG_MIGRATIONS, "all eight migration files must apply in order");
 
     const afterIdx = await indexNames();
     for (const name of NEW_INDEXES) assert.ok(afterIdx.includes(name), `${name} must exist after migration`);
@@ -184,7 +186,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
       `SELECT ix.relname AS name, i.indisunique AS uniq, i.indisvalid AS valid
        FROM pg_index i
        JOIN pg_class ix ON ix.oid = i.indexrelid
-       WHERE ix.relname IN ('uq_cartitems_user_product','uq_wishlistitems_user_product','uq_users_email_lower','uq_categories_name_lower')
+       WHERE ix.relname IN ('uq_cartitems_user_product_variant','uq_wishlistitems_user_product','uq_users_email_lower','uq_categories_name_lower')
        ORDER BY ix.relname`
     );
     assert.equal(meta.length, 4);
@@ -197,19 +199,34 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
       `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN (${NEW_INDEXES.map((n) => `'${n}'`).join(",")})`
     );
     const byName = Object.fromEntries(defs.map((d) => [d.indexname, d.indexdef]));
-    for (const composite of ["uq_cartitems_user_product", "uq_wishlistitems_user_product"]) {
-      assert.ok(
-        byName[composite].startsWith(`CREATE UNIQUE INDEX ${composite} ON`),
-        `${composite} must be a unique index, got: ${byName[composite]}`
-      );
-      assert.match(byName[composite], /\("UserId", "productId"\)/, `${composite} must cover the physical FK columns`);
-    }
+    assert.ok(
+      byName.uq_cartitems_user_product_variant.startsWith(
+        "CREATE UNIQUE INDEX uq_cartitems_user_product_variant ON"
+      ),
+      `cart index must be unique, got: ${byName.uq_cartitems_user_product_variant}`
+    );
+    assert.match(
+      byName.uq_cartitems_user_product_variant,
+      /\("UserId", "productId", COALESCE\("variantId", 0\)\)/,
+      "cart index must cover the physical identity incl. nullable variantId"
+    );
+    assert.ok(
+      byName.uq_wishlistitems_user_product.startsWith(
+        "CREATE UNIQUE INDEX uq_wishlistitems_user_product ON"
+      ),
+      `${"uq_wishlistitems_user_product"} must be a unique index, got: ${byName.uq_wishlistitems_user_product}`
+    );
+    assert.match(
+      byName.uq_wishlistitems_user_product,
+      /\("UserId", "productId"\)/,
+      "wishlist index must cover the physical FK columns"
+    );
     assert.match(byName.uq_users_email_lower, /lower\(.*email/i, "email index must be functional on LOWER(email)");
     assert.match(byName.uq_categories_name_lower, /lower\(.*name/i, "category index must be functional on LOWER(name)");
     assert.deepEqual(
       (await query(`SELECT id FROM "schema_migrations" ORDER BY id`)).map((r) => r.id),
       PG_MIGRATIONS,
-      "bookkeeping must record exactly the four applied files"
+      "bookkeeping must record exactly the eight applied files"
     );
   });
 
@@ -234,7 +251,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     const text = await rejectionText(
       CartItem.create({ UserId: userA.id, productId: 202, name: "Cart Dup Second", price: 1 })
     );
-    assert.match(text, /uq_cartitems_user_product/, `wrong constraint fired: ${text}`);
+    assert.match(text, /uq_cartitems_user_product_variant/, `wrong constraint fired: ${text}`);
 
     // Same product, different user: allowed.
     await CartItem.create({ UserId: userB.id, productId: 202, name: "Other User Line", price: 1 });
@@ -303,9 +320,12 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
       return true;
     });
 
-    // Rollback: bookkeeping keeps 000/006/007 only; the PRE-EXISTING wrong
-    // index is untouched (the skipped CREATE was rolled back, nothing else dropped).
-    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0], PG_MIGRATIONS[2], PG_MIGRATIONS[3]]);
+    // Rollback: bookkeeping keeps every other applied file; the PRE-EXISTING
+    // wrong index is untouched (the skipped CREATE was rolled back, nothing else dropped).
+    assert.deepEqual(
+      await appliedIds(),
+      PG_MIGRATIONS.filter((id) => id !== PG_MIGRATIONS[1]).sort()
+    );
     const wrong = await query(`SELECT indexdef FROM pg_indexes WHERE indexname = 'uq_cartitems_user_product'`);
     assert.equal(wrong.length, 1, "the pre-existing wrong index must survive the rollback");
     assert.match(wrong[0].indexdef, /USING btree \("UserId"\)/, "must still be the wrong definition");
@@ -324,7 +344,9 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
 
   it("pre-existing cart duplicates: clear failure, NO data change, NO index, failed file unrecorded", async () => {
     // Simulate a legacy database where these migrations never ran.
-    for (const idx of NEW_INDEXES) await query(`DROP INDEX IF EXISTS "${idx}"`);
+    for (const idx of [...NEW_INDEXES, "uq_cartitems_user_product"]) {
+      await query(`DROP INDEX IF EXISTS "${idx}"`);
+    }
     await query(`DELETE FROM "schema_migrations"`);
 
     // Genuine duplicate rows exist before the migration runs (no index yet).
@@ -379,6 +401,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     const idx = await indexNames();
     assert.ok(idx.includes("uq_cartitems_user_product"));
     assert.ok(idx.includes("uq_wishlistitems_user_product"));
+    assert.ok(!idx.includes("uq_cartitems_user_product_variant"), "010 must still be pending");
     assert.ok(!idx.includes("uq_users_email_lower"), "007 must roll back completely");
     assert.ok(!idx.includes("uq_categories_name_lower"), "007 must roll back completely");
   });
@@ -410,10 +433,11 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     await query(`DELETE FROM "Categories" WHERE slug IN ('p6-dup-a', 'p6-dup-b')`);
 
     const result = await runMigrations({ quiet: true });
-    assert.deepEqual(result.applied, [PG_MIGRATIONS[3]]);
+    assert.deepEqual(result.applied, PG_MIGRATIONS.slice(3));
 
     const idx = await indexNames();
     for (const name of NEW_INDEXES) assert.ok(idx.includes(name), `${name} must exist after recovery`);
+    assert.ok(!idx.includes("uq_cartitems_user_product"), "010 replaces the old two-column cart index");
 
     // Rerun safety (requirement 7) after the recovery journey.
     const again = await runMigrations({ quiet: true });

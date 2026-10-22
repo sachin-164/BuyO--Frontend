@@ -33,6 +33,7 @@ process.env.PG_DB = dbName; // BEFORE config/db is required (models bind it)
   require("../models/order"); // pulls orderItem + orderStatusEvent
   require("../models/cart");
   require("../models/wishlist");
+  require("../models/productReview");
   const sequelize = require("../config/db");
   await sequelize.sync(); // base schema from models (no alter — Phase 7 rule)
 

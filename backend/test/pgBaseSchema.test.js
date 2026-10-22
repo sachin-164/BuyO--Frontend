@@ -6,9 +6,11 @@
 //      in-file verify directives must pass and all four files must be
 //      recorded, with all nine tables and five enum types physically present.
 //   2. That migration-built schema must be catalog-IDENTICAL to a sync-built
-//      twin (columns incl. ordinals/types/defaults/nullability, constraint
-//      definitions, index definitions, enum labels, sequences) — the base
-//      migration must not drift from what the models define.
+//      twin (columns incl. types/defaults/nullability, constraint definitions,
+//      index definitions, enum labels, sequences). Column ORDINALS are
+//      intentionally excluded: additive ALTERs append columns on an upgraded
+//      database while a fresh sync declares them in model order — the physical
+//      order is not part of the contract.
 //   3. The real application must RUN against the migration-built schema:
 //      signup → verify → login → /auth/me, admin catalog writes (Categories,
 //      Products), cart double-add collapsing to one line (005), wishlist
@@ -41,12 +43,15 @@ const EXPECTED_MIGRATIONS = [
   "006_pg_wishlist_items_user_product_unique.pgsql",
   "007_pg_ci_unique_email_and_category.pgsql",
   "008_create_product_images.pgsql",
-  "009_categories_parent.pgsql"
+  "009_categories_parent.pgsql",
+  "010_product_variants.pgsql",
+  "011_product_reviews.pgsql"
 ];
 
 const APP_TABLES = [
   "Addresses", "CartItems", "Categories", "OrderItems", "OrderStatusEvents",
-  "Orders", "ProductImages", "Products", "Users", "WishlistItems"
+  "Orders", "ProductImages", "ProductReviews", "Products", "ProductVariants",
+  "Users", "WishlistItems"
 ];
 
 const APP_ENUMS = [
@@ -54,6 +59,7 @@ const APP_ENUMS = [
   "enum_OrderStatusEvents_toStatus",
   "enum_Orders_paymentMethod",
   "enum_Orders_status",
+  "enum_ProductReviews_status",
   "enum_Users_role"
 ];
 
@@ -62,12 +68,12 @@ const APP_ENUMS = [
 // runner-owned, not application schema.
 const CATALOG_SQL = {
   columns: `
-    SELECT c.table_name, c.column_name, c.ordinal_position, c.data_type, c.udt_name,
+    SELECT c.table_name, c.column_name, c.data_type, c.udt_name,
            c.character_maximum_length, c.numeric_precision, c.numeric_scale,
            c.datetime_precision, c.is_nullable, c.column_default
     FROM information_schema.columns c
     WHERE c.table_schema = 'public' AND c.table_name <> 'schema_migrations'
-    ORDER BY c.table_name, c.ordinal_position`,
+    ORDER BY c.table_name, c.column_name`,
   constraints: `
     SELECT con.conname, con.conrelid::regclass::text AS tbl, con.contype,
            pg_get_constraintdef(con.oid) AS def
@@ -165,6 +171,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     require("../models/wishlist");
     require("../models/address");
     require("../models/order"); // pulls in orderItem + orderStatusEvent
+    require("../models/productReview");
 
     const app = createApp();
     server = app.listen(0);
@@ -195,11 +202,11 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
 
   // ------------------------------------------------------------------ tests
 
-  it("migrations alone initialize an empty database (000, 005, 006, 007, 008, 009)", async () => {
-    assert.deepEqual(emptyResult.applied, EXPECTED_MIGRATIONS, "all six files must apply in order on an empty DB");
+  it("migrations alone initialize an empty database (000, 005–011)", async () => {
+    assert.deepEqual(emptyResult.applied, EXPECTED_MIGRATIONS, "all eight files must apply in order on an empty DB");
 
     const bookkeeping = (await query(`SELECT id FROM "schema_migrations" ORDER BY id`)).map((r) => r.id);
-    assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "bookkeeping must record exactly the six files");
+    assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "bookkeeping must record exactly the eight files");
 
     // External proof (independent of the in-file verify directives): every
     // application table and enum type physically exists.
@@ -210,7 +217,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
          WHERE n.nspname = current_schema() AND c.relkind = 'r'`
       )
     ).map((r) => r.relname).sort();
-    assert.deepEqual(tables, [...APP_TABLES, "schema_migrations"].sort(), "exactly the ten app tables + bookkeeping");
+    assert.deepEqual(tables, [...APP_TABLES, "schema_migrations"].sort(), "exactly the twelve app tables + bookkeeping");
 
     const enums = (
       await query(
@@ -219,7 +226,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
          WHERE n.nspname = current_schema() AND t.typtype = 'e'`
       )
     ).map((r) => r.typname).sort();
-    assert.deepEqual(enums, [...APP_ENUMS].sort(), "exactly the five enum types");
+    assert.deepEqual(enums, [...APP_ENUMS].sort(), "exactly the six enum types");
   });
 
   it("migration-built schema is catalog-identical to a sync-built twin", async () => {
@@ -320,6 +327,70 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
       /uq_wishlistitems_user_product/
     );
 
+    // ---- variant SKU uniqueness at the DATABASE level (010) ----
+    const ProductVariant = require("../models/productVariant");
+    const reviewVariantSku = `PG-SCHEMA-${productId}`;
+    await ProductVariant.create({
+      productId,
+      sku: reviewVariantSku,
+      size: "M",
+      stock: 2,
+      priceAdjustment: 0
+    });
+    let skuErr = null;
+    try {
+      await ProductVariant.create({
+        productId,
+        sku: reviewVariantSku,
+        size: "L",
+        stock: 1,
+        priceAdjustment: 0
+      });
+    } catch (err) {
+      skuErr = err;
+    }
+    assert.ok(skuErr, "duplicate variant SKU must be rejected by the database");
+    assert.match(
+      [skuErr.message, skuErr.original && skuErr.original.message].filter(Boolean).join(" | "),
+      /ProductVariants_sku_key/
+    );
+
+    // ---- one review per customer/product + pending default (011) ----
+    const ProductReview = require("../models/productReview");
+    const ReviewUser = require("../models/user");
+    const reviewAuthor = await ReviewUser.create({
+      name: "PG Schema Reviewer",
+      email: `pg.reviewer.${productId}@buyotest.local`,
+      password: "fixture-only",
+      isVerified: true
+    });
+    await ProductReview.create({
+      productId,
+      userId: reviewAuthor.id,
+      rating: 5,
+      body: "PostgreSQL review body long enough"
+    });
+    const storedReview = await query(
+      `SELECT status FROM "ProductReviews" WHERE "productId" = ${productId} AND "userId" = ${reviewAuthor.id}`
+    );
+    assert.equal(storedReview[0].status, "pending", "new reviews default to pending in the DB");
+    let reviewErr = null;
+    try {
+      await ProductReview.create({
+        productId,
+        userId: reviewAuthor.id,
+        rating: 4,
+        body: "A second review must be rejected"
+      });
+    } catch (err) {
+      reviewErr = err;
+    }
+    assert.ok(reviewErr, "one review per customer/product must be enforced by the database");
+    assert.match(
+      [reviewErr.message, reviewErr.original && reviewErr.original.message].filter(Boolean).join(" | "),
+      /uq_product_reviews_user_product/
+    );
+
     // ---- case-insensitive duplicate email rejected by the DATABASE (007) ----
     const User = require("../models/user");
     let dupErr = null;
@@ -389,7 +460,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     assert.match(enumErr.message, /enum_Orders_status|invalid input value for enum/);
   });
 
-  it("rerun is a no-op and the sync-built twin applied the same five files", async () => {
+  it("rerun is a no-op and the sync-built twin applied the same files", async () => {
     const again = await runMigrations({ quiet: true });
     assert.deepEqual(again.applied, []);
     assert.equal(again.upToDate, true);
@@ -397,9 +468,9 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     const bookkeeping = (await query(`SELECT id FROM "schema_migrations" ORDER BY id`)).map((r) => r.id);
     assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "000 must be recorded exactly once");
 
-    // The twin child ran sync FIRST, then the same migrations — 000 must have
-    // no-op'd there and all five files must be recorded (applied_pgsql=5).
+    // The twin child ran sync FIRST, then the same migrations — 000 and every
+    // additive migration must no-op there, and all eight files are recorded.
     assert.match(twinStdout, new RegExp(`SCHEMA_OK ${TWIN_DB}`));
-    assert.match(twinStdout, /applied_pgsql=5/);
+    assert.match(twinStdout, /applied_pgsql=8/);
   });
 });

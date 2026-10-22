@@ -1,9 +1,9 @@
 -- 009_categories_parent.pgsql
 -- PostgreSQL mirror of 009_categories_parent.sql (Phase G, item 29).
--- Additive + guarded; one transaction is applied by the PG runner.
--- Rollback (reviewed + manual; discards hierarchy links only):
---   ALTER TABLE "Categories" DROP CONSTRAINT "Categories_parentId_fkey";
---   ALTER TABLE "Categories" DROP COLUMN "parentId";
+-- Additive + guarded — one transaction is applied by the PG runner.
+-- Rollback (reviewed + manual, discards hierarchy links only):
+--   ALTER TABLE "Categories" DROP CONSTRAINT "Categories_parentId_fkey"
+--   ALTER TABLE "Categories" DROP COLUMN "parentId"
 
 ALTER TABLE "Categories" ADD COLUMN IF NOT EXISTS "parentId" integer;
 

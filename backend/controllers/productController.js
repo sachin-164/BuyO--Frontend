@@ -9,10 +9,12 @@ const fs = require("fs");
 const sequelize = require("../config/db");
 const Product = require("../models/product");
 const ProductImage = require("../models/productImage");
+const ProductVariant = require("../models/productVariant");
 const Category = require("../models/category");
 const { resolveDialect } = require("../config/dbConnectionOptions");
 const { slugify, uniqueSlug } = require("../utils/slugify");
 const { uniqueConflictMessage } = require("../utils/uniqueErrors");
+const { toMoney } = require("../utils/pricing");
 // Phase 12: hosted-mode image verification (ledger + stored-object checks).
 // Local mode is a byte-identical passthrough inside this helper.
 const {
@@ -27,6 +29,40 @@ const imagesOrder = [
   [{ model: ProductImage, as: "images" }, "position", "ASC"],
   [{ model: ProductImage, as: "images" }, "id", "ASC"]
 ];
+
+// Public catalog only ever exposes active variants. A product with no variants
+// keeps using Products.stock exactly as before; `hasVariants` tells the
+// storefront to require an option choice instead of one-click adding.
+const variantsInclude = {
+  model: ProductVariant,
+  as: "variants",
+  required: false,
+  where: { isActive: true },
+  attributes: ["id", "sku", "size", "color", "priceAdjustment", "stock", "isActive"]
+};
+const variantsOrder = [[{ model: ProductVariant, as: "variants" }, "id", "ASC"]];
+
+/**
+ * Public product JSON: adds the resolved unit price for each active variant
+ * and a stable `hasVariants` flag. Existing fields are untouched so legacy
+ * clients keep working.
+ */
+function serializePublicProduct(product) {
+  const json = typeof product.toJSON === "function" ? product.toJSON() : product;
+  const basePrice = Number(json.sellingPrice);
+  const variants = (json.variants || [])
+    .filter(Boolean)
+    .map((variant) => ({
+      ...variant,
+      priceAdjustment: Number(variant.priceAdjustment),
+      stock: Number(variant.stock),
+      unitPrice: toMoney(basePrice + Number(variant.priceAdjustment || 0))
+    }))
+    .sort((a, b) => a.id - b.id);
+  json.variants = variants;
+  json.hasVariants = variants.length > 0;
+  return json;
+}
 
 // Removes a file multer just wrote (only ever used on a failed request).
 function removeUploadedFile(file) {
@@ -197,10 +233,14 @@ const addProduct = async (req, res) => {
     });
 
     const withCategory = await Product.findByPk(product.id, {
-      include: [...categoryInclude, imagesInclude],
-      order: imagesOrder
+      include: [...categoryInclude, imagesInclude, variantsInclude],
+      order: [...imagesOrder, ...variantsOrder]
     });
-    res.status(201).json({ success: true, message: "✅ Product added successfully!", product: withCategory });
+    res.status(201).json({
+      success: true,
+      message: "✅ Product added successfully!",
+      product: serializePublicProduct(withCategory)
+    });
   } catch (error) {
     // DB write failed after a direct upload was verified: best-effort remove
     // the just-uploaded object so it cannot linger as an orphan.
@@ -257,14 +297,14 @@ const getProducts = async (req, res) => {
       limit,
       offset,
       distinct: true,
-      include: categoryInclude
+      include: [...categoryInclude, variantsInclude]
     });
 
     const totalPages = Math.max(1, Math.ceil(count / limit));
     res.json({
       success: true,
       count: rows.length, // rows on this page (legacy field kept)
-      products: rows,
+      products: rows.map(serializePublicProduct),
       pagination: {
         page,
         limit,
@@ -301,14 +341,14 @@ async function findProductByIdentifier(identifier, options = {}) {
 const getProduct = async (req, res) => {
   try {
     const product = await findProductByIdentifier(req.params.identifier, {
-      include: [...categoryInclude, imagesInclude],
-      order: imagesOrder
+      include: [...categoryInclude, imagesInclude, variantsInclude],
+      order: [...imagesOrder, ...variantsOrder]
     });
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
 
-    res.json({ success: true, product });
+    res.json({ success: true, product: serializePublicProduct(product) });
   } catch (error) {
     console.error("❌ Error fetching product:", error);
     res.status(500).json({ success: false, message: "Error fetching product" });
@@ -396,7 +436,7 @@ const getRelatedProducts = async (req, res) => {
 
     const base = { ...categoryWhere, id: { [Op.ne]: product.id } };
     const select = {
-      include: categoryInclude,
+      include: [...categoryInclude, variantsInclude],
       order: [
         ["createdAt", "DESC"],
         ["id", "DESC"]
@@ -422,7 +462,7 @@ const getRelatedProducts = async (req, res) => {
       rows.push(...remainder);
     }
 
-    res.json({ success: true, productId: product.id, count: rows.length, products: rows });
+    res.json({ success: true, productId: product.id, count: rows.length, products: rows.map(serializePublicProduct) });
   } catch (error) {
     console.error("❌ Error fetching related products:", error);
     res.status(500).json({ success: false, message: "Error fetching related products" });
@@ -469,6 +509,28 @@ const updateProduct = async (req, res) => {
         message: "Validation failed",
         errors: ["sellingPrice cannot be greater than mrpPrice"]
       });
+    }
+
+    // Variant-managed inventory: Products.stock is a server-maintained cache.
+    // Refuse direct edits rather than silently desynchronising the variants,
+    // and keep every resulting variant price positive when the base price moves.
+    const variantCount = await ProductVariant.count({ where: { productId: id } });
+    if (has("stock") && variantCount > 0) {
+      return res.status(409).json({
+        success: false,
+        code: "STOCK_MANAGED_BY_VARIANTS",
+        message: "Stock is managed by this product's variants. Update variant stock instead."
+      });
+    }
+    if (has("sellingPrice") && variantCount > 0) {
+      const lowestAdjustment = await ProductVariant.min("priceAdjustment", { where: { productId: id } });
+      if (Number(finalSelling) + Number(lowestAdjustment || 0) <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Validation failed",
+          errors: ["sellingPrice would make a variant price zero or negative"]
+        });
+      }
     }
 
     // Explicit slug change must not collide (empty string = no change).
@@ -530,10 +592,10 @@ const updateProduct = async (req, res) => {
       await releaseImageIfUnused(previousImage, product.id);
     }
     const refreshed = await Product.findByPk(product.id, {
-      include: [...categoryInclude, imagesInclude],
-      order: imagesOrder
+      include: [...categoryInclude, imagesInclude, variantsInclude],
+      order: [...imagesOrder, ...variantsOrder]
     });
-    res.json({ success: true, message: "Product updated", product: refreshed });
+    res.json({ success: true, message: "Product updated", product: serializePublicProduct(refreshed) });
   } catch (error) {
     // DB write failed after a direct upload was verified: best-effort remove
     // the just-uploaded object so it cannot linger as an orphan.
@@ -651,8 +713,8 @@ function parseImagesPayload(raw) {
 
 async function loadProductWithImages(id) {
   return Product.findByPk(id, {
-    include: [...categoryInclude, imagesInclude],
-    order: imagesOrder
+    include: [...categoryInclude, imagesInclude, variantsInclude],
+    order: [...imagesOrder, ...variantsOrder]
   });
 }
 
@@ -730,7 +792,7 @@ const replaceProductImages = async (req, res) => {
     }
 
     const refreshed = await loadProductWithImages(id);
-    res.json({ success: true, message: "Product images updated", product: refreshed });
+    res.json({ success: true, message: "Product images updated", product: serializePublicProduct(refreshed) });
   } catch (error) {
     console.error("❌ Error updating product images:", error);
     res.status(500).json({ success: false, message: "Error updating product images" });
@@ -832,7 +894,7 @@ const appendProductImage = async (req, res) => {
     }
 
     const refreshed = await loadProductWithImages(id);
-    res.status(201).json({ success: true, message: "Product image added", product: refreshed });
+    res.status(201).json({ success: true, message: "Product image added", product: serializePublicProduct(refreshed) });
   } catch (error) {
     removeUploadedFile(req.file);
     console.error("❌ Error adding product image:", error);
@@ -879,7 +941,7 @@ const deleteProductImage = async (req, res) => {
     // Released only after the transaction committed.
     await releaseImageIfUnused(removedUrl, null);
     const refreshed = await loadProductWithImages(id);
-    res.json({ success: true, message: "Product image removed", product: refreshed });
+    res.json({ success: true, message: "Product image removed", product: serializePublicProduct(refreshed) });
   } catch (error) {
     console.error("❌ Error deleting product image:", error);
     res.status(500).json({ success: false, message: "Error removing product image" });
@@ -897,6 +959,8 @@ module.exports = {
   deleteProductImage,
   getSuggestions,
   getRelatedProducts,
+  findProductByIdentifier,
+  serializePublicProduct,
   DEFAULT_LIMIT,
   MAX_LIMIT
 };

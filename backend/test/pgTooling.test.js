@@ -55,7 +55,9 @@ const PG_MIGRATIONS = [
   "006_pg_wishlist_items_user_product_unique.pgsql",
   "007_pg_ci_unique_email_and_category.pgsql",
   "008_create_product_images.pgsql",
-  "009_categories_parent.pgsql"
+  "009_categories_parent.pgsql",
+  "010_product_variants.pgsql",
+  "011_product_reviews.pgsql"
 ];
 
 const CANDIDATE = "admin.candidate@buyotest.local";
@@ -297,7 +299,7 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
 
     // Representative tables: rows, serial sequences, catalog-built CREATE TABLE.
     assert.equal(dump.tables.Users.rowCount, 2);
-    assert.equal(dump.tables.schema_migrations.rowCount, 5, "applied .pgsql migrations must be in the backup");
+    assert.equal(dump.tables.schema_migrations.rowCount, 8, "applied .pgsql migrations must be in the backup");
     assert.equal(dump.tables.Products.rowCount, 0, "empty tables are backed up too");
     assert.match(dump.tables.Users.createSql, /DEFAULT nextval\('"Users_id_seq"'::regclass\)/);
     assert.ok(
@@ -316,7 +318,7 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
       "the functional LOWER(email) index must be captured as a raw index"
     );
     assert.ok(
-      dump.tables.CartItems.indexSqls.some((sql) => sql.includes("uq_cartitems_user_product")),
+      dump.tables.CartItems.indexSqls.some((sql) => sql.includes("uq_cartitems_user_product_variant")),
       "the composite cart index must be captured as a raw index"
     );
     assert.ok(
@@ -426,8 +428,8 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
     assert.match(byName.Users_email_key, /USING btree \(email\)/, "unique email constraint must exist");
     assert.match(byName.uq_users_email_lower, /lower\(.*email/i, "functional index must exist");
     assert.match(
-      byName.uq_cartitems_user_product,
-      /USING btree \("UserId", "productId"\)/,
+      byName.uq_cartitems_user_product_variant,
+      /USING btree \("UserId", "productId", COALESCE\("variantId", 0\)\)/,
       "composite cart index must exist"
     );
     assert.ok(byName.Orders_number_key || byName.uq_orders_number, "orders unique must exist");
@@ -440,8 +442,10 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
        JOIN pg_namespace n ON n.oid = c.relnamespace
        WHERE n.nspname = current_schema() AND c.relname = 'CartItems' AND con.contype = 'f'`
     );
-    assert.equal(fks.length, 1, "the CartItems FK must be restored");
-    assert.match(fks[0].def, /FOREIGN KEY \("UserId"\) REFERENCES "Users"\(id\)/);
+    assert.equal(fks.length, 2, "both CartItems FKs must be restored");
+    const cartFkDefs = fks.map((fk) => fk.def).join("\n");
+    assert.match(cartFkDefs, /FOREIGN KEY \("UserId"\) REFERENCES "Users"\(id\)/);
+    assert.match(cartFkDefs, /FOREIGN KEY \("variantId"\) REFERENCES "ProductVariants"\(id\)/);
 
     // 5. Enum types restored with their labels; enum values are readable.
     const roleLabels = await queryDb(

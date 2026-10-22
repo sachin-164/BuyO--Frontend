@@ -124,6 +124,10 @@ const listAdminOrders = async (req, res, next) => {
         items: (order.OrderItems || []).map((item) => ({
           id: item.id,
           productId: item.productId,
+          variantId: item.variantId ?? null,
+          variantSku: item.variantSku || null,
+          variantSize: item.variantSize || null,
+          variantColor: item.variantColor || null,
           name: item.name,
           unitPrice: Number(item.unitPrice),
           qty: item.qty,

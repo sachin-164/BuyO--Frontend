@@ -114,7 +114,7 @@ describe("Guest cart merge (Phase E)", () => {
     assert.equal(res.json.items[0].qty, 4, "never above stock");
     assert.equal(res.json.items[0].stockExceeded, false);
     assert.deepEqual(res.json.clamped, [
-      { productId: limited.id, available: 4, requested: 12 }
+      { productId: limited.id, variantId: null, available: 4, requested: 12 }
     ]);
   });
 
@@ -172,7 +172,7 @@ describe("Guest cart merge (Phase E)", () => {
     assert.equal(second.json.items[0].qty, 2, "a retry cannot double the quantity");
     assert.deepEqual(second.json.merged, []);
     assert.deepEqual(second.json.clamped, [
-      { productId: scarce.id, available: 2, requested: 4 }
+      { productId: scarce.id, variantId: null, available: 2, requested: 4 }
     ]);
   });
 

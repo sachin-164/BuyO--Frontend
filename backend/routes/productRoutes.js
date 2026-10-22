@@ -19,6 +19,16 @@ const {
   getRelatedProducts,
   MAX_LIMIT
 } = require("../controllers/productController");
+const {
+  listVariants,
+  createVariant,
+  updateVariant,
+  deactivateVariant
+} = require("../controllers/variantController");
+const {
+  getProductReviews,
+  createReview
+} = require("../controllers/reviewController");
 const { requireAuth, requireAdmin } = require("../middleware/auth");
 const { validateBody, validateQuery } = require("../middleware/validate");
 const { isValidSlug } = require("../utils/slugify");
@@ -257,11 +267,43 @@ for (const field of ["name", "category", "mrpPrice", "sellingPrice"]) {
 }
 // categoryId: null explicitly unlinks the product from its category (legacy string kept)
 
+// ----- variants (admin only; the controller applies option/SKU/price rules) -----
+const variantOptionRules = {
+  size: { type: "string", maxLength: 40 },
+  color: { type: "string", maxLength: 40 }
+};
+const createVariantSchema = {
+  ...variantOptionRules,
+  sku: { required: true, type: "string", minLength: 1, maxLength: 64 },
+  stock: { type: "integer", min: 0, max: 1000000000 },
+  priceAdjustment: { type: "number", min: -1000000, max: 1000000 },
+  isActive: { type: "boolean" }
+};
+const updateVariantSchema = Object.fromEntries(
+  Object.entries(createVariantSchema).map(([field, rules]) => [field, { ...rules }])
+);
+delete updateVariantSchema.sku.required;
+
+// ----- reviews -----
+const publicReviewQuerySchema = {
+  page: { type: "integer", min: 1, max: 100000000 },
+  limit: { type: "integer", min: 1, max: 50 }
+};
+const createReviewSchema = {
+  rating: { required: true, type: "integer", min: 1, max: 5 },
+  title: { type: "string", maxLength: 120 },
+  // The controller re-checks these bounds; validation here also strips fields
+  // such as status/userId/moderation fields before they can reach the handler.
+  body: { required: true, type: "string", minLength: 10, maxLength: 2000 }
+};
+
 // ---------- routes ----------
 router.get("/", validateQuery(listQuerySchema), getProducts); // GET /api/products (public)
 // Suggestions MUST be declared before /:identifier, or "suggestions" would be
 // resolved as a product slug.
 router.get("/suggestions", getSuggestions);                   // GET /api/products/suggestions?q= (public)
+router.get("/:identifier/reviews", validateQuery(publicReviewQuerySchema), getProductReviews);
+router.post("/:identifier/reviews", requireAuth, validateBody(createReviewSchema), createReview);
 router.get("/:identifier", getProduct);                       // GET /api/products/:id or :slug (public)
 router.get("/:identifier/related", getRelatedProducts);       // same-category siblings (public)
 
@@ -313,6 +355,18 @@ router.post(
   appendProductImage
 );
 router.delete("/:id/images/:imageId", requireAuth, requireAdmin, deleteProductImage);
+
+// Admin-only variants. DELETE is a soft deactivation; order snapshots survive.
+router.get("/:id/variants", requireAuth, requireAdmin, listVariants);
+router.post("/:id/variants", requireAuth, requireAdmin, validateBody(createVariantSchema), createVariant);
+router.put(
+  "/:id/variants/:variantId",
+  requireAuth,
+  requireAdmin,
+  validateBody(updateVariantSchema),
+  updateVariant
+);
+router.delete("/:id/variants/:variantId", requireAuth, requireAdmin, deactivateVariant);
 
 // Admin-only
 router.delete("/:id", requireAuth, requireAdmin, deleteProduct);

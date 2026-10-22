@@ -34,12 +34,14 @@ const { stockDelta } = require("../utils/sqlLiterals");
 const User = require("../models/user");
 const CartItem = require("../models/cart");
 const Product = require("../models/product");
+const ProductVariant = require("../models/productVariant");
 const Category = require("../models/category");
 const Address = require("../models/address");
 const Order = require("../models/order");
 const OrderItem = require("../models/orderItem");
 const OrderStatusEvent = require("../models/orderStatusEvent");
 const { buildOrderTotals } = require("../utils/pricing");
+const { variantUnitPrice, syncProductStock } = require("../utils/variants");
 const { HttpError, parsePositiveId } = require("../utils/apiError");
 const { STATUS_VALUES } = require("../utils/orderStatus");
 const { applyStatusTransition, canCancel } = require("../utils/orderTransitions");
@@ -59,6 +61,29 @@ function generateOrderNumber() {
   return `BO-${stamp}-${suffix}`;
 }
 
+function serializeOrderItem(item) {
+  return {
+    id: item.id,
+    productId: item.productId,
+    variantId: item.variantId ?? null,
+    variantSku: item.variantSku || null,
+    variantSize: item.variantSize || null,
+    variantColor: item.variantColor || null,
+    variantPriceAdjustment:
+      item.variantPriceAdjustment === null || item.variantPriceAdjustment === undefined
+        ? null
+        : Number(item.variantPriceAdjustment),
+    name: item.name,
+    image: item.image,
+    unitPrice: Number(item.unitPrice),
+    qty: item.qty,
+    lineTotal: Number(item.lineTotal),
+    taxRate: Number(item.taxRate),
+    taxAmount: Number(item.taxAmount),
+    categoryName: item.categoryName
+  };
+}
+
 function serializeOrder(order) {
   return {
     id: order.id,
@@ -76,18 +101,7 @@ function serializeOrder(order) {
     // Server-derived so the storefront never re-implements the lifecycle rules
     // (utils/orderStatus ALLOWED_TRANSITIONS is the single source of truth).
     canCancel: canCancel(order.status),
-    items: (order.OrderItems || []).map((item) => ({
-      id: item.id,
-      productId: item.productId,
-      name: item.name,
-      image: item.image,
-      unitPrice: Number(item.unitPrice),
-      qty: item.qty,
-      lineTotal: Number(item.lineTotal),
-      taxRate: Number(item.taxRate),
-      taxAmount: Number(item.taxAmount),
-      categoryName: item.categoryName
-    })),
+    items: (order.OrderItems || []).map(serializeOrderItem),
     statusEvents: (order.OrderStatusEvents || []).map((event) => ({
       id: event.id,
       fromStatus: event.fromStatus,
@@ -148,34 +162,117 @@ const createOrder = async (req, res, next) => {
       if (!cartRows.length) throw new HttpError(400, "Validation failed", ["Your cart is empty"]);
 
       const productIds = [...new Set(cartRows.map((row) => row.productId).filter((id) => id !== null))];
-      const products = productIds.length
-        ? await Product.findAll({ where: { id: productIds }, include: categoryInclude, transaction })
-        : [];
+      const variantIds = [...new Set(cartRows.map((row) => row.variantId).filter((id) => id !== null))];
+      const [products, rowVariants, activeVariants] = await Promise.all([
+        productIds.length
+          ? Product.findAll({ where: { id: productIds }, include: categoryInclude, transaction })
+          : [],
+        variantIds.length ? ProductVariant.findAll({ where: { id: variantIds }, transaction }) : [],
+        productIds.length
+          ? ProductVariant.findAll({ where: { productId: productIds, isActive: true }, transaction })
+          : []
+      ]);
       const productById = new Map(products.map((product) => [product.id, product]));
+      const variantById = new Map(rowVariants.map((variant) => [variant.id, variant]));
+      const activeByProduct = new Map();
+      for (const variant of activeVariants) {
+        if (!activeByProduct.has(variant.productId)) activeByProduct.set(variant.productId, []);
+        activeByProduct.get(variant.productId).push(variant);
+      }
 
       // Validation pass: collect ALL conflicts before writing anything.
+      // Variant identity is mandatory once a product has active variants; a
+      // stale base line must fail rather than silently buying the base price.
       const conflicts = [];
       const lines = [];
+      const requestedByVariant = new Map();
       for (const row of cartRows) {
         const product = row.productId === null ? null : (productById.get(row.productId) || null);
         if (!product) {
-          conflicts.push({ productId: row.productId, name: row.name, requested: row.qty, available: 0, reason: "no longer available" });
+          conflicts.push({
+            productId: row.productId,
+            variantId: row.variantId,
+            name: row.name,
+            requested: row.qty,
+            available: 0,
+            reason: "no longer available"
+          });
           continue;
         }
-        if (product.stock < row.qty) {
-          conflicts.push({ productId: product.id, name: product.name, requested: row.qty, available: product.stock, reason: "insufficient stock" });
-          continue;
+
+        let variant = null;
+        if (row.variantId !== null) {
+          variant = variantById.get(row.variantId) || null;
+          if (!variant || variant.productId !== product.id || !variant.isActive) {
+            conflicts.push({
+              productId: product.id,
+              variantId: row.variantId,
+              name: product.name,
+              requested: row.qty,
+              available: 0,
+              reason: "selected variant is no longer available"
+            });
+            continue;
+          }
+          const key = `v:${variant.id}`;
+          const requested = (requestedByVariant.get(key) || 0) + row.qty;
+          requestedByVariant.set(key, requested);
+          if (Number(variant.stock) < requested) {
+            conflicts.push({
+              productId: product.id,
+              variantId: variant.id,
+              name: product.name,
+              requested,
+              available: Number(variant.stock),
+              reason: "insufficient stock"
+            });
+            continue;
+          }
+        } else {
+          if ((activeByProduct.get(product.id) || []).length > 0) {
+            conflicts.push({
+              productId: product.id,
+              variantId: null,
+              name: product.name,
+              requested: row.qty,
+              available: 0,
+              reason: "size/colour selection required"
+            });
+            continue;
+          }
+          const key = `p:${product.id}`;
+          const requested = (requestedByVariant.get(key) || 0) + row.qty;
+          requestedByVariant.set(key, requested);
+          if (Number(product.stock) < requested) {
+            conflicts.push({
+              productId: product.id,
+              variantId: null,
+              name: product.name,
+              requested,
+              available: Number(product.stock),
+              reason: "insufficient stock"
+            });
+            continue;
+          }
         }
-        lines.push({ row, product });
+
+        lines.push({
+          row,
+          product,
+          variant,
+          unitPrice: variant
+            ? variantUnitPrice(product.sellingPrice, variant.priceAdjustment)
+            : Number(product.sellingPrice)
+        });
       }
       if (conflicts.length) {
         throw new HttpError(409, "Some items in your cart changed — review and try again", conflicts);
       }
 
-      // Server-authoritative totals (current prices + configured taxRate).
+      // Server-authoritative totals (variant-aware price + configured taxRate).
       const totals = buildOrderTotals(
-        lines.map(({ row, product }) => ({
-          unitPrice: Number(product.sellingPrice),
+        lines.map(({ row, product, unitPrice }) => ({
+          unitPrice,
           qty: row.qty,
           categoryId: product.categoryId,
           categoryName: product.Category ? product.Category.name : null,
@@ -234,39 +331,150 @@ const createOrder = async (req, res, next) => {
         throw new HttpError(503, "Could not allocate an order number. Please retry.");
       }
 
-      // Guarded atomic stock decrements FIRST, ascending productId (deadlock
-      // discipline). Model-level update: WHERE stock >= qty makes the
-      // decrement all-or-nothing per line; 0 affected rows means another
-      // transaction won the race -> full rollback (the order row above rolls
-      // back with it). Taking the X locks here, before OrderItems, prevents
-      // the FK-check S locks from deadlocking concurrent checkouts (see
-      // controller header).
-      const qtyByProduct = new Map();
-      for (const { row, product } of lines) {
-        qtyByProduct.set(product.id, (qtyByProduct.get(product.id) || 0) + row.qty);
+      // Inventory write, ascending productId (deadlock discipline), locking the
+      // parent rows BEFORE touching variants or inserting OrderItems (whose FK
+      // checks take shared locks). A second validation under these locks closes
+      // the window where a variant is deactivated or a base product becomes
+      // variant-managed between the validation pass and the decrement.
+      const sortedProductIds = [...new Set(lines.map(({ product }) => product.id))].sort((a, b) => a - b);
+      const lockedProducts = await Product.findAll({
+        where: { id: sortedProductIds },
+        order: [["id", "ASC"]],
+        transaction,
+        lock: transaction.LOCK.UPDATE
+      });
+      const lockedProductById = new Map(lockedProducts.map((product) => [product.id, product]));
+      if (lockedProducts.length !== sortedProductIds.length) {
+        throw new HttpError(409, "Some items in your cart changed — review and try again", [
+          { productId: null, name: "item", requested: 1, available: 0, reason: "no longer available" }
+        ]);
       }
-      for (const productId of [...qtyByProduct.keys()].sort((a, b) => a - b)) {
-        const qty = Number(qtyByProduct.get(productId));
+
+      for (const productId of sortedProductIds) {
+        const product = lockedProductById.get(productId);
+        const productLines = lines.filter((line) => line.product.id === productId);
+        const lockedVariants = await ProductVariant.findAll({
+          where: { productId, isActive: true },
+          order: [["id", "ASC"]],
+          transaction,
+          lock: transaction.LOCK.UPDATE
+        });
+
+        if (lockedVariants.length > 0) {
+          const baseLine = productLines.find((line) => !line.variant);
+          if (baseLine) {
+            throw new HttpError(409, "Some items in your cart changed — review and try again", [
+              {
+                productId,
+                variantId: null,
+                name: product.name,
+                requested: baseLine.row.qty,
+                available: 0,
+                reason: "size/colour selection required"
+              }
+            ]);
+          }
+
+          const variantQty = new Map();
+          for (const line of productLines) {
+            variantQty.set(line.variant.id, (variantQty.get(line.variant.id) || 0) + line.row.qty);
+          }
+          for (const variantId of [...variantQty.keys()].sort((a, b) => a - b)) {
+            const qty = Number(variantQty.get(variantId));
+            const variant = lockedVariants.find((candidate) => candidate.id === variantId);
+            if (!variant) {
+              throw new HttpError(409, "Some items in your cart changed — review and try again", [
+                {
+                  productId,
+                  variantId,
+                  name: product.name,
+                  requested: qty,
+                  available: 0,
+                  reason: "selected variant is no longer available"
+                }
+              ]);
+            }
+            const [affected] = await ProductVariant.update(
+              { stock: sequelize.literal(stockDelta("-", qty)) },
+              {
+                where: {
+                  id: variantId,
+                  productId,
+                  isActive: true,
+                  stock: { [Op.gte]: qty }
+                },
+                transaction
+              }
+            );
+            if (affected === 0) {
+              throw new HttpError(409, "Some items in your cart changed — review and try again", [
+                {
+                  productId,
+                  variantId,
+                  name: product.name,
+                  requested: qty,
+                  available: Number(variant.stock),
+                  reason: "insufficient stock"
+                }
+              ]);
+            }
+          }
+
+          // Products.stock stays the SUM(active variant stock) cache.
+          await syncProductStock(productId, transaction);
+          continue;
+        }
+
+        // No active variants: only legacy base lines are valid.
+        if (productLines.some((line) => line.variant)) {
+          throw new HttpError(409, "Some items in your cart changed — review and try again", [
+            {
+              productId,
+              variantId: productLines.find((line) => line.variant).variant.id,
+              name: product.name,
+              requested: 1,
+              available: 0,
+              reason: "selected variant is no longer available"
+            }
+          ]);
+        }
+
+        const qty = productLines.reduce((sum, line) => sum + line.row.qty, 0);
         if (!Number.isInteger(qty) || qty < 1) {
-          throw new Error(`Non-integer cart quantity during checkout: ${qtyByProduct.get(productId)}`); // 500; not user-triggerable (DB INT)
+          throw new Error(`Non-integer cart quantity during checkout: ${qty}`); // 500; not user-triggerable (DB INT)
         }
         const [affected] = await Product.update(
           { stock: sequelize.literal(stockDelta("-", qty)) },
-          { where: { id: productId, stock: { [Op.gte]: qty } }, transaction }
+          {
+            where: { id: productId, stock: { [Op.gte]: qty } },
+            transaction
+          }
         );
         if (affected === 0) {
-          const product = productById.get(productId);
           throw new HttpError(409, "Some items in your cart changed — review and try again", [
-            { productId, name: product ? product.name : "item", requested: qty, available: product ? product.stock : 0, reason: "insufficient stock" }
+            {
+              productId,
+              variantId: null,
+              name: product.name,
+              requested: qty,
+              available: Number(product.stock),
+              reason: "insufficient stock"
+            }
           ]);
         }
       }
 
-      // Purchase snapshots (per-line taxes sum exactly to taxTotal).
+      // Purchase snapshots (per-line taxes sum exactly to taxTotal). Variant
+      // identity/SKU/options are frozen here; later edits never rewrite history.
       await OrderItem.bulkCreate(
-        lines.map(({ row, product }, index) => ({
+        lines.map(({ row, product, variant }, index) => ({
           orderId: order.id,
           productId: product.id,
+          variantId: variant ? variant.id : null,
+          variantSku: variant ? variant.sku : null,
+          variantSize: variant ? variant.size : null,
+          variantColor: variant ? variant.color : null,
+          variantPriceAdjustment: variant ? Number(variant.priceAdjustment) : null,
           name: product.name,
           image: product.image,
           unitPrice: totals.lines[index].unitPrice,
@@ -355,14 +563,7 @@ const listOrders = async (req, res, next) => {
         grandTotal: Number(order.grandTotal),
         createdAt: order.createdAt,
         canCancel: canCancel(order.status),
-        items: (order.OrderItems || []).map((item) => ({
-          id: item.id,
-          productId: item.productId,
-          name: item.name,
-          unitPrice: Number(item.unitPrice),
-          qty: item.qty,
-          lineTotal: Number(item.lineTotal)
-        }))
+        items: (order.OrderItems || []).map(serializeOrderItem)
       })),
       pagination: { page, limit, total: count, totalPages, hasNext: page < totalPages, hasPrev: page > 1 }
     });

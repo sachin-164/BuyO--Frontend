@@ -1,7 +1,7 @@
 -- 008_create_product_images.pgsql
 -- PostgreSQL mirror of 008_create_product_images.sql (Phase D, item 32).
--- Additive + guarded; one transaction is applied by the PG runner.
--- Rollback (reviewed + manual): DROP TABLE "ProductImages";
+-- Additive + guarded — one transaction is applied by the PG runner.
+-- Rollback (reviewed + manual): DROP TABLE "ProductImages"
 
 CREATE TABLE IF NOT EXISTS "ProductImages" (
   "id" serial NOT NULL,
