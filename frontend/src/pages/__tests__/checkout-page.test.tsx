@@ -1,10 +1,11 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Routes, Route } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CheckoutPage from "@/pages/checkout-page";
 import OrderConfirmationPage from "@/pages/order-confirmation-page";
 import { jsonResponse, renderWithProviders } from "@/test/render";
+import { clearToken, setToken } from "@/lib/api";
 import {
   CHECKOUT_IDEMPOTENCY_KEY,
   clearCheckoutIdempotencyKey,
@@ -165,6 +166,19 @@ function installFetch({
     const body = typeof init?.body === "string" ? init.body : undefined;
     requests.push({ url, method, body });
 
+    if (method === "GET" && url.pathname === "/api/auth/me") {
+      return jsonResponse({
+        success: true,
+        user: {
+          id: 4,
+          name: "Checkout Tester",
+          email: "checkout.tester@buyo.test",
+          isVerified: true,
+          role: "customer",
+          isAdmin: false,
+        },
+      });
+    }
     if (method === "GET" && url.pathname === "/api/cart") {
       return jsonResponse(cart);
     }
@@ -224,8 +238,11 @@ function renderCheckout() {
 }
 
 describe("CheckoutPage", () => {
+  beforeEach(() => setToken("checkout-page-test-token"));
+
   afterEach(() => {
     vi.unstubAllGlobals();
+    clearToken();
     clearCheckoutIdempotencyKey();
     window.sessionStorage.clear();
   });

@@ -21,7 +21,9 @@ import {
   useRemoveCartItem,
   useUpdateCartItem,
 } from "@/features/cart/mutations";
+import { useAuth } from "@/features/auth/auth-context";
 import { getErrorMessage } from "@/lib/errors";
+import { loginHref } from "@/lib/auth-return";
 import { formatPrice } from "@/lib/format";
 import type { CartItem } from "@/types/commerce";
 
@@ -156,6 +158,7 @@ function CartLine({
 
 export default function CartPage() {
   usePageTitle("Your cart");
+  const { hasToken } = useAuth();
   const cartQuery = useCart();
   const updateCart = useUpdateCartItem();
   const removeCart = useRemoveCartItem();
@@ -280,6 +283,22 @@ export default function CartPage() {
               itemCount={cart.count}
               totalsNotice={cart.totalsNotice}
             />
+            {!hasToken ? (
+              <Alert variant="info">
+                <ShoppingBag aria-hidden="true" />
+                <AlertTitle>Saved in this browser</AlertTitle>
+                <AlertDescription>
+                  <Link
+                    to={loginHref("/checkout")}
+                    className="font-medium text-primary underline underline-offset-2"
+                  >
+                    Sign in
+                  </Link>{" "}
+                  to merge this cart into your account. Nothing is ordered until you confirm
+                  checkout.
+                </AlertDescription>
+              </Alert>
+            ) : null}
             {unavailableItems > 0 ? (
               <Alert variant="warning">
                 <CircleAlert aria-hidden="true" />
@@ -307,8 +326,10 @@ export default function CartPage() {
             >
               {stockProblem || unavailableItems > 0 ? (
                 <span>Resolve cart items</span>
-              ) : (
+              ) : hasToken ? (
                 <Link to="/checkout">Proceed to checkout</Link>
+              ) : (
+                <Link to={loginHref("/checkout")}>Sign in to checkout</Link>
               )}
             </Button>
           </div>

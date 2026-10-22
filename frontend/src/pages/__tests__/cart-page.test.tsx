@@ -1,9 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CartPage from "@/pages/cart-page";
 import { jsonResponse, renderWithProviders } from "@/test/render";
+import { clearToken, setToken } from "@/lib/api";
 import type { CartResponse } from "@/types/commerce";
+
+// The cart page exercises the signed-in path here; the guest path has its own
+// suite (guest-cart.test.tsx).
+beforeEach(() => setToken("cart-page-test-token"));
 
 function item(overrides: Partial<CartResponse["items"][number]> = {}) {
   return {
@@ -80,6 +85,19 @@ function installFetch({
     const body = typeof init?.body === "string" ? init.body : undefined;
     requests.push({ url, method, body });
 
+    if (method === "GET" && url.pathname === "/api/auth/me") {
+      return jsonResponse({
+        success: true,
+        user: {
+          id: 4,
+          name: "Cart Tester",
+          email: "cart.tester@buyo.test",
+          isVerified: true,
+          role: "customer",
+          isAdmin: false,
+        },
+      });
+    }
     if (method === "GET" && url.pathname === "/api/cart") {
       return jsonResponse(currentCart);
     }
@@ -113,6 +131,7 @@ function installFetch({
 describe("CartPage", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    clearToken();
   });
 
   it("renders the server-authoritative cart lines and totals", async () => {
