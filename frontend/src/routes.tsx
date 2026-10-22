@@ -162,7 +162,9 @@ export const router = createBrowserRouter([
       { path: "reset-password", element: withSuspense(<ResetPasswordPage />) },
 
       // Shopping and account sections are server-authorized at all times.
-      { path: "cart", element: withSuspense(<RequireAuth><CartPage /></RequireAuth>) },
+      // The cart itself is public: guests keep a local cart and are asked to
+      // sign in only at checkout (the items merge into the server cart).
+      { path: "cart", element: withSuspense(<CartPage />) },
       { path: "wishlist", element: withSuspense(<RequireAuth><WishlistPage /></RequireAuth>) },
       { path: "account", element: withSuspense(<RequireAuth><AccountPage /></RequireAuth>) },
       {

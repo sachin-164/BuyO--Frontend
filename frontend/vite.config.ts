@@ -17,6 +17,12 @@ export default defineConfig({
         target: "http://localhost:5000",
         changeOrigin: true,
       },
+      // Locally stored product images (the Express static driver). Hosted
+      // deployments use absolute Supabase URLs and never hit this.
+      "/uploads": {
+        target: "http://localhost:5000",
+        changeOrigin: true,
+      },
     },
   },
   build: {

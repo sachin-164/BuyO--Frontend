@@ -26,6 +26,9 @@ Thumbs.db
 .DS_Store
 desktop.ini
 
+# Acceptance-run artifacts (screenshots / per-run report); the recorded report is tracked
+docs/acceptance/out/
+
 # Editor
 .vscode/
 
