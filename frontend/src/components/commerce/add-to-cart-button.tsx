@@ -1,4 +1,5 @@
 import { ShoppingBag } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useAddToCart } from "@/features/cart/mutations";
@@ -28,6 +29,19 @@ export function AddToCartButton({
   const { hasToken } = useAuth();
   const addToCart = useAddToCart();
   const disabled = product.stock <= 0 || addToCart.isPending;
+
+  // A variant-managed product cannot be added from a card: the buyer must
+  // choose a real size/colour on the product page. Never invent a variant.
+  if (product.hasVariants) {
+    return (
+      <Button asChild className={cn("min-w-36", className)} variant="secondary" size="sm">
+        <Link to={`/product/${encodeURIComponent(product.slug)}`}>
+          <ShoppingBag aria-hidden="true" />
+          Choose options
+        </Link>
+      </Button>
+    );
+  }
 
   function handleClick() {
     if (disabled) return;

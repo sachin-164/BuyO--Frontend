@@ -32,6 +32,43 @@ const LAMP: Product = {
   Category: { id: 3, name: "Lighting", slug: "lighting", taxRate: 5 },
 };
 
+const VARIANT_PRODUCT: Product = {
+  ...LAMP,
+  id: 12,
+  name: "Everyday Tee",
+  slug: "everyday-tee",
+  sellingPrice: "1000",
+  stock: 6,
+  hasVariants: true,
+  variants: [
+    {
+      id: 31,
+      productId: 12,
+      sku: "TEE-BLK-M",
+      size: "M",
+      color: "Black",
+      priceAdjustment: 0,
+      unitPrice: 1000,
+      stock: 2,
+      isActive: true,
+    },
+    {
+      id: 32,
+      productId: 12,
+      sku: "TEE-WHT-L",
+      size: "L",
+      color: "White",
+      priceAdjustment: 200,
+      unitPrice: 1200,
+      stock: 4,
+      isActive: true,
+    },
+  ],
+};
+
+const BLACK_M = VARIANT_PRODUCT.variants![0];
+const WHITE_L = VARIANT_PRODUCT.variants![1];
+
 function guestResponse(): CartResponse {
   return buildGuestCart(readGuestCart());
 }
@@ -104,6 +141,42 @@ describe("guest cart store", () => {
     expect(cart.totals.tax.preview).toBe(true);
   });
 
+  it("keeps each variant as its own line and never invents a base line", () => {
+    addGuestLine(VARIANT_PRODUCT, 2, BLACK_M);
+    addGuestLine(VARIANT_PRODUCT, 1, WHITE_L);
+
+    expect(readGuestCart()).toHaveLength(2);
+    const cart = guestResponse();
+    expect(cart.count).toBe(2);
+    expect(cart.items[0]).toMatchObject({
+      productId: 12,
+      variantId: 31,
+      variant: { id: 31, sku: "TEE-BLK-M", size: "M", color: "Black" },
+      price: 1000,
+      lineTotal: 2000,
+    });
+    expect(cart.items[1]).toMatchObject({
+      variantId: 32,
+      price: 1200,
+      lineTotal: 1200,
+    });
+    expect(cart.items[0].id).not.toBe(cart.items[1].id);
+    expect(() => addGuestLine(VARIANT_PRODUCT, 1)).toThrow(/Choose a size or colour/);
+  });
+
+  it("updates and removes a variant line without touching its sibling", () => {
+    addGuestLine(VARIANT_PRODUCT, 1, BLACK_M);
+    addGuestLine(VARIANT_PRODUCT, 1, WHITE_L);
+
+    setGuestQty(12, 2, 31);
+    expect(readGuestCart().find((line) => line.variantId === 31)?.qty).toBe(2);
+    expect(readGuestCart().find((line) => line.variantId === 32)?.qty).toBe(1);
+
+    removeGuestLine(12, 31);
+    expect(readGuestCart()).toHaveLength(1);
+    expect(readGuestCart()[0].variantId).toBe(32);
+  });
+
   it("drops corrupt storage instead of breaking the storefront", async () => {
     window.localStorage.setItem(GUEST_CART_KEY, "{not json");
     vi.resetModules();
@@ -120,6 +193,7 @@ describe("guest cart store", () => {
     vi.resetModules();
     const mixed = await import("@/features/cart/guest-cart");
     expect(mixed.readGuestCart().map((line) => line.productId)).toEqual([7]);
+    expect(mixed.readGuestCart()[0].variantId).toBeNull();
   });
 });
 
@@ -131,7 +205,9 @@ describe("guest cart merge", () => {
       const url = new URL(String(input), "http://localhost");
       expect(url.pathname).toBe("/api/cart/merge");
       expect(init?.method).toBe("POST");
-      expect(JSON.parse(String(init?.body))).toEqual({ items: [{ productId: 7, qty: 2 }] });
+      expect(JSON.parse(String(init?.body))).toEqual({
+        items: [{ productId: 7, variantId: null, qty: 2 }],
+      });
       return jsonResponse({
         success: true,
         count: 1,
@@ -207,6 +283,17 @@ describe("guest cart page", () => {
 
     await waitFor(() => expect(readGuestCart()[0].qty).toBe(3));
     expect(await screen.findByText("Quantity updated")).toBeInTheDocument();
+  });
+
+  it("shows the chosen options and SKU for a variant line", async () => {
+    addGuestLine(VARIANT_PRODUCT, 1, BLACK_M);
+
+    renderWithProviders(<CartPage />, { route: "/cart" });
+
+    expect(await screen.findByText("Everyday Tee")).toBeInTheDocument();
+    expect(screen.getByText("Size M · Colour Black")).toBeInTheDocument();
+    expect(screen.getByText("SKU TEE-BLK-M")).toBeInTheDocument();
+    expect(screen.getByText("₹1,000 each")).toBeInTheDocument();
   });
 
   it("asks the shopper to sign in and never calls the cart API", async () => {

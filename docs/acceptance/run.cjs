@@ -114,7 +114,7 @@ async function boot() {
   await conn.end();
 
   const sequelize = requireBackend("./config/db");
-  for (const model of ["user", "category", "product", "cart", "wishlist", "address", "productImage", "order"]) {
+  for (const model of ["user", "category", "product", "productVariant", "productReview", "cart", "wishlist", "address", "productImage", "order"]) {
     requireBackend(`./models/${model}`);
   }
   await sequelize.sync();
@@ -131,6 +131,9 @@ async function boot() {
     CartItem: requireBackend("./models/cart"),
     Address: requireBackend("./models/address"),
     Order: requireBackend("./models/order"),
+    OrderItem: requireBackend("./models/orderItem"),
+    ProductVariant: requireBackend("./models/productVariant"),
+    ProductReview: requireBackend("./models/productReview"),
   };
 
   return {
@@ -189,6 +192,26 @@ async function seed(app) {
   created.gnome = await mkProduct({
     name: "Garden Gnome", category: "Garden", categoryId: created.garden.id,
     mrp: 899, price: 699, stock: 4,
+  });
+
+  // A real variant-managed product. Its base stock starts at 0; each variant
+  // write recomputes the aggregate, exactly as an admin would via the UI.
+  created.tee = await mkProduct({
+    name: "Everyday Tee", category: "Bottles", categoryId: created.bottles.id,
+    mrp: 1200, price: 1000, stock: 0, image: false,
+  });
+  const mkVariant = async (body) => {
+    const res = await api(`/api/products/${created.tee.id}/variants`, {
+      method: "POST", token: admin.token, body,
+    });
+    assert.equal(res.status, 201, res.text);
+    return res.json.variant;
+  };
+  created.teeBlackM = await mkVariant({
+    sku: "TEE-BLK-M", size: "M", color: "Black", priceAdjustment: 100, stock: 3,
+  });
+  created.teeWhiteL = await mkVariant({
+    sku: "TEE-WHT-L", size: "L", color: "White", priceAdjustment: 0, stock: 2,
   });
 
   return { admin, created };
@@ -297,6 +320,27 @@ function main() {
       assert.ok(guest && guest.includes(String(created.bottle.id)), "guest cart persisted in localStorage");
     });
 
+    await step("guest chooses a real variant; price, SKU and identity persist", async () => {
+      await page.goto(`/product/${created.tee.slug}`);
+      await expectText(page.locator("h1"), /Everyday Tee/);
+      const size = page.getByLabel("Size");
+      await size.waitFor();
+      assert.equal(await size.inputValue(), "M", "first in-stock variant is auto-selected");
+      assert.equal(await page.getByLabel("Colour").inputValue(), "Black");
+      await page.getByText("Selected: Size M · Colour Black").waitFor();
+      await page.getByText("SKU TEE-BLK-M").waitFor();
+      await page.getByText("₹1,100").first().waitFor();
+
+      await page.getByRole("button", { name: "Add to cart", exact: true }).click();
+      await page.getByRole("link", { name: /Cart, 2 items/ }).waitFor({ timeout: 10000 });
+      const guest = JSON.parse(await page.evaluate(() => window.localStorage.getItem("buyo.guestCart.v1")));
+      const line = guest.find((entry) => entry.productId === created.tee.id);
+      assert.ok(line, "guest cart contains the variant product");
+      assert.equal(line.variantId, created.teeBlackM.id);
+      assert.equal(line.unitPrice, 1100);
+      report.checks.variantGuestLine = { productId: line.productId, variantId: line.variantId, unitPrice: line.unitPrice };
+    });
+
     await step("signup sends a verification email; the link verifies and login works", async () => {
       await page.goto("/signup");
       await page.getByLabel("Full name").fill("E2E Buyer");
@@ -342,7 +386,16 @@ function main() {
       await page.getByRole("link", { name: /Proceed to checkout/ }).waitFor();
       const buyer = await models.User.findOne({ where: { email: buyerEmail } });
       const dbCart = await models.CartItem.findAll({ where: { UserId: buyer.id } });
-      assert.ok(dbCart.length >= 1, "server cart has the merged line");
+      assert.ok(dbCart.length >= 2, "server cart has the merged base and variant lines");
+      assert.ok(
+        dbCart.some((line) => line.productId === created.tee.id && line.variantId === created.teeBlackM.id),
+        "variant identity survived the guest merge",
+      );
+      await page.getByText("Size M · Colour Black").first().waitFor();
+      await page.getByText("SKU TEE-BLK-M").first().waitFor();
+      report.checks.mergedCartLines = dbCart.map((line) => ({
+        productId: line.productId, variantId: line.variantId, qty: line.qty,
+      }));
       const guest = await page.evaluate(() => window.localStorage.getItem("buyo.guestCart.v1"));
       assert.ok(guest === null || JSON.parse(guest).length === 0, "guest cart cleared after a confirmed merge");
     });
@@ -433,6 +486,7 @@ function main() {
 
     await step("COD checkout places exactly one order and decrements stock", async () => {
       const before = await models.Product.findByPk(created.bottle.id);
+      const variantBefore = await models.ProductVariant.findByPk(created.teeBlackM.id);
       await page.goto("/checkout");
       await expectText(page.locator("h1"), /Review and place order/);
       await page.getByLabel("Delivery notes").fill("Call on arrival.");
@@ -447,7 +501,29 @@ function main() {
       assert.equal(Number(order.grandTotal) > 0, true);
       const after = await models.Product.findByPk(created.bottle.id);
       assert.equal(after.stock, before.stock - 1);
-      report.checks.order = { id: orderId, number: orderNumber, total: Number(order.grandTotal) };
+      const variantAfter = await models.ProductVariant.findByPk(created.teeBlackM.id);
+      assert.equal(variantAfter.stock, variantBefore.stock - 1, "variant stock decremented once");
+      const teeAfter = await models.Product.findByPk(created.tee.id);
+      assert.equal(
+        teeAfter.stock,
+        variantAfter.stock + Number((await models.ProductVariant.findByPk(created.teeWhiteL.id)).stock),
+        "product aggregate equals active variant stock",
+      );
+      const items = await models.OrderItem.findAll({ where: { orderId } });
+      const variantItem = items.find((item) => item.productId === created.tee.id);
+      assert.ok(variantItem, "order contains the variant line");
+      assert.equal(variantItem.variantId, created.teeBlackM.id);
+      assert.equal(variantItem.variantSku, "TEE-BLK-M");
+      assert.equal(variantItem.variantSize, "M");
+      assert.equal(variantItem.variantColor, "Black");
+      assert.equal(Number(variantItem.unitPrice), 1100);
+      report.checks.order = {
+        id: orderId, number: orderNumber, total: Number(order.grandTotal),
+        items: items.map((item) => ({
+          productId: item.productId, variantId: item.variantId, sku: item.variantSku,
+          qty: item.qty, unitPrice: Number(item.unitPrice),
+        })),
+      };
     });
 
     await step("order history shows the order; customer cancellation restocks exactly once", async () => {
@@ -464,6 +540,10 @@ function main() {
       assert.equal(order.status, "cancelled");
       const product = await models.Product.findByPk(created.bottle.id);
       assert.equal(product.stock, 5, "stock restored once");
+      const variant = await models.ProductVariant.findByPk(created.teeBlackM.id);
+      assert.equal(variant.stock, 3, "variant stock restored exactly once");
+      const tee = await models.Product.findByPk(created.tee.id);
+      assert.equal(tee.stock, 5, "variant aggregate restored");
       const events = await requireBackend("./models/orderStatusEvent").findAll({ where: { orderId } });
       assert.equal(events.length, 2);
     });
@@ -583,6 +663,166 @@ function main() {
       await adminPage.screenshot({ path: path.join(OUT, "admin-customers.png"), fullPage: true });
     });
 
+    await step("admin edits, adds and deactivates variants through the UI", async () => {
+      const adminPage = app.adminPage;
+      await adminPage.goto(`/admin/products/${created.tee.id}/edit`);
+      await adminPage.getByRole("heading", { name: "Variants" }).waitFor({ timeout: 15000 });
+      await adminPage.getByText("TEE-BLK-M").waitFor();
+      assert.ok(await adminPage.getByText("TEE-WHT-L").isVisible());
+
+      // Edit an existing variant's stock.
+      const whiteRow = adminPage.getByRole("listitem").filter({ hasText: "TEE-WHT-L" }).first();
+      await whiteRow.getByRole("button", { name: "Edit" }).click();
+      const stockInput = adminPage.locator("#variant-stock");
+      await stockInput.fill("4");
+      await adminPage.getByRole("button", { name: "Save variant" }).click();
+      await expectText(adminPage.getByText("Variant updated"), /Variant updated/);
+      const white = await models.ProductVariant.findByPk(created.teeWhiteL.id);
+      assert.equal(white.stock, 4);
+      assert.equal((await models.Product.findByPk(created.tee.id)).stock, 7);
+
+      // Add a third real variant.
+      await adminPage.getByRole("button", { name: "Add variant" }).first().click();
+      await adminPage.locator("#variant-sku").fill("TEE-NVY-S");
+      await adminPage.locator("#variant-size").fill("S");
+      await adminPage.locator("#variant-color").fill("Navy");
+      await adminPage.locator("#variant-stock").fill("1");
+      await adminPage.locator("#variant-price-adjustment").fill("50");
+      await adminPage.getByRole("button", { name: "Add variant" }).first().click();
+      await expectText(adminPage.getByText("Variant added"), /Variant added/);
+      const navy = await models.ProductVariant.findOne({ where: { sku: "TEE-NVY-S" } });
+      assert.ok(navy, "variant created through the admin UI");
+      assert.equal(navy.stock, 1);
+      assert.equal(Number(navy.priceAdjustment), 50);
+      assert.equal((await models.Product.findByPk(created.tee.id)).stock, 8);
+      await adminPage.getByText("TEE-NVY-S").waitFor({ timeout: 10000 });
+
+      // Deactivate the third variant: it disappears from public sale but the
+      // row stays for order-history snapshots.
+      const navyRow = adminPage.getByRole("listitem").filter({ hasText: "TEE-NVY-S" }).first();
+      await navyRow.getByRole("button", { name: "Deactivate" }).click();
+      const dialog = adminPage.getByRole("dialog");
+      await dialog.waitFor();
+      await dialog.getByRole("button", { name: "Deactivate" }).click();
+      await expectText(adminPage.getByText("Variant deactivated"), /Variant deactivated/);
+      await navy.reload();
+      assert.equal(navy.isActive, false);
+      assert.equal((await models.Product.findByPk(created.tee.id)).stock, 7);
+      assert.equal(await adminPage.locator("#product-stock").isDisabled(), true);
+
+      await page.goto(`/product/${created.tee.slug}`);
+      await page.getByLabel("Size").waitFor();
+      const sizes = await page.getByLabel("Size").locator("option").allTextContents();
+      const colours = await page.getByLabel("Colour").locator("option").allTextContents();
+      assert.ok(!sizes.includes("S"), "deactivated size is not sold");
+      assert.ok(!colours.includes("Navy"), "deactivated colour is not sold");
+      report.checks.variantsAdmin = { edited: white.id, added: navy.id, deactivated: navy.isActive === false };
+    });
+
+    const reviewTitle = "Honest everyday tee";
+    const reviewBody = "The cotton is soft and the fit is right for daily wear.";
+    let reviewId = null;
+
+    await step("customer submits a review; it stays pending and invisible to the public", async () => {
+      const buyer = await models.User.findOne({ where: { email: buyerEmail } });
+      await page.goto(`/product/${created.tee.slug}`);
+      await page.getByRole("heading", { name: "Write a review" }).waitFor({ timeout: 15000 });
+      await page.getByRole("button", { name: "Rate 5 out of 5 stars" }).click();
+      await page.getByRole("textbox", { name: /^Title/ }).fill(reviewTitle);
+      await page.locator("#review-body").fill(reviewBody);
+      await page.getByRole("button", { name: "Submit for approval" }).click();
+      await page.getByText("Your review is pending approval").waitFor({ timeout: 15000 });
+
+      const own = await api(`/api/reviews/mine?productId=${created.tee.id}`, { token: buyerToken });
+      assert.equal(own.status, 200, own.text);
+      assert.equal(own.json.count, 1);
+      assert.equal(own.json.reviews[0].status, "pending");
+      reviewId = own.json.reviews[0].id;
+
+      const review = await models.ProductReview.findByPk(reviewId);
+      assert.equal(review.status, "pending");
+      assert.equal(review.userId, buyer.id, "server assigned the authenticated author");
+      assert.equal(review.moderatedAt, null);
+
+      const publicList = await api(`/api/products/${created.tee.slug}/reviews`);
+      assert.equal(publicList.status, 200, publicList.text);
+      assert.equal(publicList.json.count, 0, "pending review is not public");
+      assert.equal(publicList.json.summary.count, 0, "pending review does not affect the aggregate");
+
+      // A signed-out shopper cannot see the pending review either.
+      const publicCtx = await browser.newContext({ baseURL: FRONTEND_URL, viewport: { width: 1440, height: 900 } });
+      const publicPage = await publicCtx.newPage();
+      await publicPage.goto(`/product/${created.tee.slug}`);
+      await publicPage.getByText("No reviews yet").waitFor({ timeout: 15000 });
+      assert.equal(await publicPage.getByText(reviewTitle).count(), 0);
+      assert.equal(await publicPage.getByText(reviewBody).count(), 0);
+      app.publicPage = publicPage;
+      app.publicCtx = publicCtx;
+      report.checks.review = { id: reviewId, status: review.status, authorId: review.userId };
+    });
+
+    await step("admin approves the review; public aggregate updates and abuse is denied", async () => {
+      const buyer = await models.User.findOne({ where: { email: buyerEmail } });
+      const duplicate = await api(`/api/products/${created.tee.slug}/reviews`, {
+        method: "POST", token: buyerToken, body: { rating: 4, body: "A second review should not be allowed." },
+      });
+      assert.equal(duplicate.status, 409, duplicate.text);
+      assert.equal(await models.ProductReview.count({ where: { productId: created.tee.id, userId: buyer.id } }), 1);
+
+      const forbidden = await api(`/api/admin/reviews/${reviewId}`, {
+        method: "PATCH", token: buyerToken, body: { status: "approved" },
+      });
+      assert.equal(forbidden.status, 403, forbidden.text);
+
+      const adminPage = app.adminPage;
+      await adminPage.goto("/admin/reviews");
+      await adminPage.getByRole("heading", { name: "Review moderation" }).waitFor({ timeout: 15000 });
+      await adminPage.getByText(reviewTitle).waitFor({ timeout: 15000 });
+      await adminPage.getByText(buyerEmail).waitFor();
+      await adminPage.getByRole("link", { name: "Everyday Tee" }).waitFor();
+      await adminPage.getByRole("button", { name: "Approve", exact: true }).click();
+      const dialog = adminPage.getByRole("dialog");
+      await dialog.waitFor();
+      await dialog.getByRole("button", { name: "Approve" }).click();
+      await expectText(adminPage.getByText("Review approved"), /Review approved/);
+
+      await new Promise((r) => setTimeout(r, 250));
+      const approved = await models.ProductReview.findByPk(reviewId);
+      assert.equal(approved.status, "approved");
+      assert.equal(approved.moderatedBy, admin.user.id);
+      assert.ok(approved.moderatedAt, "moderation timestamp recorded");
+
+      const repeat = await api(`/api/admin/reviews/${reviewId}`, {
+        method: "PATCH", token: admin.token, body: { status: "approved" },
+      });
+      assert.equal(repeat.status, 200, repeat.text);
+      assert.equal(repeat.json.unchanged, true);
+      const unchanged = await models.ProductReview.findByPk(reviewId);
+      assert.equal(String(unchanged.moderatedAt), String(approved.moderatedAt), "repeated moderation keeps metadata");
+
+      const publicList = await api(`/api/products/${created.tee.slug}/reviews`);
+      assert.equal(publicList.status, 200, publicList.text);
+      assert.equal(publicList.json.count, 1);
+      assert.equal(publicList.json.summary.count, 1);
+      assert.equal(publicList.json.summary.average, 5);
+      assert.equal(publicList.json.reviews[0].title, reviewTitle);
+
+      const publicPage = app.publicPage;
+      await publicPage.reload();
+      await publicPage.getByText(reviewTitle).waitFor({ timeout: 15000 });
+      await publicPage.getByText(reviewBody).waitFor();
+      await publicPage.getByText("1 approved review").waitFor();
+
+      await adminPage.goto("/admin/reviews?status=approved");
+      await adminPage.getByText(reviewTitle).waitFor({ timeout: 15000 });
+      await adminPage.getByText(/Moderated .* by #/).waitFor();
+      await adminPage.screenshot({ path: path.join(OUT, "admin-reviews-approved.png"), fullPage: true });
+      report.checks.review = {
+        id: reviewId, status: approved.status, moderatedBy: approved.moderatedBy,
+        publicAverage: publicList.json.summary.average,
+      };
+    });
+
     await step("security and error paths (401/403/404, stock, idempotency)", async () => {
       const anon = await api("/api/orders");
       assert.equal(anon.status, 401);
@@ -634,7 +874,7 @@ function main() {
     await step("responsive layout: no horizontal overflow on phone, mobile nav works", async () => {
       const mobile = await browser.newContext({ baseURL: FRONTEND_URL, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
       const m = await mobile.newPage();
-      for (const url of ["/", "/shop", `/product/${created.bottle.slug}`, "/cart", "/admin"]) {
+      for (const url of ["/", "/shop", `/product/${created.bottle.slug}`, `/product/${created.tee.slug}`, "/cart", "/admin"]) {
         await m.goto(url);
         await m.waitForLoadState("networkidle").catch(() => {});
         const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

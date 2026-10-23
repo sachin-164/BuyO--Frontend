@@ -27,6 +27,11 @@ const ORDER_SUMMARY: OrderSummary = {
     {
       id: 3,
       productId: 3,
+      variantId: 41,
+      variantSku: "BTL-STL-1L",
+      variantSize: "1 L",
+      variantColor: "Steel",
+      variantPriceAdjustment: 0,
       name: "Steel Bottle",
       unitPrice: 1000,
       qty: 1,
@@ -339,6 +344,8 @@ describe("OrderDetailPage", () => {
 
     expect(await screen.findByText("BO-240101-9X8Y7Z")).toBeInTheDocument();
     expect(screen.getByText("Steel Bottle")).toBeInTheDocument();
+    expect(screen.getByText("Size 1 L · Colour Steel")).toBeInTheDocument();
+    expect(screen.getByText("SKU BTL-STL-1L")).toBeInTheDocument();
     expect(screen.getByText("₹1,050")).toBeInTheDocument();
     expect(screen.getByText("12 Rose Street")).toBeInTheDocument();
     expect(screen.getByText("Ring the bell twice.")).toBeInTheDocument();

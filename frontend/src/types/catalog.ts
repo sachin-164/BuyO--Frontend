@@ -44,6 +44,23 @@ export interface ProductImage {
   position: number;
 }
 
+/** One sellable size/colour combination (server table `ProductVariants`). */
+export interface ProductVariant {
+  id: number;
+  /** Present on admin responses; public product payloads omit it. */
+  productId?: number;
+  sku: string;
+  size?: string | null;
+  color?: string | null;
+  priceAdjustment: number;
+  /** Base selling price + priceAdjustment, resolved by the server. */
+  unitPrice: number;
+  stock: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Product {
   id: number;
   name: string;
@@ -58,6 +75,10 @@ export interface Product {
   description?: string | null;
   /** Ordered gallery; absent on list responses. */
   images?: ProductImage[];
+  /** Active variants only. Always [] for legacy single-option products. */
+  variants?: ProductVariant[];
+  /** True when the buyer must choose a variant before adding to the cart. */
+  hasVariants?: boolean;
   createdAt?: string;
   updatedAt?: string;
   Category?: Category | null;

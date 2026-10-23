@@ -1,6 +1,7 @@
 import { ImageOff } from "lucide-react";
 import { Link } from "react-router-dom";
 import { formatPrice } from "@/lib/format";
+import { variantLabel } from "@/lib/variant";
 import type { OrderItem } from "@/types/commerce";
 
 interface OrderItemsProps {
@@ -24,6 +25,11 @@ export function OrderItems({ items, showTax = false }: OrderItemsProps) {
         <tbody>
           {items.map((item) => {
             const productHref = item.productId ? `/product/${item.productId}` : null;
+            const options = variantLabel({
+              sku: item.variantSku,
+              size: item.variantSize,
+              color: item.variantColor,
+            });
             const content = (
               <div className="flex min-w-0 items-center gap-3">
                 {item.image !== undefined ? (
@@ -54,6 +60,14 @@ export function OrderItems({ items, showTax = false }: OrderItemsProps) {
                       item.name
                     )}
                   </span>
+                  {options ? (
+                    <span className="block text-xs text-muted-foreground">{options}</span>
+                  ) : null}
+                  {item.variantSku ? (
+                    <span className="block text-[0.7rem] text-muted-foreground">
+                      SKU {item.variantSku}
+                    </span>
+                  ) : null}
                   {showTax && item.categoryName ? (
                     <span className="block text-xs text-muted-foreground">{item.categoryName}</span>
                   ) : null}

@@ -25,6 +25,7 @@ import { useAuth } from "@/features/auth/auth-context";
 import { getErrorMessage } from "@/lib/errors";
 import { loginHref } from "@/lib/auth-return";
 import { formatPrice } from "@/lib/format";
+import { cartVariantLabel } from "@/lib/variant";
 import type { CartItem } from "@/types/commerce";
 
 function CartLineSkeleton() {
@@ -51,11 +52,12 @@ function CartLine({
 }: {
   item: CartItem;
   index: number;
-  onUpdate: (id: number, qty: number) => void;
+  onUpdate: (item: CartItem, qty: number) => void;
   onRemove: (item: CartItem) => void;
   pending: boolean;
 }) {
   const productHref = item.productId ? `/product/${item.productId}` : null;
+  const options = cartVariantLabel(item);
   const hasImage = Boolean(item.image);
   const quantitySelectable = !item.unavailable && item.stock !== null;
   const maxQty = Math.max(
@@ -107,6 +109,13 @@ function CartLine({
             <p className="text-base font-semibold">{formatPrice(item.lineTotal)}</p>
           </div>
 
+          {options ? (
+            <p className="mt-1 text-sm text-muted-foreground">{options}</p>
+          ) : null}
+          {item.variant?.sku ? (
+            <p className="text-xs text-muted-foreground">SKU {item.variant.sku}</p>
+          ) : null}
+
           {item.price !== null ? (
             <p className="mt-1 text-sm text-muted-foreground">
               {formatPrice(item.price)} each
@@ -133,7 +142,7 @@ function CartLine({
                 min={1}
                 max={Math.max(item.qty, maxQty)}
                 disabled={pending}
-                onChange={(quantity) => onUpdate(item.id, quantity)}
+                onChange={(quantity) => onUpdate(item, quantity)}
               />
             ) : (
               <p className="text-sm text-muted-foreground">Quantity: {item.qty}</p>
@@ -173,11 +182,16 @@ export default function CartPage() {
   );
   const unavailableItems = cart?.items.filter((item) => item.unavailable).length ?? 0;
 
-  async function handleUpdate(id: number, qty: number) {
+  async function handleUpdate(item: CartItem, qty: number) {
     if (mutationInFlight.current) return;
     mutationInFlight.current = true;
     try {
-      await updateCart.mutateAsync({ id, qty });
+      await updateCart.mutateAsync({
+        id: item.id,
+        qty,
+        productId: item.productId,
+        variantId: item.variantId ?? null,
+      });
       toast({ tone: "success", title: "Quantity updated" });
     } catch (error) {
       toast({ tone: "error", title: "Could not update quantity", description: getErrorMessage(error) });
@@ -190,7 +204,11 @@ export default function CartPage() {
     if (!removeTarget || mutationInFlight.current) return;
     mutationInFlight.current = true;
     try {
-      await removeCart.mutateAsync(removeTarget.id);
+      await removeCart.mutateAsync({
+        id: removeTarget.id,
+        productId: removeTarget.productId,
+        variantId: removeTarget.variantId ?? null,
+      });
       toast({
         tone: "success",
         title: "Removed from cart",
@@ -271,7 +289,7 @@ export default function CartPage() {
                 key={item.id}
                 item={item}
                 index={index}
-                onUpdate={(id, qty) => void handleUpdate(id, qty)}
+                onUpdate={(selected, qty) => void handleUpdate(selected, qty)}
                 onRemove={setRemoveTarget}
                 pending={pending}
               />

@@ -1,5 +1,5 @@
 import type { CartItem, CartResponse, CartTaxGroup, CartTotals } from "@/types/commerce";
-import type { Product } from "@/types/catalog";
+import type { Product, ProductVariant } from "@/types/catalog";
 
 /**
  * Guest cart — the browser is the store until the shopper signs in.
@@ -7,7 +7,12 @@ import type { Product } from "@/types/catalog";
  * The shape deliberately mirrors the server's CartItem/CartTotals so the cart
  * page, header badge and product actions do not need a second rendering path.
  * Nothing here is authoritative: totals are a preview computed from the
- * product snapshot, and the server recomputes everything at merge/checkout.
+ * product/variant snapshot, and the server recomputes everything at
+ * merge/checkout.
+ *
+ * Identity is (productId, variantId), exactly like the server. Legacy lines
+ * saved before variants existed have no variantId and are normalised to NULL,
+ * so an existing browser cart keeps working.
  */
 
 export const GUEST_CART_KEY = "buyo.guestCart.v1";
@@ -16,6 +21,10 @@ const MAX_LINES = 50;
 
 export interface GuestCartLine {
   productId: number;
+  variantId: number | null;
+  variantSku: string | null;
+  variantSize: string | null;
+  variantColor: string | null;
   qty: number;
   name: string;
   unitPrice: number;
@@ -30,12 +39,19 @@ function toMoney(value: number) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
 
+function lineKey(productId: number, variantId: number | null) {
+  return `${productId}:${variantId ?? 0}`;
+}
+
 function isGuestLine(value: unknown): value is GuestCartLine {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const line = value as Partial<GuestCartLine>;
   return (
     Number.isInteger(line.productId) &&
     (line.productId ?? 0) > 0 &&
+    (line.variantId === undefined ||
+      line.variantId === null ||
+      (Number.isInteger(line.variantId) && line.variantId > 0)) &&
     Number.isInteger(line.qty) &&
     (line.qty ?? 0) > 0 &&
     typeof line.name === "string" &&
@@ -46,6 +62,17 @@ function isGuestLine(value: unknown): value is GuestCartLine {
   );
 }
 
+/** Adds defaults for lines written before variants existed. */
+function normalizeLine(line: GuestCartLine): GuestCartLine {
+  return {
+    ...line,
+    variantId: line.variantId ?? null,
+    variantSku: line.variantSku ?? null,
+    variantSize: line.variantSize ?? null,
+    variantColor: line.variantColor ?? null,
+  };
+}
+
 function fromStorage(): GuestCartLine[] {
   if (typeof window === "undefined") return [];
   try {
@@ -53,7 +80,7 @@ function fromStorage(): GuestCartLine[] {
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isGuestLine).slice(0, MAX_LINES);
+    return parsed.filter(isGuestLine).map(normalizeLine).slice(0, MAX_LINES);
   } catch {
     // Corrupt or unavailable storage must never break the storefront.
     return [];
@@ -104,14 +131,23 @@ export function subscribeGuestCart(listener: () => void) {
   };
 }
 
-function lineFromProduct(product: Product): GuestCartLine {
+function lineFromProduct(
+  product: Product,
+  variant: ProductVariant | null,
+): GuestCartLine {
   return {
     productId: product.id,
+    variantId: variant ? variant.id : null,
+    variantSku: variant ? variant.sku : null,
+    variantSize: variant ? variant.size ?? null : null,
+    variantColor: variant ? variant.color ?? null : null,
     qty: 0,
     name: product.name,
-    unitPrice: toMoney(Number(product.sellingPrice)),
+    unitPrice: toMoney(
+      variant ? Number(variant.unitPrice) : Number(product.sellingPrice),
+    ),
     image: product.image ?? null,
-    stock: Number(product.stock) || 0,
+    stock: Number(variant ? variant.stock : product.stock) || 0,
     categoryId: product.categoryId ?? null,
     categoryName: product.Category?.name ?? product.category ?? null,
     taxRate: Number(product.Category?.taxRate ?? 0) || 0,
@@ -122,33 +158,59 @@ function lineFromProduct(product: Product): GuestCartLine {
  * Add (or increment) a line. Stock and the per-line cap are enforced here
  * exactly as the server enforces them, so a guest sees the same limits before
  * signing in instead of losing items at merge time.
+ *
+ * Pass the selected variant for variant-managed products; omitting it is only
+ * valid for legacy products without active variants (the server rejects the
+ * merge otherwise).
  */
-export function addGuestLine(product: Product, qty = 1): GuestCartLine[] {
+export function addGuestLine(
+  product: Product,
+  qty = 1,
+  variant: ProductVariant | null = null,
+): GuestCartLine[] {
   if (!Number.isInteger(qty) || qty < 1) {
     throw new Error("Quantity must be a whole number of at least 1.");
   }
-  if (product.stock <= 0) {
-    throw new Error("This product is out of stock.");
+
+  // Match the server rule locally: a variant-managed product is never sold as
+  // an anonymous base line, even if Products.stock still has a cached value.
+  if (product.hasVariants && !variant) {
+    throw new Error("Choose a size or colour for this product.");
+  }
+  if (variant && !variant.isActive) {
+    throw new Error("The selected size/colour is no longer available.");
+  }
+
+  const stock = Number(variant ? variant.stock : product.stock) || 0;
+  if (stock <= 0) {
+    throw new Error(
+      variant
+        ? "The selected size/colour is out of stock."
+        : "This product is out of stock.",
+    );
   }
 
   const lines = readGuestCart();
-  const existing = lines.find((line) => line.productId === product.id);
+  const key = lineKey(product.id, variant ? variant.id : null);
+  const existing = lines.find((line) => lineKey(line.productId, line.variantId) === key);
   const existingQty = existing?.qty ?? 0;
 
-  if (existingQty + qty > product.stock) {
+  if (existingQty + qty > stock) {
     throw new Error(
-      `Only ${product.stock} unit(s) of this product are in stock` +
+      `Only ${stock} unit(s) of this ${variant ? "variant" : "product"} are in stock` +
         (existingQty ? ` — you already have ${existingQty} in your cart` : ""),
     );
   }
   if (existingQty + qty > MAX_LINE_QTY) {
-    throw new Error(`You can have at most ${MAX_LINE_QTY} units of one product.`);
+    throw new Error(`You can have at most ${MAX_LINE_QTY} units of one item.`);
   }
 
-  const snapshot = lineFromProduct(product);
+  const snapshot = lineFromProduct(product, variant);
   const next = existing
     ? lines.map((line) =>
-        line.productId === product.id ? { ...line, ...snapshot, qty: existingQty + qty } : line,
+        lineKey(line.productId, line.variantId) === key
+          ? { ...line, ...snapshot, qty: existingQty + qty }
+          : line,
       )
     : [...lines, { ...snapshot, qty }];
 
@@ -156,24 +218,43 @@ export function addGuestLine(product: Product, qty = 1): GuestCartLine[] {
   return next;
 }
 
-export function setGuestQty(productId: number, qty: number): GuestCartLine[] {
+export function setGuestQty(
+  productId: number,
+  qty: number,
+  variantId: number | null = null,
+): GuestCartLine[] {
   const lines = readGuestCart();
-  const line = lines.find((entry) => entry.productId === productId);
+  const key = lineKey(productId, variantId);
+  const line = lines.find((entry) => lineKey(entry.productId, entry.variantId) === key);
   if (!line) throw new Error("Cart item not found");
 
   if (!Number.isInteger(qty) || qty < 1) {
     throw new Error("Quantity must be a whole number of at least 1.");
   }
   if (qty > line.stock) {
-    throw new Error(`Only ${line.stock} unit(s) of this product are in stock`);
+    throw new Error(
+      `Only ${line.stock} unit(s) of this ${line.variantId ? "variant" : "product"} are in stock`,
+    );
   }
 
-  commit(lines.map((entry) => (entry.productId === productId ? { ...entry, qty } : entry)));
+  commit(
+    lines.map((entry) =>
+      lineKey(entry.productId, entry.variantId) === key ? { ...entry, qty } : entry,
+    ),
+  );
   return readGuestCart();
 }
 
-export function removeGuestLine(productId: number): GuestCartLine[] {
-  commit(readGuestCart().filter((line) => line.productId !== productId));
+export function removeGuestLine(
+  productId: number,
+  variantId: number | null = null,
+): GuestCartLine[] {
+  const key = lineKey(productId, variantId);
+  commit(
+    readGuestCart().filter(
+      (line) => lineKey(line.productId, line.variantId) !== key,
+    ),
+  );
   return readGuestCart();
 }
 
@@ -186,13 +267,29 @@ export function guestCartLineCount(): number {
   return readGuestCart().length;
 }
 
+/**
+ * Synthetic cart-item id for a guest line. Base lines keep the historical
+ * product id; variant lines get a stable composite number so two variants of
+ * the same product never collide in React keys or update handlers.
+ */
+function guestItemId(productId: number, variantId: number | null) {
+  return variantId === null ? productId : productId * 1_000_000 + variantId;
+}
+
 /** Server-shaped cart built from the local lines (preview only). */
 export function buildGuestCart(lines: GuestCartLine[] = readGuestCart()): CartResponse {
   const items: CartItem[] = lines.map((line) => ({
-    // Guest ids are product ids: the update/remove hooks route on them, and a
-    // guest never sees server ids in the same render tree.
-    id: line.productId,
+    id: guestItemId(line.productId, line.variantId),
     productId: line.productId,
+    variantId: line.variantId,
+    variant: line.variantId
+      ? {
+          id: line.variantId,
+          sku: line.variantSku ?? "",
+          size: line.variantSize,
+          color: line.variantColor,
+        }
+      : null,
     qty: line.qty,
     name: line.name,
     price: line.unitPrice,

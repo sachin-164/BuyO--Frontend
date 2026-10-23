@@ -14,6 +14,7 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import { ProductThumb } from "@/components/admin/product-thumb";
 import { ProductGalleryEditor } from "@/components/admin/product-gallery-editor";
+import { VariantEditor } from "@/components/admin/variant-editor";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,8 @@ interface ProductFormProps {
   product?: Product;
   categories: Category[];
   categoriesUnavailable?: boolean;
+  /** Any variant (active or inactive) makes Products.stock server-managed. */
+  hasManagedVariants?: boolean;
 }
 
 const FORM_FIELDS: Array<keyof ProductFormValues> = [
@@ -75,7 +78,12 @@ function buildFormData(payload: AdminProductInput, file: File): FormData {
   return form;
 }
 
-export function ProductForm({ product, categories, categoriesUnavailable = false }: ProductFormProps) {
+export function ProductForm({
+  product,
+  categories,
+  categoriesUnavailable = false,
+  hasManagedVariants = false,
+}: ProductFormProps) {
   const isEdit = Boolean(product);
   const navigate = useNavigate();
   const toast = useToast();
@@ -254,8 +262,10 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
         description: formValues.description.trim(),
         mrpPrice: Number(formValues.mrpPrice),
         sellingPrice: Number(formValues.sellingPrice),
-        stock: Number(formValues.stock),
       };
+      // Variant-managed products reject direct stock edits by design; omit the
+      // field instead of sending the stale aggregate back.
+      if (!hasManagedVariants) payload.stock = Number(formValues.stock);
 
       if (formValues.categoryMode === "existing" && selectedCategory) {
         payload.categoryId = selectedCategory.id;
@@ -301,13 +311,16 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
         const response = await createMutation.mutateAsync(body);
         toast({
           title: "Product created",
-          description: `“${response.product.name}” is now in the catalog.`,
+          description: `“${response.product.name}” is now in the catalog. Add variants here if it has size or colour options.`,
           tone: "success",
         });
-      } else {
-        await updateMutation.mutateAsync(body);
-        toast({ title: "Product updated", description: "The catalog has been refreshed.", tone: "success" });
+        // Editing is where variants and the gallery live, so go straight there
+        // instead of making the owner find the row again.
+        navigate(`/admin/products/${response.product.id}/edit`);
+        return;
       }
+      await updateMutation.mutateAsync(body);
+      toast({ title: "Product updated", description: "The catalog has been refreshed.", tone: "success" });
       navigate("/admin/products");
     } catch (error) {
       applyServerErrors(error);
@@ -482,9 +495,13 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
                 <Field
                   id="product-stock"
                   label="Stock"
-                  required
+                  required={!hasManagedVariants}
                   error={errors.stock?.message}
-                  hint="Whole units available."
+                  hint={
+                    hasManagedVariants
+                      ? "Managed per variant. The product total is an aggregate maintained by the server."
+                      : "Whole units available."
+                  }
                 >
                   {({ invalid, described }) => (
                     <Input
@@ -494,6 +511,7 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
                       step={1}
                       inputMode="numeric"
                       {...register("stock")}
+                      disabled={hasManagedVariants}
                       aria-invalid={invalid}
                       aria-describedby={described}
                     />
@@ -631,6 +649,13 @@ export function ProductForm({ product, categories, categoriesUnavailable = false
                 setValue("imageAlt", imageAlt);
                 setRemoveImage(false);
               }}
+            />
+          ) : null}
+
+          {isEdit && product ? (
+            <VariantEditor
+              productId={product.id}
+              basePrice={Number(product.sellingPrice)}
             />
           ) : null}
         </div>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAdminVariants } from "@/features/admin/queries";
 import { useCategories, useProduct } from "@/features/catalog/queries";
 import { ApiError } from "@/lib/api";
 import { usePageTitle } from "@/hooks/use-page-title";
@@ -41,6 +42,7 @@ export default function AdminProductFormPage() {
   usePageTitle(isEdit ? "Edit product" : "New product");
 
   const productQuery = useProduct(isEdit && numericId ? String(numericId) : undefined);
+  const variantsQuery = useAdminVariants(isEdit ? numericId : null);
   const categoriesQuery = useCategories();
 
   const header = (
@@ -118,8 +120,11 @@ export default function AdminProductFormPage() {
 
   const productReady = !isEdit || productQuery.isSuccess;
   const categoriesReady = categoriesQuery.isSuccess || categoriesQuery.isError;
+  // Wait for the admin variant list so the stock field cannot be submitted
+  // blindly on a product whose variants are all inactive.
+  const variantsReady = !isEdit || variantsQuery.isSuccess || variantsQuery.isError;
 
-  if (!productReady || !categoriesReady) {
+  if (!productReady || !categoriesReady || !variantsReady) {
     return (
       <>
         {header}
@@ -136,6 +141,11 @@ export default function AdminProductFormPage() {
         product={productQuery.data?.product}
         categories={categoriesQuery.data?.categories ?? []}
         categoriesUnavailable={categoriesQuery.isError}
+        hasManagedVariants={
+          variantsQuery.isSuccess
+            ? variantsQuery.data.count > 0
+            : Boolean(productQuery.data?.product.hasVariants)
+        }
       />
     </>
   );

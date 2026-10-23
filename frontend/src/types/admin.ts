@@ -3,6 +3,7 @@ import type {
   Pagination,
   Product,
   ProductImageMeta,
+  ProductVariant,
 } from "@/types/catalog";
 import type { Address } from "@/types/account";
 import type {
@@ -58,7 +59,8 @@ export interface AdminProductInput {
   description?: string;
   mrpPrice: number;
   sellingPrice: number;
-  stock: number;
+  /** Omitted on updates once the product is variant-managed. */
+  stock?: number;
   slug?: string;
   image?: string;
   imageMeta?: ProductImageMeta;
@@ -73,6 +75,28 @@ export interface ProductMutationResponse {
 export interface ProductDeleteResponse {
   success: true;
   message: string;
+}
+
+export interface AdminVariantInput {
+  sku: string;
+  size?: string;
+  color?: string;
+  stock?: number;
+  priceAdjustment?: number;
+  isActive?: boolean;
+}
+
+export interface AdminVariantsResponse {
+  success: true;
+  productId: number;
+  count: number;
+  variants: ProductVariant[];
+}
+
+export interface AdminVariantResponse {
+  success: true;
+  message?: string;
+  variant: ProductVariant;
 }
 
 export interface AdminCategoryInput {

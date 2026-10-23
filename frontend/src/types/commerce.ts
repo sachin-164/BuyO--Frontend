@@ -1,6 +1,16 @@
+export interface CartVariantInfo {
+  id: number;
+  sku: string;
+  size: string | null;
+  color: string | null;
+}
+
 export interface CartItem {
   id: number;
   productId: number | null;
+  /** NULL = the legacy/base line of a product without active variants. */
+  variantId?: number | null;
+  variant?: CartVariantInfo | null;
   qty: number;
   name: string;
   price: number | null;
@@ -9,6 +19,7 @@ export interface CartItem {
   stock: number | null;
   stockExceeded: boolean;
   unavailable: boolean;
+  unavailableReason?: string | null;
 }
 
 export interface CartTaxGroup {
@@ -83,6 +94,12 @@ export type OrderStatus =
 export interface OrderItem {
   id: number;
   productId: number | null;
+  /** Frozen variant snapshots; all null for legacy/base-product lines. */
+  variantId?: number | null;
+  variantSku?: string | null;
+  variantSize?: string | null;
+  variantColor?: string | null;
+  variantPriceAdjustment?: number | null;
   name: string;
   image?: string | null;
   unitPrice: number;

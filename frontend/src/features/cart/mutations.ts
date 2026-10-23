@@ -8,7 +8,7 @@ import {
   setGuestQty,
 } from "@/features/cart/guest-cart";
 import { useAuth } from "@/features/auth/auth-context";
-import type { Product } from "@/types/catalog";
+import type { Product, ProductVariant } from "@/types/catalog";
 import type { CartItem, CartResponse } from "@/types/commerce";
 
 /**
@@ -23,15 +23,28 @@ import type { CartItem, CartResponse } from "@/types/commerce";
 export function useAddToCart() {
   const queryClient = useQueryClient();
   const { hasToken } = useAuth();
-  return useMutation<CartResponse, unknown, { productId: number; qty: number; product?: Product }>({
+  return useMutation<
+    CartResponse,
+    unknown,
+    {
+      productId: number;
+      qty: number;
+      product?: Product;
+      variant?: ProductVariant | null;
+    }
+  >({
     mutationFn: async (input) => {
       if (hasToken) {
-        return api.post<CartResponse>("/api/cart", { productId: input.productId, qty: input.qty });
+        return api.post<CartResponse>("/api/cart", {
+          productId: input.productId,
+          ...(input.variant ? { variantId: input.variant.id } : {}),
+          qty: input.qty,
+        });
       }
       if (!input.product) {
         throw new Error("Product details are required to save a guest cart item.");
       }
-      addGuestLine(input.product, input.qty);
+      addGuestLine(input.product, input.qty, input.variant ?? null);
       return buildGuestCart();
     },
     onSuccess: (data) => queryClient.setQueryData(cartKeys.all, data),
@@ -48,18 +61,18 @@ export function useUpdateCartItem() {
   return useMutation<
     CartResponse,
     unknown,
-    { id: number; qty: number },
+    { id: number; qty: number; productId?: number | null; variantId?: number | null },
     { previous?: CartResponse } | undefined
   >({
     mutationFn: async (input) => {
       if (hasToken) {
         return api.put<CartResponse>(`/api/cart/${input.id}`, { qty: input.qty });
       }
-      // Guest ids are product ids (see buildGuestCart).
-      setGuestQty(input.id, input.qty);
+      if (!input.productId) throw new Error("Cart item not found");
+      setGuestQty(input.productId, input.qty, input.variantId ?? null);
       return buildGuestCart();
     },
-    onMutate: async (input: { id: number; qty: number }): Promise<{ previous?: CartResponse } | undefined> => {
+    onMutate: async (input): Promise<{ previous?: CartResponse } | undefined> => {
       if (!hasToken) return undefined;
       await queryClient.cancelQueries({ queryKey: cartKeys.all });
       const previous = queryClient.getQueryData<CartResponse>(cartKeys.all);
@@ -102,10 +115,15 @@ export function useRemoveCartItem() {
   const queryClient = useQueryClient();
   const { hasToken } = useAuth();
 
-  return useMutation<CartResponse, unknown, number>({
-    mutationFn: async (id) => {
-      if (hasToken) return api.delete<CartResponse>(`/api/cart/${id}`);
-      removeGuestLine(id);
+  return useMutation<
+    CartResponse,
+    unknown,
+    { id: number; productId?: number | null; variantId?: number | null }
+  >({
+    mutationFn: async (input) => {
+      if (hasToken) return api.delete<CartResponse>(`/api/cart/${input.id}`);
+      if (!input.productId) throw new Error("Cart item not found");
+      removeGuestLine(input.productId, input.variantId ?? null);
       return buildGuestCart();
     },
     onSuccess: (data) => queryClient.setQueryData(cartKeys.all, data),

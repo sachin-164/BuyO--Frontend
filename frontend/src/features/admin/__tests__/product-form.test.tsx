@@ -45,6 +45,9 @@ function installFormFetch(overrides: MockHandler = () => undefined) {
     if (method === "GET" && url.pathname === "/api/products/3") {
       return productDetailResponse();
     }
+    if (method === "GET" && url.pathname === "/api/products/3/variants") {
+      return jsonResponse({ success: true, productId: 3, count: 0, variants: [] });
+    }
     if (method === "GET" && url.pathname === "/api/products/999") {
       return jsonResponse({ success: false, message: "Product not found" }, 404);
     }
@@ -158,7 +161,7 @@ describe("AdminProductFormPage", () => {
     await user.click(screen.getByRole("button", { name: "Add product" }));
 
     expect(await screen.findByText("Product created")).toBeInTheDocument();
-    expect(screen.getByTestId("location")).toHaveTextContent("/admin/products");
+    expect(screen.getByTestId("location")).toHaveTextContent("/admin/products/99/edit");
 
     const created = productRequests(requests)[0];
     expect(JSON.parse(created.body ?? "{}")).toEqual({
@@ -409,6 +412,68 @@ describe("AdminProductFormPage", () => {
     expect(screen.getByText("must be greater than 0")).toBeInTheDocument();
     expect(screen.getByText("must be a string")).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("/admin/products/new");
+  });
+
+  it("disables product stock and omits it from the update when variants exist", async () => {
+    const user = userEvent.setup();
+    const variantProduct: Product = {
+      ...PRODUCT,
+      id: 5,
+      name: "Everyday Tee",
+      slug: "everyday-tee",
+      stock: 4,
+      hasVariants: true,
+      variants: [
+        {
+          id: 31,
+          productId: 5,
+          sku: "TEE-BLK-M",
+          size: "M",
+          color: "Black",
+          priceAdjustment: 0,
+          unitPrice: 999,
+          stock: 4,
+          isActive: true,
+        },
+      ],
+    };
+    const { requests } = installFormFetch(({ url, method }) => {
+      if (method === "GET" && url.pathname === "/api/products/5") {
+        return productDetailResponse(variantProduct);
+      }
+      if (method === "GET" && url.pathname === "/api/products/5/variants") {
+        return jsonResponse({
+          success: true,
+          productId: 5,
+          count: 1,
+          variants: variantProduct.variants,
+        });
+      }
+      if (method === "PUT" && url.pathname === "/api/products/5") {
+        return jsonResponse({
+          success: true,
+          message: "Product updated",
+          product: variantProduct,
+        });
+      }
+      return undefined;
+    });
+
+    renderForm("/admin/products/5/edit");
+
+    expect(await screen.findByDisplayValue("Everyday Tee")).toBeInTheDocument();
+    const stock = screen.getByLabelText(/^Stock/);
+    expect(stock).toBeDisabled();
+    expect(screen.getByText(/Managed per variant/)).toBeInTheDocument();
+    expect(await screen.findByText("Size M · Colour Black")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/admin/products"));
+
+    const put = requests.find(
+      (request) => request.method === "PUT" && request.url.pathname === "/api/products/5",
+    );
+    expect(JSON.parse(put?.body ?? "{}")).not.toHaveProperty("stock");
   });
 
   it("shows not-found and invalid-id states without inventing a form", async () => {

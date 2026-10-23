@@ -5,9 +5,18 @@ import { clearGuestCart, readGuestCart } from "@/features/cart/guest-cart";
 import type { CartResponse } from "@/types/commerce";
 
 export interface MergeReport {
-  merged: Array<{ productId: number; qty: number; added: number }>;
-  skipped: Array<{ productId: number; reason: "not_found" | "out_of_stock" }>;
-  clamped: Array<{ productId: number; available: number; requested: number }>;
+  merged: Array<{ productId: number; variantId?: number | null; qty: number; added: number }>;
+  skipped: Array<{
+    productId: number;
+    variantId?: number | null;
+    reason: "not_found" | "out_of_stock" | "variant_unavailable" | "variant_required";
+  }>;
+  clamped: Array<{
+    productId: number;
+    variantId?: number | null;
+    available: number;
+    requested: number;
+  }>;
 }
 
 export type MergeCartResponse = CartResponse & MergeReport;
@@ -25,7 +34,11 @@ export async function mergeGuestCart(queryClient: QueryClient): Promise<boolean>
 
   try {
     const response = await api.post<MergeCartResponse>("/api/cart/merge", {
-      items: lines.map((line) => ({ productId: line.productId, qty: line.qty })),
+      items: lines.map((line) => ({
+        productId: line.productId,
+        variantId: line.variantId,
+        qty: line.qty,
+      })),
     });
     clearGuestCart();
     queryClient.setQueryData(cartKeys.all, response);

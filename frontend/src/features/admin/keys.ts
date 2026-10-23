@@ -11,7 +11,27 @@ export const adminKeys = {
   customersRoot: () => [...adminKeys.all, "customers"] as const,
   customers: (search: string) => [...adminKeys.customersRoot(), "list", search] as const,
   customer: (id: number | null) => [...adminKeys.customersRoot(), "detail", id] as const,
+  variantsRoot: () => [...adminKeys.all, "variants"] as const,
+  variants: (productId: number | null) => [...adminKeys.variantsRoot(), productId] as const,
+  reviewsRoot: () => [...adminKeys.all, "reviews"] as const,
+  reviews: (search: string) => [...adminKeys.reviewsRoot(), "list", search] as const,
 };
+
+export interface AdminReviewListParams {
+  page?: number;
+  status?: "pending" | "approved" | "rejected" | "all";
+  q?: string;
+}
+
+export function adminReviewsSearch(params: AdminReviewListParams): string {
+  const search = new URLSearchParams();
+  if (params.page && params.page > 1) search.set("page", String(params.page));
+  search.set("status", params.status ?? "pending");
+  const term = params.q?.trim();
+  if (term) search.set("q", term);
+  search.set("limit", "20");
+  return search.toString();
+}
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   placed: "Placed",

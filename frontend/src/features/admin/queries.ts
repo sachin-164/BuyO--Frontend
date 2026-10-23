@@ -4,8 +4,10 @@ import {
   adminKeys,
   adminOrdersSearch,
   adminCustomersSearch,
+  adminReviewsSearch,
   type AdminOrderListParams,
   type AdminCustomerListParams,
+  type AdminReviewListParams,
 } from "@/features/admin/keys";
 import type {
   AdminAnalyticsSummary,
@@ -15,7 +17,9 @@ import type {
   AdminOrderDetailResponse,
   AdminOrderListResponse,
   AdminOrderSummary,
+  AdminVariantsResponse,
 } from "@/types/admin";
+import type { AdminReviewsResponse } from "@/types/reviews";
 
 /**
  * Server-side aggregate dashboard.
@@ -66,6 +70,26 @@ export function useAdminCustomer(id: number | null) {
       api.get<AdminCustomerDetailResponse>(`/api/admin/customers/${id}`, signal),
     enabled: id !== null && id > 0,
     retry: false,
+  });
+}
+
+/** Admin variant list includes inactive variants (public reads do not). */
+export function useAdminVariants(productId: number | null) {
+  return useQuery<AdminVariantsResponse>({
+    queryKey: adminKeys.variants(productId),
+    queryFn: ({ signal }) =>
+      api.get<AdminVariantsResponse>(`/api/products/${productId}/variants`, signal),
+    enabled: productId !== null && productId > 0,
+    retry: false,
+  });
+}
+
+export function useAdminReviews(params: AdminReviewListParams) {
+  const search = adminReviewsSearch(params);
+  return useQuery<AdminReviewsResponse>({
+    queryKey: adminKeys.reviews(search),
+    queryFn: ({ signal }) =>
+      api.get<AdminReviewsResponse>(`/api/admin/reviews?${search}`, signal),
   });
 }
 

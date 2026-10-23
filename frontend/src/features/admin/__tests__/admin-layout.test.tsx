@@ -34,6 +34,10 @@ describe("AdminLayout", () => {
     expect(await screen.findByRole("navigation", { name: "Admin" })).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(screen.getByText("Dashboard content")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Reviews" })).toHaveAttribute(
+      "href",
+      "/admin/reviews",
+    );
 
     const accountButton = await screen.findByRole("button", {
       name: "Account menu for Asha Admin",

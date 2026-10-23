@@ -8,12 +8,15 @@ import type {
   AdminOrderDetailResponse,
   AdminOrderStatusResponse,
   AdminProductInput,
+  AdminVariantInput,
+  AdminVariantResponse,
   CategoryDeleteResponse,
   CategoryMutationResponse,
   ProductDeleteResponse,
   ProductMutationResponse,
 } from "@/types/admin";
 import type { OrderStatus } from "@/types/commerce";
+import type { ModerationResponse, ReviewStatus } from "@/types/reviews";
 
 function useInvalidateAdminCatalog() {
   const queryClient = useQueryClient();
@@ -79,6 +82,64 @@ export function useDeleteProductImage(id: number) {
   return useMutation<ProductMutationResponse, unknown, number>({
     mutationFn: (imageId) => api.delete<ProductMutationResponse>(`/api/products/${id}/images/${imageId}`),
     onSuccess: invalidate,
+  });
+}
+
+function useInvalidateVariants(productId: number) {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: adminKeys.variants(productId) });
+    void queryClient.invalidateQueries({ queryKey: catalogKeys.all });
+    void queryClient.invalidateQueries({ queryKey: adminKeys.dashboard() });
+  };
+}
+
+export function useCreateVariant(productId: number) {
+  const invalidate = useInvalidateVariants(productId);
+  return useMutation<AdminVariantResponse, unknown, AdminVariantInput>({
+    mutationFn: (body) =>
+      api.post<AdminVariantResponse>(`/api/products/${productId}/variants`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateVariant(productId: number) {
+  const invalidate = useInvalidateVariants(productId);
+  return useMutation<
+    AdminVariantResponse,
+    unknown,
+    { variantId: number; body: Partial<AdminVariantInput> }
+  >({
+    mutationFn: ({ variantId, body }) =>
+      api.put<AdminVariantResponse>(`/api/products/${productId}/variants/${variantId}`, body),
+    onSuccess: invalidate,
+  });
+}
+
+/** DELETE is a soft deactivation; order history keeps its snapshots. */
+export function useDeactivateVariant(productId: number) {
+  const invalidate = useInvalidateVariants(productId);
+  return useMutation<AdminVariantResponse, unknown, number>({
+    mutationFn: (variantId) =>
+      api.delete<AdminVariantResponse>(`/api/products/${productId}/variants/${variantId}`),
+    onSuccess: invalidate,
+  });
+}
+
+export function useModerateReview() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    ModerationResponse,
+    unknown,
+    { id: number; status: Exclude<ReviewStatus, "pending"> }
+  >({
+    mutationFn: ({ id, status }) =>
+      api.patch<ModerationResponse>(`/api/admin/reviews/${id}`, { status }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: adminKeys.reviewsRoot() });
+      void queryClient.invalidateQueries({ queryKey: catalogKeys.all });
+      void queryClient.invalidateQueries({ queryKey: adminKeys.dashboard() });
+    },
   });
 }
 

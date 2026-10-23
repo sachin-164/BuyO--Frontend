@@ -19,7 +19,7 @@
 | `BLOCKED (creds)` | Needs third-party credentials/services not available locally |
 | `GATED` | Requires explicit approval before touching production |
 
-For UI items, `DONE` means the journey was exercised in the 2026-10-22 Chrome
+For UI items, `DONE` means the journey was exercised in the 2026-10-23 Chrome
 run against real MySQL + Express (see **Real-browser acceptance** below). For
 backend-only items (email, storage, aggregate APIs, migrations) `DONE` means the
 live code path plus automated tests were exercised; a browser is not applicable.
@@ -118,9 +118,9 @@ Owner decisions recorded before implementation:
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 20 | Variant data model + migration | Missing | Additive `ProductVariants` table (size, colour, unique SKU, price delta, stock, active) + `CartItems.variantId` + order-item snapshots. Reversible migrations `010_product_variants.sql` / `.pgsql`; PostgreSQL cart uniqueness moves to `(UserId, productId, variantId)` | — | Migration up/down documented and exercised on a disposable DB; existing products/orders untouched; duplicate SKU rejected by the DB; sync-built and migration-built PostgreSQL schemas stay catalog-identical | `migrations.test.js`, `pgBaseSchema.test.js` | TODO |
-| 21 | Variant API + admin editor | Missing | Admin `GET/POST /api/products/:id/variants`, `PUT /api/products/:id/variants/:variantId`; public active variants on product detail; validation of options, SKU, stock, price delta, final price; aggregate stock kept transactional | 20 | Non-admin 403; duplicate SKU 409; negative stock / invalid delta / empty options / missing variant rejected 400; deactivation removes a variant from public sale but preserves order history | `variants.test.js` | TODO |
-| 22 | Variant storefront selection | Missing | PDP size/colour selector that resolves a real variant/SKU; price, availability and quantity bound to that variant; cart/checkout/order/cancellation preserve it | 21 | Selector only shows variants that exist; out-of-stock/inactive/stale variants cannot be added or checked out; cart line records variant; guest merge keeps variant identity | `variants-ui.test.tsx`, acceptance run | TODO |
+| 20 | Variant data model + migration | Additive `ProductVariants` table (parent FK, DB-unique SKU, size/colour, independent stock, price delta, active flag), `CartItems.variantId`, and `OrderItems` variant snapshots; MySQL `010_product_variants.sql` + PostgreSQL `010_product_variants.pgsql`. PostgreSQL cart uniqueness is `(UserId, productId, COALESCE(variantId, 0))` | Done | — | Migration up/down exercised on disposable MySQL/PostgreSQL; existing products/orders untouched; duplicate SKU rejected by the DB; sync-built and migration-built PostgreSQL schemas stay catalog-identical | `migrations.test.js`, `pgMigrations.test.js` (14/14), `pgBaseSchema.test.js` (4/4) | DONE |
+| 21 | Variant API + admin editor | Admin `GET/POST /api/products/:id/variants`, `PUT/DELETE /api/products/:id/variants/:variantId`; active variants on public product detail; validation of options, SKU, stock, delta and final price; every write locks the product and recomputes the aggregate transactionally; admin product stock edits return `409 STOCK_MANAGED_BY_VARIANTS` | Done — deactivation is soft and leaves order snapshots intact; reactivation is an edit + active flag | 20 | Non-admin 403; duplicate SKU 409; negative stock / invalid delta / empty options / missing variant 400; deactivated variant leaves public sale while its row and order history stay | `variants.test.js` (8) | DONE |
+| 22 | Variant storefront selection | PDP size/colour selector bound to real variant IDs/SKUs, variant price and stock, auto-select first in-stock variant; variant-aware cart identity, guest merge, checkout, order snapshots and cancellation/restock; variant cards link to “Choose options” instead of quick-add | Done | 21 | Selector only shows real active variants; out-of-stock/inactive/stale variants cannot be added or checked out; cart line records the variant; guest merge keeps variant identity; deactivated options disappear from the PDP | `product-page.test.tsx` (5), `guest-cart.test.tsx` (14), `add-to-cart-button.test.tsx` (1), acceptance run | DONE |
 
 ## K. Catalog: reviews — **owner-approved 2026-10-22**
 
@@ -137,9 +137,9 @@ Owner decisions recorded before implementation:
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 23 | Review data model + migration | Missing | Additive `ProductReviews` table (rating 1–5, title, body, status, moderatedBy/moderatedAt) + unique `(userId, productId)`. Reversible `011_product_reviews.sql` / `.pgsql` | — | Up/down documented and exercised on a disposable DB; no seeded/fake reviews; pending rows can never be selected by public code paths | `migrations.test.js`, `pgBaseSchema.test.js` | TODO |
-| 24 | Review API | Missing | Public approved-only list + live rating aggregate; authenticated create with server validation and forced pending status; own-review endpoint; admin moderation list/update | 23 | Unauth 401; invalid rating/length 400; duplicate 409; status/userId mass assignment ignored; public list/aggregate exclude pending/rejected; non-admin moderation 403; repeated moderation is safe | `reviews.test.js` | TODO |
-| 25 | Review UI | Missing | PDP approved-review list, rating summary, signed-in submission form + own pending/rejected status; admin moderation queue with loading/empty/error/success states and approve/reject | 24 | Empty state says "no reviews yet" — never fabricated; pending review is visible only to its author; a11y-labelled form errors; admin actions authorized server-side | `reviews-ui.test.tsx`, acceptance run | TODO |
+| 23 | Review data model + migration | Additive `ProductReviews` table (rating 1–5, title, body, status enum, moderatedBy/moderatedAt) with DB-unique `(userId, productId)` and product/status indexes; MySQL `011_product_reviews.sql` + PostgreSQL `011_product_reviews.pgsql` | Done — no reviews are seeded or fabricated | — | Up/down exercised on disposable MySQL/PostgreSQL; pending rows can never be selected by public code paths; repeated migration is guarded | `migrations.test.js`, `pgMigrations.test.js` (14/14), `pgBaseSchema.test.js` (4/4) | DONE |
+| 24 | Review API | Public approved-only list + live rating aggregate; authenticated create with server validation and forced `pending` status; own-review endpoint; admin moderation list/update with whitelisted status, moderator/timestamp, safe repeated moderation | Done — client-supplied `status`/`userId` are ignored; public responses are `Cache-Control: no-store` | 23 | Unauth 401; invalid rating/length 400; duplicate 409; public list/aggregate exclude pending/rejected; non-admin moderation 403; customer has no edit/delete endpoint; repeated moderation is a no-op preserving metadata | `reviews.test.js` (5) | DONE |
+| 25 | Review UI | PDP approved-review list, rating summary, signed-in submission form and own pending/approved/rejected status; admin moderation page at `/admin/reviews` with URL-backed status tabs, search, pagination, counts, confirmations, loading/empty/error/success states, approve/reject | Done | 24 | Empty state says “No reviews yet” — never fabricated; pending review is visible only to its author; a11y-labelled form errors; admin actions authorized server-side; approved review becomes public immediately after moderation | `product-reviews.test.tsx` (3), `reviews-page.test.tsx` (5), `admin-layout.test.tsx`, acceptance run | DONE |
 
 ## L. Catalog: discovery
 
@@ -168,7 +168,7 @@ Owner decisions recorded before implementation:
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 34 | Release readiness: migrations, env, rollback, acceptance | Phase 6 docs exist | Evidence complete: migrations `008`/`009` recorded with risk + rollback, no new env vars, risk register, release/rollback plan, and the 2026-10-22 real-browser acceptance run. The production schema migration and backend deploy still need explicit owner approval | 1–33 | Full suite green, production build clean, real-browser journeys pass against a real backend | `npm test` (backend 330: 329 pass, 1 PG-only skip), `npx vitest run` (208/208), `npx tsc --noEmit`, `npm run build`, `docs/acceptance/run.cjs` (25/25) | GATED |
+| 34 | Release readiness: migrations, env, rollback, acceptance | Phase 6 docs exist; migrations `008`–`011` recorded with risk + rollback, no new env vars, risk register, release/rollback plan, and the 2026-10-23 real-browser acceptance run (`docs/acceptance/report-2026-10-23.json`) | Done locally. The production schema migration and backend/frontend deploy still need explicit owner approval | 1–33 | Full suite green, production build clean, real-browser journeys pass against a real backend | `npm test` (backend 343: 342 pass, 1 PG-only skip), `npx vitest run` (228/228), `npx tsc --noEmit`, `npm run build`, PG migrations/base/tooling (14/14, 4/4, 8/8), `docs/acceptance/run.cjs` (29/29) | GATED |
 
 ---
 
@@ -194,8 +194,8 @@ Media ships before multi-image so there is one upload path, not two.
 
 | Area | What the owner must supply | Blocks |
 | --- | --- | --- |
-| Variants | Which option types exist (size/colour/etc.), per-product values, SKUs, stock, price deltas | 20–22 |
-| Reviews | Whether reviews are enabled, verified-purchase-only policy, moderation stance | 23–25 |
+| Variants | Real per-product values, SKUs, stock and price deltas (option types are owner-decided: size and/or colour) | 20–22 data |
+| Reviews | Moderation stance is owner-decided (any signed-in customer, no verified purchase, pre-moderated); enable/disable remains an owner launch decision | 23–25 data/policy |
 | Policies | Shipping promise, return window, company legal details | Not fabricated — existing pages already say "owner input required" |
 | Catalog content | Real category tree, real product images/alt text | 29–33 data (not code) |
 
@@ -214,19 +214,23 @@ Media ships before multi-image so there is one upload path, not two.
 | --- | --- | --- | --- |
 | `008_create_product_images.sql` / `.pgsql` (item 32) | Additive `ProductImages` table (`productId`, `url`, `alt`, `position`) with `ON DELETE CASCADE` FK to `Products` and index `idx_product_images_product_position` | Low: `CREATE TABLE IF NOT EXISTS` only; no existing column, row or index is touched. Old code ignores the table entirely. Runs in a single transaction on PostgreSQL | `DROP TABLE "ProductImages";` (MySQL: ``DROP TABLE `ProductImages`;``) — `Products.image` is untouched by the migration, so the storefront keeps rendering with or without it |
 | `009_categories_parent.sql` / `.pgsql` (item 29) | Additive nullable `Categories.parentId` plus self-FK `Categories_parentId_fkey` (`ON UPDATE CASCADE ON DELETE SET NULL`). No backfill: every existing category stays a root | Low: one nullable column + one FK; old code ignores both, and no row or index is rewritten. Deliberately no extra index (matches `sequelize.sync`; MySQL creates its FK index automatically). Guarded/re-runnable; PG runs in one transaction | `ALTER TABLE "Categories" DROP CONSTRAINT "Categories_parentId_fkey"; ALTER TABLE "Categories" DROP COLUMN "parentId";` (MySQL: ``ALTER TABLE `Categories` DROP FOREIGN KEY `Categories_parentId_fkey`; ALTER TABLE `Categories` DROP COLUMN `parentId`;``) — discards hierarchy links only, never rows |
+| `010_product_variants.sql` / `.pgsql` (items 20–22) | Additive `ProductVariants` table, nullable `CartItems.variantId` + FK, and nullable `OrderItems` variant snapshot columns + FK. PostgreSQL replaces the cart unique index with `(UserId, productId, COALESCE(variantId, 0))`; MySQL keeps its transactional app-level dedup | Medium: new objects only and old code ignores them, but the PostgreSQL cart uniqueness change must land with the backend (one base line + one line per variant). No existing product/order row is modified. Production starts with no variants, so the new table is empty | Run `011` DOWN first, then `010` DOWN: drop order-item FKs/columns, cart FK/column, `ProductVariants`; on PostgreSQL also drop `uq_cartitems_user_product_variant`. If post-release variant orders exist, dump `ProductVariants` and the snapshot columns first — dropping them loses only newly added variant data, never historical order rows |
+| `011_product_reviews.sql` / `.pgsql` (items 23–25) | Additive `ProductReviews` table (rating/title/body/status/moderation metadata), unique `(userId, productId)` index, product/status index, and three FKs. PostgreSQL creates `enum_ProductReviews_status` | Low: one new table and its indexes; no existing table, column or row is touched. Production starts with no reviews | `DROP TABLE "ProductReviews"; DROP TYPE "enum_ProductReviews_status";` (MySQL: ``DROP TABLE `ProductReviews`;``) — removes only reviews created after release; snapshot a copy first if they must be preserved |
 
 ---
 
-## Real-browser acceptance — 2026-10-22
+## Real-browser acceptance — 2026-10-23
 
 Executed with `docs/acceptance/run.cjs` (recorded output:
-`docs/acceptance/report-2026-10-22.json`).
+`docs/acceptance/report-2026-10-23.json`).
 
 Environment: disposable MySQL `buyoDB_ph2_test`, real Express on `:5000`
 (`NODE_ENV=test`, `MAIL_TRANSPORT=json`), real Vite on `:5173`, Google Chrome via
-Playwright, desktop 1440×900 + mobile 390×844.
+Playwright, desktop 1440×900 + mobile 390×844. The harness recreates only the
+`_test` database and seeds its own admin, buyer, categories, products and
+variants.
 
-Result: **25/25 steps passed**, 0 browser console errors (excluding the two
+Result: **29/29 steps passed**, 0 browser console errors (excluding the two
 intentional 4xx responses from negative tests). Every step asserts the UI *and*
 the database (Sequelize models) or the captured mail outbox.
 
@@ -235,27 +239,25 @@ the database (Sequelize models) or the captured mail outbox.
 | Storefront | home; category tree → `/shop?category=bottles`; suggestions combobox; PDP image (naturalWidth > 0), related products | 4 steps |
 | Guest cart (16,17) | guest add → header count → `/cart` reachable → `localStorage` line; merge on sign-in into the server cart; local copy emptied | 2 steps |
 | Auth (8–11,14,15) | signup → captured verification mail → unverified login 403 → resend mail (2 captured) → verify link → login; profile name persisted; wrong current password field error, then change + re-login; reset link → new password → old token 401 | 5 steps |
-| Orders (12,13,18,19) | address create (DB row, default); COD checkout (one order, stock −1, total > 0); history/detail; cancel (status, restock exactly once, 2 events); receipt + cancellation mail captured | 4 steps |
+| Orders (12,13,18,19) | address create (DB row, default); COD checkout (one order, base stock −1, **variant stock −1**, aggregate = sum of active variants, order-item variant/SKU/price snapshot); history/detail; cancel (status, base **and variant** restock exactly once, 2 events); receipt + cancellation mail captured | 4 steps |
 | Admin (1–5) | analytics API equals DB counts/sum/status; dashboard card; customer search → detail; confirm a second order → customer mail; order free-text search is URL-driven; category create with parent | 5 steps |
+| Variants (20–22) | guest PDP auto-selects M/Black, shows ₹1,100 + SKU, persists `variantId`; merge keeps variant identity; admin UI edits one variant's stock, adds `TEE-NVY-S`, deactivates it (row stays, aggregate and public options update), and the product-level stock field is disabled | 2 steps |
+| Reviews (23–25) | signed-in customer submits 5★ review; API own-status is `pending`; public list/aggregate stay 0 and a signed-out browser cannot see it; duplicate 409; non-admin moderation 403; admin approves in `/admin/reviews`; DB records moderator/timestamp; repeated moderation is `unchanged`; public list/aggregate and signed-out PDP show 1 approved review | 2 steps |
 | Security/errors | anonymous 401; foreign order 404; idempotent replay returns the same order with one row and one receipt; stale stock blocks checkout without creating an order; unsupported upload 400; non-admin upload 403 | 1 step |
-| Quality (34) | mobile: no horizontal overflow on 5 routes + mobile nav; a11y: 1 H1, lang, alt text, labelled buttons, main landmark; SEO: title/description/OG + PDP title; perf: DCL < 5 s, main bundle < 800 kB; no console errors | 4 steps |
+| Quality (34) | mobile: no horizontal overflow on 6 routes (including the variant PDP) + mobile nav; a11y: 1 H1, lang, alt text, labelled buttons, main landmark; SEO: title/description/OG + PDP title; perf: DCL < 5 s, main bundle < 800 kB; no console errors | 4 steps |
 
-Defects found and fixed during this run (committed separately):
-
-1. `/cart` was still wrapped in `RequireAuth`, so guests could add items but
-   could not open the cart they had just filled (contradicted item 17's
-   acceptance). The route is now public; checkout remains guarded.
-2. The Vite dev server proxied `/api` but not `/uploads`, so locally stored
-   product images 404'd in development. `/uploads` is now proxied (hosted
-   deployments use absolute Supabase URLs and are unaffected).
-3. `index.html` had no Open Graph/Twitter metadata. OG site/title/description
-   and a Twitter card were added.
+The only failure during the first attempt was a Playwright selector ambiguity in
+the new harness (`Approve` also matched the `Approved` tab); `run.cjs` now uses
+an exact match and the clean rerun above is the recorded evidence. The three
+product defects found in the 2026-10-22 run (public `/cart`, missing `/uploads`
+proxy, missing OG metadata) remain fixed.
 
 Honest limits of this run (also in the blocked register): mail is capture-mode
 (no SMTP), storage is the local disk driver (no Supabase), the admin account is
-seeded locally, and the production dataset (0 categories) cannot exercise the
-hierarchy. Gallery *replacement* UI was covered by automated tests, not this
-browser run.
+seeded locally, and the production dataset (0 categories, no variants/reviews)
+cannot exercise those journeys. Variant and review production data requires
+owner input. Gallery *replacement* UI was covered by automated tests, not this
+browser run. No production row, order, stock value or schema was changed.
 
 ---
 
@@ -263,7 +265,7 @@ browser run.
 
 Nothing below has been executed against production. Production is still the
 baseline commit `9078aae` (Vercel deployment `dpl_GkpNWj9eoL5Khao7XFos7fjG2GFd`),
-with schema migrations `008`/`009` **not** applied.
+with schema migrations `008`–`011` **not** applied.
 
 ### Preconditions
 
@@ -273,33 +275,46 @@ with schema migrations `008`/`009` **not** applied.
    `SUPABASE_SERVICE_ROLE_KEY` (hosted start refuses local-disk storage) and real
    `EMAIL_USER`/`EMAIL_PASS`, `FRONTEND_URL`, `BACKEND_URL`, `JWT_SECRET`.
    **No new env vars are required by this release.**
-4. `react-migration` CI state: backend 330 tests (329 pass, 1 PG-only skip),
-   frontend 208/208, `tsc` clean, production build clean, acceptance 25/25.
+4. `react-migration` CI state: backend 343 tests (342 pass, 1 PG-only skip),
+   frontend 228/228, `tsc` clean, production build clean, PG
+   migrations/base/tooling 14/14 + 4/4 + 8/8, acceptance 29/29.
 
 ### Steps (in order)
 
-1. **Schema (Postgres):** run `backend/migrations/008_create_product_images.pgsql`
-   then `009_categories_parent.pgsql` in the approved SQL console. Both are
-   guarded/re-runnable and PG runs each in a transaction.
+1. **Schema (Postgres):** back up first, then run
+   `008_create_product_images.pgsql`, `009_categories_parent.pgsql`,
+   `010_product_variants.pgsql`, `011_product_reviews.pgsql` in the approved SQL
+   console. All are guarded/re-runnable and PG runs each in a transaction.
+   `010` replaces the cart uniqueness index; run it in the same change window as
+   the backend, before any variant is created.
 2. **Backend:** deploy the approved `react-migration` commit. Old frontend code
-   keeps working because both changes are additive.
+   keeps working because all four changes are additive.
 3. **Frontend:** deploy the same commit to Vercel. `master` stays untouched
    until this is approved; promotion is a deliberate merge/redeploy step.
 4. **Smoke (read-only):** `GET /api/products`, `GET /api/categories` (expect
-   `tree`/`maxDepth`), `/api/products/suggestions?q=bo`, a PDP's
-   `/related`, image URLs, and the storefront routes. There are no production
-   orders/accounts, so authenticated admin smoke needs owner credentials.
+   `tree`/`maxDepth`), `/api/products/suggestions?q=bo`, a PDP's `/related`,
+   image URLs, a PDP's `/reviews` (empty list is correct), and the storefront
+   routes. With owner credentials: create one real variant in admin, verify
+   stock, submit one review, approve it in `/admin/reviews`, verify it appears
+   publicly, then deactivate the variant and remove the test review only through
+   an approved data-cleanup step. There are currently no production
+   orders/accounts, so authenticated admin smoke still needs owner credentials.
 
 ### Rollback
 
 - **Frontend:** instant rollback in Vercel to `dpl_GkpNWj9eoL5Khao7XFos7fjG2GFd`
   (commit `9078aae`).
 - **Backend:** redeploy the previous backend build. Old code ignores
-  `ProductImages` and `Categories.parentId`.
-- **Schema (only if a rollback requires it):** run the DOWN statements in the
-  migration table above, `009` before `008`. No rows are deleted by either.
-- **Data:** no backfill happened; existing categories remain roots and products
-  keep `image`. Orders/stock are unaffected by the schema rollback.
+  `ProductImages`, `Categories.parentId`, `ProductVariants` and
+  `ProductReviews`.
+- **Schema (only if a rollback requires it):** run the DOWN statements in
+  reverse order — `011` then `010` then `009` then `008`. Snapshot
+  `ProductVariants` and any order-item variant snapshot columns first if
+  post-release variant orders must be preserved; no historical (pre-release)
+  row is deleted by any UP migration.
+- **Data:** no backfill happened; existing categories remain roots, products
+  keep `image`/`stock`, and existing orders/stock are unaffected by the schema
+  rollback. Variant/review rows created after release are the only data at risk.
 
 ### Risk register
 
@@ -310,6 +325,10 @@ with schema migrations `008`/`009` **not** applied.
 | Email delivery failure | Sends happen after commit and are logged/swallowed; orders never roll back; exactly one receipt per checkout via idempotency |
 | Double checkout / double restock | Server idempotency key + row lock + single transaction (covered by tests and the live replay step) |
 | Guest cart data leak | Cart is client-local until sign-in merge; merge is scoped to the caller |
-| Migration rollback data loss | Both migrations only add objects; DOWN removes objects, never rows |
+| Migration rollback data loss | UP migrations never alter existing rows; DOWN drops only new objects. Variant/review rows created after release are at risk — snapshot `ProductVariants`, `ProductReviews` and order snapshot columns first |
+| Variant stock drift or oversell | Every variant write and checkout locks the product row; `Products.stock` is recomputed from active variants in the same transaction; cart/checkout revalidate stock (variants tests + live variant checkout/-restock) |
+| Duplicate SKU / ambiguous cart line | DB-unique SKU rejects collisions (`409`); PostgreSQL cart uniqueness includes `COALESCE(variantId, 0)` and MySQL serializes per-user writes |
+| Pending/rejected review leaks publicly | Every public read filters `status = approved` in SQL; responses are `no-store`; browser acceptance proved a pending review is invisible signed-out until approval |
+| Moderation abuse or forged author/status | Routes require auth/admin; create forces the authenticated user and `pending`; moderation whitelists status and records admin id/timestamp; repeated moderation is a safe no-op |
 
 

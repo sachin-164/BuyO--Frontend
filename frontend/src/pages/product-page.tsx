@@ -12,7 +12,9 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { ProductGallery } from "@/components/product/product-gallery";
 import { productGalleryImages } from "@/features/catalog/gallery";
 import { ProductCard } from "@/components/product/product-card";
+import { ProductReviews } from "@/components/product/product-reviews";
 import { QuantitySelector } from "@/components/product/quantity-selector";
+import { VariantSelector } from "@/components/product/variant-selector";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +32,7 @@ import { usePageTitle } from "@/hooks/use-page-title";
 import { ApiError } from "@/lib/api";
 import { loginHref } from "@/lib/auth-return";
 import { discountPercent, formatPrice } from "@/lib/format";
+import { variantLabel } from "@/lib/variant";
 
 type NoticeTone = "success" | "error" | "info";
 
@@ -85,7 +88,13 @@ export default function ProductPage() {
 
   const { hasToken: token } = useAuth();
   const [quantity, setQuantity] = useState(1);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+
+  const variants = product?.variants ?? [];
+  const hasVariants = Boolean(product?.hasVariants && variants.length > 0);
+  const selectedVariant =
+    variants.find((variant) => variant.id === selectedVariantId) ?? null;
 
   const productId = product?.id ?? 0;
   const categoryValue = product?.Category?.slug ?? product?.category ?? "";
@@ -100,7 +109,15 @@ export default function ProductPage() {
   useEffect(() => {
     setQuantity(1);
     setNotice(null);
-  }, [productId]);
+    // Auto-select the first purchasable variant so a one-option product still
+    // works in one click. The buyer can change the selection at any time.
+    setSelectedVariantId(
+      variants.find((variant) => variant.stock > 0)?.id ?? variants[0]?.id ?? null,
+    );
+    // Variants are reloaded only with the product, so the id list is the
+    // meaningful trigger here (not the array identity).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId, product?.hasVariants, variants.map((variant) => variant.id).join(",")]);
 
   const currentPath = `${location.pathname}${location.search}`;
   const loginNext = currentPath;
@@ -114,14 +131,20 @@ export default function ProductPage() {
       productQuery.error instanceof ApiError &&
       productQuery.error.status === 404);
 
-  const stock = Math.max(0, Number(product?.stock ?? 0) || 0);
+  const stock = hasVariants
+    ? Math.max(0, Number(selectedVariant?.stock ?? 0) || 0)
+    : Math.max(0, Number(product?.stock ?? 0) || 0);
   const maxQuantity = Math.min(99, stock);
-  const outOfStock = stock <= 0;
+  const outOfStock = hasVariants ? !selectedVariant || stock <= 0 : stock <= 0;
   const lowStock = stock > 0 && stock <= 5;
+  const unitPrice = hasVariants
+    ? selectedVariant?.unitPrice ?? Number(product?.sellingPrice ?? 0)
+    : Number(product?.sellingPrice ?? 0);
   const discount = product
-    ? discountPercent(product.mrpPrice, product.sellingPrice)
+    ? discountPercent(product.mrpPrice, unitPrice)
     : null;
   const saved = wishlistMembership.data?.inWishlist ?? false;
+  const optionLabel = variantLabel(selectedVariant);
 
   // The server already excludes this product, prefers in-stock siblings and
   // bounds the list, so the UI renders exactly what exists.
@@ -152,14 +175,22 @@ export default function ProductPage() {
   function handleAddToCart() {
     if (!product) return;
     if (outOfStock) return;
+    if (hasVariants && !selectedVariant) return;
 
     addToCart.mutate(
-      { productId: product.id, qty: quantity, product },
+      {
+        productId: product.id,
+        qty: quantity,
+        product,
+        variant: hasVariants ? selectedVariant : null,
+      },
       {
         onSuccess: () => {
           setNotice({
             tone: "success",
-            title: `Added ${quantity} × ${product.name} to your cart`,
+            title: `Added ${quantity} × ${product.name}${
+              optionLabel ? ` (${optionLabel})` : ""
+            } to your cart`,
             message: (
               <>
                 {token
@@ -307,7 +338,7 @@ export default function ProductPage() {
 
               <div className="mt-4 flex flex-wrap items-baseline gap-3">
                 <span className="text-3xl font-semibold">
-                  {formatPrice(product.sellingPrice)}
+                  {formatPrice(unitPrice)}
                 </span>
                 {discount !== null ? (
                   <>
@@ -320,7 +351,7 @@ export default function ProductPage() {
               </div>
               <p className="mt-1 text-xs text-muted-foreground">Price in INR.</p>
 
-              <div className="mt-4">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 {outOfStock ? (
                   <Badge variant="destructive">Out of stock</Badge>
                 ) : lowStock ? (
@@ -328,9 +359,33 @@ export default function ProductPage() {
                 ) : (
                   <Badge variant="success">In stock</Badge>
                 )}
+                {hasVariants && selectedVariant ? (
+                  <span className="text-xs text-muted-foreground">
+                    SKU {selectedVariant.sku}
+                  </span>
+                ) : null}
               </div>
 
               <div className="mt-6 rounded-lg border border-border bg-card p-5">
+                {hasVariants ? (
+                  <div className="mb-5">
+                    <VariantSelector
+                      variants={variants}
+                      selected={selectedVariant}
+                      onChange={(variant) => {
+                        setSelectedVariantId(variant?.id ?? null);
+                        setQuantity(1);
+                      }}
+                      disabled={addToCart.isPending}
+                    />
+                    {optionLabel ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Selected: {optionLabel}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {!outOfStock ? (
                   <div className="flex flex-wrap items-end gap-3">
                     <QuantitySelector
@@ -437,6 +492,12 @@ export default function ProductPage() {
               </section>
             </div>
           </div>
+
+          <ProductReviews
+            identifier={identifier ?? String(product.id)}
+            productId={product.id}
+            loginNext={loginNext}
+          />
 
           {related.length > 0 ? (
             <section aria-labelledby="related-heading" className="mt-14">

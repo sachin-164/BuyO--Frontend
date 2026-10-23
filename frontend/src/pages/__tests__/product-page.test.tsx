@@ -20,6 +20,40 @@ const LAMP = {
   Category: { id: 1, name: "Lighting", slug: "lighting" },
 };
 
+const VARIANT_PRODUCT = {
+  ...LAMP,
+  id: 5,
+  name: "Everyday Tee",
+  slug: "everyday-tee",
+  sellingPrice: "1000",
+  stock: 5,
+  hasVariants: true,
+  variants: [
+    {
+      id: 31,
+      productId: 5,
+      sku: "TEE-BLK-M",
+      size: "M",
+      color: "Black",
+      priceAdjustment: 100,
+      unitPrice: 1100,
+      stock: 5,
+      isActive: true,
+    },
+    {
+      id: 32,
+      productId: 5,
+      sku: "TEE-WHT-L",
+      size: "L",
+      color: "White",
+      priceAdjustment: 0,
+      unitPrice: 1000,
+      stock: 0,
+      isActive: true,
+    },
+  ],
+};
+
 interface RecordedRequest {
   url: URL;
   method: string;
@@ -94,6 +128,65 @@ function installFetch({ productStatus = 200 }: { productStatus?: number } = {}) 
   return requests;
 }
 
+function installVariantFetch() {
+  const requests: RecordedRequest[] = [];
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), "http://localhost");
+    const method = init?.method ?? "GET";
+    requests.push({
+      url,
+      method,
+      body: typeof init?.body === "string" ? init.body : undefined,
+    });
+
+    if (method === "GET" && url.pathname === "/api/products/everyday-tee") {
+      return jsonResponse({ success: true, product: VARIANT_PRODUCT });
+    }
+    if (method === "GET" && url.pathname === "/api/products/everyday-tee/reviews") {
+      return jsonResponse({
+        success: true,
+        productId: 5,
+        count: 1,
+        reviews: [
+          {
+            id: 91,
+            rating: 5,
+            title: "Great quality",
+            body: "The cotton is soft and the fit is right.",
+            createdAt: "2026-01-05T10:00:00.000Z",
+            author: { name: "Anita R." },
+          },
+        ],
+        summary: {
+          count: 1,
+          average: 5,
+          distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 1 },
+        },
+        pagination: {
+          page: 1,
+          limit: 5,
+          total: 1,
+          totalPages: 1,
+          hasNext: false,
+          hasPrev: false,
+        },
+      });
+    }
+    if (method === "GET" && url.pathname === "/api/products") {
+      return jsonResponse({
+        success: true,
+        count: 0,
+        products: [],
+        pagination: { page: 1, limit: 5, total: 0, totalPages: 1 },
+      });
+    }
+    return jsonResponse({ success: false, message: "Not found" }, 404);
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+  return requests;
+}
+
 function renderProductPage() {
   return renderWithProviders(
     <Routes>
@@ -126,9 +219,12 @@ describe("ProductPage", () => {
     expect(
       screen.getByText("A warm desk lamp with a linen shade."),
     ).toBeInTheDocument();
+    // The header and the review CTA both offer sign-in for a guest.
     expect(
-      screen.getByRole("link", { name: "Sign in" }),
-    ).toHaveAttribute("href", "/login?next=%2Fproduct%2Ftest-lamp");
+      screen.getAllByRole("link", { name: "Sign in" }).every(
+        (link) => link.getAttribute("href") === "/login?next=%2Fproduct%2Ftest-lamp",
+      ),
+    ).toBe(true);
 
     await user.click(screen.getByRole("button", { name: "Add to cart" }));
 
@@ -146,6 +242,68 @@ describe("ProductPage", () => {
     ) as Array<{ productId: number; qty: number }>;
     expect(guestLines).toHaveLength(1);
     expect(guestLines[0]).toMatchObject({ productId: 1, qty: 1 });
+  });
+
+  it("auto-selects a real variant, prices it, and adds the exact variant for a guest", async () => {
+    const user = userEvent.setup();
+    installVariantFetch();
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/product/:slug" element={<ProductPage />} />
+      </Routes>,
+      { route: "/product/everyday-tee" },
+    );
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Everyday Tee" }),
+    ).toBeInTheDocument();
+    // First in-stock variant (M/Black) is selected automatically.
+    expect(screen.getByText("₹1,100")).toBeInTheDocument();
+    expect(screen.getByText("SKU TEE-BLK-M")).toBeInTheDocument();
+    expect(screen.getByText("Selected: Size M · Colour Black")).toBeInTheDocument();
+    expect(screen.getByLabelText("Size")).toHaveValue("M");
+    expect(screen.getByLabelText("Colour")).toHaveValue("Black");
+
+    // Selecting the out-of-stock real variant disables purchase instead of
+    // pretending an unavailable combination is buyable.
+    await user.selectOptions(screen.getByLabelText("Size"), "L");
+    expect(screen.getByText("Selected: Size L · Colour White")).toBeInTheDocument();
+    expect(screen.getAllByText("Out of stock").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "Add to cart" })).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Size"), "M");
+    await user.click(screen.getByRole("button", { name: "Increase quantity" }));
+    await user.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    expect(
+      await screen.findByText(/Added 2 × Everyday Tee \(Size M · Colour Black\)/),
+    ).toBeInTheDocument();
+    const guestLines = JSON.parse(
+      window.localStorage.getItem("buyo.guestCart.v1") ?? "[]",
+    ) as Array<{ productId: number; variantId: number; qty: number; unitPrice: number }>;
+    expect(guestLines).toEqual([
+      expect.objectContaining({ productId: 5, variantId: 31, qty: 2, unitPrice: 1100 }),
+    ]);
+  });
+
+  it("shows approved reviews only and their aggregate", async () => {
+    installVariantFetch();
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/product/:slug" element={<ProductPage />} />
+      </Routes>,
+      { route: "/product/everyday-tee" },
+    );
+
+    await screen.findByRole("heading", { level: 1, name: "Everyday Tee" });
+    expect(await screen.findByText("Great quality")).toBeInTheDocument();
+    expect(screen.getByText("The cotton is soft and the fit is right.")).toBeInTheDocument();
+    expect(screen.getByText("1 approved review")).toBeInTheDocument();
+    expect(screen.getByText(/Anita R\./)).toBeInTheDocument();
+    // The summary and the individual review both expose the same rating label.
+    expect(screen.getAllByLabelText("5 out of 5 stars").length).toBeGreaterThan(0);
   });
 
   it("adds the chosen quantity to the cart and toggles the wishlist when signed in", async () => {

@@ -1,0 +1,269 @@
+{
+  "startedAt": "2026-10-23T12:25:24.592Z",
+  "steps": [
+    {
+      "name": "storefront home renders with a single H1 and product cards",
+      "ok": true,
+      "ms": 907
+    },
+    {
+      "name": "category tree is navigable and filtered shop links work",
+      "ok": true,
+      "ms": 669
+    },
+    {
+      "name": "search suggestions respond to typing",
+      "ok": true,
+      "ms": 697
+    },
+    {
+      "name": "product detail shows the real uploaded image, gallery and related products",
+      "ok": true,
+      "ms": 486
+    },
+    {
+      "name": "guest adds to cart, cart page is reachable and stores locally",
+      "ok": true,
+      "ms": 978
+    },
+    {
+      "name": "guest chooses a real variant; price, SKU and identity persist",
+      "ok": true,
+      "ms": 606
+    },
+    {
+      "name": "signup sends a verification email; the link verifies and login works",
+      "ok": true,
+      "ms": 2278
+    },
+    {
+      "name": "guest cart merges into the account cart after sign-in",
+      "ok": true,
+      "ms": 439
+    },
+    {
+      "name": "profile name update persists to the database",
+      "ok": true,
+      "ms": 608
+    },
+    {
+      "name": "password change rejects a wrong current password then succeeds",
+      "ok": true,
+      "ms": 2301
+    },
+    {
+      "name": "forgot/reset password issues a working single-use link",
+      "ok": true,
+      "ms": 2128
+    },
+    {
+      "name": "address creation validates and persists",
+      "ok": true,
+      "ms": 805
+    },
+    {
+      "name": "COD checkout places exactly one order and decrements stock",
+      "ok": true,
+      "ms": 925
+    },
+    {
+      "name": "order history shows the order; customer cancellation restocks exactly once",
+      "ok": true,
+      "ms": 979
+    },
+    {
+      "name": "status notifications were captured (receipt + cancellation)",
+      "ok": true,
+      "ms": 1
+    },
+    {
+      "name": "customer sees the cancelled order and the timeline",
+      "ok": true,
+      "ms": 495
+    },
+    {
+      "name": "admin analytics match direct database aggregates and the dashboard",
+      "ok": true,
+      "ms": 2293
+    },
+    {
+      "name": "admin confirms a new order; the customer notification is captured",
+      "ok": true,
+      "ms": 1727
+    },
+    {
+      "name": "admin creates a child category through the UI",
+      "ok": true,
+      "ms": 965
+    },
+    {
+      "name": "admin customers search and detail work",
+      "ok": true,
+      "ms": 786
+    },
+    {
+      "name": "admin edits, adds and deactivates variants through the UI",
+      "ok": true,
+      "ms": 2180
+    },
+    {
+      "name": "customer submits a review; it stays pending and invisible to the public",
+      "ok": true,
+      "ms": 1879
+    },
+    {
+      "name": "admin approves the review; public aggregate updates and abuse is denied",
+      "ok": true,
+      "ms": 2122
+    },
+    {
+      "name": "security and error paths (401/403/404, stock, idempotency)",
+      "ok": true,
+      "ms": 578
+    },
+    {
+      "name": "responsive layout: no horizontal overflow on phone, mobile nav works",
+      "ok": true,
+      "ms": 6572
+    },
+    {
+      "name": "accessibility basics: one H1, labelled controls, alt text, landmarks",
+      "ok": true,
+      "ms": 616
+    },
+    {
+      "name": "SEO metadata and document titles",
+      "ok": true,
+      "ms": 759
+    },
+    {
+      "name": "performance: page timings and production bundle budget",
+      "ok": true,
+      "ms": 231
+    },
+    {
+      "name": "no unexpected browser console errors",
+      "ok": true,
+      "ms": 0
+    }
+  ],
+  "consoleErrors": [
+    {
+      "url": "http://localhost:5173/login",
+      "text": "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+    },
+    {
+      "url": "http://localhost:5173/account",
+      "text": "Failed to load resource: the server responded with a status of 400 (Bad Request)"
+    }
+  ],
+  "checks": {
+    "seed": {
+      "categories": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "products": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "variantGuestLine": {
+      "productId": 5,
+      "variantId": 1,
+      "unitPrice": 1100
+    },
+    "mergedCartLines": [
+      {
+        "productId": 1,
+        "variantId": null,
+        "qty": 1
+      },
+      {
+        "productId": 5,
+        "variantId": 1,
+        "qty": 1
+      }
+    ],
+    "order": {
+      "id": 1,
+      "number": "BO-261023-JVM7EW",
+      "total": 1993.95,
+      "items": [
+        {
+          "productId": 1,
+          "variantId": null,
+          "sku": null,
+          "qty": 1,
+          "unitPrice": 799
+        },
+        {
+          "productId": 5,
+          "variantId": 1,
+          "sku": "TEE-BLK-M",
+          "qty": 1,
+          "unitPrice": 1100
+        }
+      ]
+    },
+    "mailSubjects": [
+      "Verify Your Email",
+      "Verify Your Email",
+      "Reset your BuyO password",
+      "Order BO-261023-JVM7EW received",
+      "Order BO-261023-JVM7EW is now cancelled"
+    ],
+    "analytics": {
+      "total": 1,
+      "nonCancelled": 0,
+      "gross": 0
+    },
+    "adminCtx": true,
+    "secondOrder": 2,
+    "variantsAdmin": {
+      "edited": 2,
+      "added": 3,
+      "deactivated": true
+    },
+    "review": {
+      "id": 1,
+      "status": "approved",
+      "moderatedBy": 1,
+      "publicAverage": 5
+    },
+    "a11y": {
+      "h1": 1,
+      "lang": "en",
+      "images": 4,
+      "imagesMissingAlt": 0,
+      "unlabeledButtons": 0,
+      "main": 1
+    },
+    "seo": {
+      "title": "BuyO",
+      "description": "BuyO — a considered marketplace for everyday goods. Cash on delivery, saved wishlists, and order tracking.",
+      "ogTitle": "BuyO",
+      "canonical": ""
+    },
+    "perf": {
+      "timing": {
+        "dcl": 146.09999999403954,
+        "load": 148.3999999910593,
+        "transfer": 12000
+      },
+      "mainBundleBytes": 491908
+    },
+    "consoleErrors": []
+  },
+  "finishedAt": "2026-10-23T12:26:06.948Z",
+  "durationMs": 42352,
+  "summary": {
+    "total": 29,
+    "passed": 29,
+    "failed": 0
+  }
+}
