@@ -43,10 +43,11 @@ const { runMigrations, computeChecksum } = require("../scripts/migrate");
 const execFileAsync = promisify(execFile);
 const BACKEND_DIR = path.join(__dirname, "..");
 
-// The full .pgsql namespace in filename order. 000 bootstraps the base
-// schema (a complete no-op on the sync-built scratch DB — the DO type guards
-// and IF NOT EXISTS skip everything — so it is recorded but changes nothing),
-// then 008 adds the product gallery table and 005-007 layer their indexes on top.
+// The full .pgsql namespace in filename order. The harness builds the scratch
+// database with these migrations FIRST (empty DB), so exact 000 verification is
+// meaningful; sequelize.sync is not called afterwards. Earlier harnesses ran
+// sync first, but the restored historical 000 intentionally rejects databases
+// that already carry later additive columns.
 const PG_MIGRATIONS = [
   "000_pg_base_schema.pgsql",
   "005_pg_cart_items_user_product_unique.pgsql",
@@ -55,7 +56,8 @@ const PG_MIGRATIONS = [
   "008_create_product_images.pgsql",
   "009_categories_parent.pgsql",
   "010_product_variants.pgsql",
-  "011_product_reviews.pgsql"
+  "011_product_reviews.pgsql",
+  "012_durable_upload_authorizations.pgsql"
 ];
 const NEW_INDEXES = [
   "uq_cartitems_user_product_variant",
@@ -76,7 +78,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
   let WishlistItem;
 
   before(async () => {
-    ctx = await helpers.startTestApp();
+    ctx = await helpers.startTestApp({ migrateFirst: true });
     User = require("../models/user");
     Category = require("../models/category");
     CartItem = require("../models/cart");
@@ -147,6 +149,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
   // ------------------------------------------------------------------ tests
 
   it("migrate CLI guards apply to the PostgreSQL path (flag + production + loopback + allowlist)", async () => {
+    const beforeBookkeeping = await query(`SELECT id, checksum FROM "schema_migrations" ORDER BY id`);
     const noFlag = await runCliMigrate([], { DB_MIGRATE_ALLOWED_DATABASES: helpers.TEST_DB_NAME });
     assert.equal(noFlag.code, 1);
     assert.match(noFlag.stderr, /missing --confirm-local flag/);
@@ -163,21 +166,18 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     });
     assert.equal(allowlist.code, 1);
     assert.match(allowlist.stderr, /is not in DB_MIGRATE_ALLOWED_DATABASES/);
-    // This runs before any successful migration in the suite: a refused CLI
-    // run must not even create the bookkeeping table.
+    // The harness bootstrapped the scratch DB with migrations, so bookkeeping
+    // already exists. A refused CLI run must leave it byte-for-byte unchanged.
     const present = await query(`SELECT to_regclass('schema_migrations') IS NOT NULL AS ok`);
-    assert.equal(present[0].ok, false, "a refused run must not touch the database");
+    assert.equal(present[0].ok, true, "the migration-first harness records bookkeeping");
+    assert.deepEqual(
+      await query(`SELECT id, checksum FROM "schema_migrations" ORDER BY id`),
+      beforeBookkeeping,
+      "a refused run must not touch the database"
+    );
   });
 
-  it("fresh schema: migration creates all four unique indexes (sync alone does not)", async () => {
-    const beforeIdx = await indexNames();
-    for (const name of NEW_INDEXES) {
-      assert.ok(!beforeIdx.includes(name), `sequelize.sync must not pre-create ${name}`);
-    }
-
-    const result = await runMigrations({ quiet: true });
-    assert.deepEqual(result.applied, PG_MIGRATIONS, "all eight migration files must apply in order");
-
+  it("fresh migration-first schema: all four unique indexes exist", async () => {
     const afterIdx = await indexNames();
     for (const name of NEW_INDEXES) assert.ok(afterIdx.includes(name), `${name} must exist after migration`);
 
@@ -226,7 +226,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     assert.deepEqual(
       (await query(`SELECT id FROM "schema_migrations" ORDER BY id`)).map((r) => r.id),
       PG_MIGRATIONS,
-      "bookkeeping must record exactly the eight applied files"
+      "bookkeeping must record exactly the nine applied files"
     );
   });
 
@@ -343,11 +343,12 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
   });
 
   it("pre-existing cart duplicates: clear failure, NO data change, NO index, failed file unrecorded", async () => {
-    // Simulate a legacy database where these migrations never ran.
-    for (const idx of [...NEW_INDEXES, "uq_cartitems_user_product"]) {
-      await query(`DROP INDEX IF EXISTS "${idx}"`);
-    }
-    await query(`DELETE FROM "schema_migrations"`);
+    // Simulate a legacy database where 005 has not run yet. 000 and the
+    // additive migrations stay recorded (real production also has 000), so
+    // only 005 is pending and its precheck is the code under test.
+    await query(`DROP INDEX IF EXISTS "uq_cartitems_user_product_variant"`);
+    await query(`DROP INDEX IF EXISTS "uq_cartitems_user_product"`);
+    await query(`DELETE FROM "schema_migrations" WHERE id = '${PG_MIGRATIONS[1]}'`);
 
     // Genuine duplicate rows exist before the migration runs (no index yet).
     await CartItem.create({ UserId: userA.id, productId: 303, name: "Legacy Dup A", price: 1 });
@@ -369,16 +370,33 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
 
     assert.deepEqual(await rowsSnapshot(), rowsBefore, "a failed migration must not change ANY row");
     assert.deepEqual(await indexNames(), idxBefore, "a failed migration must not create any index");
-    // Bookkeeping was wiped above, so the run starts fresh: 000 applies first
-    // (idempotent no-op — it legitimately records itself), then 005 fails and
-    // rolls back completely — the FAILED file must not be recorded as applied.
-    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0]]);
+    // The FAILED file must not be recorded as applied; every other file keeps
+    // its original bookkeeping row.
+    assert.deepEqual(
+      await appliedIds(),
+      PG_MIGRATIONS.filter((id) => id !== PG_MIGRATIONS[1]).sort()
+    );
   });
 
   it("after cart remediation, email duplicates fail 007 safely (no emails printed, 005/006 kept)", async () => {
     // Documented remediation: an explicit manual delete of the extra row —
     // performed by the operator/test, NEVER by the migration itself.
     await query(`DELETE FROM "CartItems" WHERE name = 'Legacy Dup B'`);
+
+    // Complete the pending 005, then restore the post-010 index shape that a
+    // real database would have (010 is already recorded and will not rerun).
+    const cartResult = await runMigrations({ quiet: true });
+    assert.deepEqual(cartResult.applied, [PG_MIGRATIONS[1]]);
+    await query(`DROP INDEX IF EXISTS "uq_cartitems_user_product"`);
+    await query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "uq_cartitems_user_product_variant"
+       ON "CartItems" ("UserId", "productId", COALESCE("variantId", 0))`
+    );
+
+    // Simulate a legacy database where 007 has not run yet.
+    await query(`DELETE FROM "schema_migrations" WHERE id = '${PG_MIGRATIONS[3]}'`);
+    await query(`DROP INDEX IF EXISTS "uq_users_email_lower"`);
+    await query(`DROP INDEX IF EXISTS "uq_categories_name_lower"`);
 
     await User.create({ name: "Phase6 Dup User", email: "dup.user@buyotest.local", password: "fixture-only" });
     await User.create({ name: "Phase6 Dup User Other", email: "DUP.USER@buyotest.local", password: "fixture-only" });
@@ -395,13 +413,14 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     });
 
     assert.deepEqual(await rowsSnapshot(), rowsBefore, "duplicate users must survive untouched");
-    // Per-file transactions: 000 (already recorded from the run above) plus
-    // 005 + 006 committed, 007 fully rolled back.
-    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0], PG_MIGRATIONS[1], PG_MIGRATIONS[2]]);
+    // 007 rolled back completely; every other file keeps its bookkeeping row.
+    assert.deepEqual(
+      await appliedIds(),
+      PG_MIGRATIONS.filter((id) => id !== PG_MIGRATIONS[3]).sort()
+    );
     const idx = await indexNames();
-    assert.ok(idx.includes("uq_cartitems_user_product"));
+    assert.ok(idx.includes("uq_cartitems_user_product_variant"));
     assert.ok(idx.includes("uq_wishlistitems_user_product"));
-    assert.ok(!idx.includes("uq_cartitems_user_product_variant"), "010 must still be pending");
     assert.ok(!idx.includes("uq_users_email_lower"), "007 must roll back completely");
     assert.ok(!idx.includes("uq_categories_name_lower"), "007 must roll back completely");
   });
@@ -422,7 +441,10 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     });
 
     assert.deepEqual(await rowsSnapshot(), rowsBefore, "duplicate categories must survive untouched");
-    assert.deepEqual(await appliedIds(), [PG_MIGRATIONS[0], PG_MIGRATIONS[1], PG_MIGRATIONS[2]]);
+    assert.deepEqual(
+      await appliedIds(),
+      PG_MIGRATIONS.filter((id) => id !== PG_MIGRATIONS[3]).sort()
+    );
     const idx = await indexNames();
     assert.ok(!idx.includes("uq_users_email_lower"), "the earlier create in 007 must roll back too");
     assert.ok(!idx.includes("uq_categories_name_lower"));
@@ -433,7 +455,7 @@ describe("Guarded PostgreSQL uniqueness migrations (Phase 6)", () => {
     await query(`DELETE FROM "Categories" WHERE slug IN ('p6-dup-a', 'p6-dup-b')`);
 
     const result = await runMigrations({ quiet: true });
-    assert.deepEqual(result.applied, PG_MIGRATIONS.slice(3));
+    assert.deepEqual(result.applied, [PG_MIGRATIONS[3]]);
 
     const idx = await indexNames();
     for (const name of NEW_INDEXES) assert.ok(idx.includes(name), `${name} must exist after recovery`);

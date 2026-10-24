@@ -37,6 +37,39 @@ target may be left partial — drop the partial `buyoDB_*` target and re-run
 - Safety guard: refuses a non-loopback host unless `--allow-remote` is passed explicitly
   (intended for the future hosted database). Default is local-only.
 
+### 1.1 Backup security — do not leave plaintext dumps in a sync folder
+
+A dump is a **personal-data and credential artifact**: it contains user emails,
+names, addresses, order history and bcrypt password hashes. `backend/backups/`
+being git-ignored does not make it private. A checkout inside OneDrive,
+Dropbox, iCloud Drive, Google Drive or SharePoint is automatically uploaded to
+a consumer service and replicated to every signed-in device, outside the
+repository's access controls. `db:backup` prints a warning when it detects such
+a path; do not ignore it.
+
+Required handling for a real backup:
+
+1. Take the backup and verify a restore (see §2/§4) before moving it.
+2. Encrypt it before it leaves the machine when the destination is not already
+   encrypted at rest. Use a maintained tool (e.g. `age`, `gpg`, or 7-Zip
+   AES-256) with a key/passphrase stored in a password manager — never next to
+   the dump.
+3. Store the encrypted copy in access-restricted storage: an encrypted
+   disk/volume under owner control, or a private bucket with server-side
+   encryption, versioning and a narrow IAM policy. Only the owner/operator set
+   should be able to read it.
+4. Delete the plaintext local copy **and** purge the cloud-sync provider's
+   trash/version history. Deleting a file locally does not revoke copies already
+   uploaded to the sync service.
+5. Record retention/expiry and re-test a restore from the encrypted copy. Never
+   attach a dump to a ticket/chat, commit it, or place it on a public static
+   host.
+
+**Current state:** the Phase 1/10 drill dumps were created under
+`backend/backups/` inside a OneDrive-synced checkout. The drill has been
+verified; the plaintext file is removed as part of this release hardening and
+must not be recreated there for production use.
+
 ## 2. Restore verification — automated since Phase 3
 
 Restoring and verifying a backup is now a one-command, guarded operation

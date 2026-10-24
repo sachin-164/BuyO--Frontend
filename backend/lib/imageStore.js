@@ -463,9 +463,17 @@ async function resolveProductImageValue(raw, adminId) {
   }
 
   // Single-use authorization proof. Consume BEFORE verification so a path can
-  // never be replayed, even if verification fails transiently.
+  // never be replayed, even if verification fails transiently. The ledger is
+  // database-backed (shared by every Vercel instance), so this await is the
+  // cross-instance handoff that the old in-memory Map could not provide.
   const { uploadLedger } = require("./uploadLedger");
-  const taken = uploadLedger.take(objectPath, adminId);
+  let taken;
+  try {
+    taken = await uploadLedger.take(objectPath, adminId);
+  } catch (err) {
+    console.error("Upload authorization lookup failed:", err.message);
+    throw storageClientError(503, "Upload authorization is temporarily unavailable; try again");
+  }
   if (taken.status === "missing") throw storageClientError(400, "Upload authorization not found or already used");
   if (taken.status === "expired") throw storageClientError(410, "Upload authorization expired; upload the image again");
   if (taken.status === "forbidden") throw storageClientError(403, "Upload authorization is not valid for this admin");

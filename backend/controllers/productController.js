@@ -10,6 +10,7 @@ const sequelize = require("../config/db");
 const Product = require("../models/product");
 const ProductImage = require("../models/productImage");
 const ProductVariant = require("../models/productVariant");
+const CartItem = require("../models/cart");
 const Category = require("../models/category");
 const { resolveDialect } = require("../config/dbConnectionOptions");
 const { slugify, uniqueSlug } = require("../utils/slugify");
@@ -609,6 +610,59 @@ const updateProduct = async (req, res) => {
 };
 
 // ---------- Delete Product (DELETE /api/products/:id, admin-only) ----------
+//
+// Deleting a product cascades ProductVariants and sets CartItems.variantId to
+// NULL (the cart line survives as unavailable). PostgreSQL's cart identity is
+// UNIQUE (UserId, productId, COALESCE(variantId, 0)), so a user with several
+// variant lines for the same product would otherwise collide during the
+// cascade with 23505. Before the delete we lock the product and the cart rows,
+// then keep ONE line per user (the legacy base line if present, otherwise the
+// oldest variant line) and drop only the extra variant lines. Order history is
+// untouched: OrderItems keep their own snapshots and their productId/variantId
+// become NULL. Wishlist rows also remain (and are shown as unavailable).
+async function prepareCartLinesForProductDelete(productId, transaction) {
+  const rows = await CartItem.findAll({
+    where: { productId },
+    order: [["id", "ASC"]],
+    transaction,
+    lock: transaction.LOCK.UPDATE
+  });
+  if (!rows.length) return;
+
+  const byUser = new Map();
+  for (const row of rows) {
+    const key = String(row.UserId);
+    if (!byUser.has(key)) byUser.set(key, { base: null, variants: [] });
+    const group = byUser.get(key);
+    if (row.variantId === null) group.base = row;
+    else group.variants.push(row);
+  }
+
+  const removeIds = [];
+  for (const group of byUser.values()) {
+    if (group.base) {
+      // The base line survives the cascade; variant lines would all become a
+      // second NULL line and collide with it.
+      removeIds.push(...group.variants.map((row) => row.id));
+    } else if (group.variants.length > 1) {
+      // No base line: keep the oldest variant line as the single unavailable
+      // line and remove the rest.
+      removeIds.push(...group.variants.slice(1).map((row) => row.id));
+    }
+  }
+
+  if (removeIds.length) {
+    await CartItem.destroy({ where: { id: { [Op.in]: removeIds } }, transaction });
+  }
+}
+
+function isVariantCartUniqueViolation(error) {
+  const text = [error && error.message, error && error.original && error.original.message]
+    .filter(Boolean)
+    .join(" | ");
+  return /uq_cartitems_user_product_variant|23505/i.test(text);
+}
+
 const deleteProduct = async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -620,10 +674,28 @@ const deleteProduct = async (req, res) => {
       return res.status(404).json({ success: false, message: "Product not found" });
     }
     const gallery = await ProductImage.findAll({ where: { productId: id } });
+
+    // Two attempts: if a cart write lands between our cleanup and the cascade,
+    // the unique violation aborts the transaction and a retry re-runs the
+    // cleanup against the now-visible row. The product is only destroyed once.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await sequelize.transaction(async (transaction) => {
+          const locked = await Product.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+          if (!locked) throw new Error("Product disappeared during delete");
+          await prepareCartLinesForProductDelete(id, transaction);
+          await locked.destroy({ transaction });
+        });
+        break;
+      } catch (error) {
+        if (attempt === 0 && isVariantCartUniqueViolation(error)) continue;
+        throw error;
+      }
+    }
+
     // Row is gone before the files are: deleting first would leave a product
     // pointing at a missing image if the DELETE then failed. Gallery rows are
     // removed by the ON DELETE CASCADE constraint.
-    await product.destroy();
     for (const candidate of [product.image, ...gallery.map((row) => row.url)]) {
       await releaseImageIfUnused(candidate, null);
     }

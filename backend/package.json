@@ -28,7 +28,8 @@
     "test:pg:base": "node test/pgSuite.js test/pgBaseSchema.test.js",
     "test:pg:tooling": "node test/pgSuite.js test/pgTooling.test.js",
     "test:pg:data": "node test/pgSuite.js test/dataMigration.test.js",
-    "test:pg:storage": "node test/pgSuite.js test/storageUpload.test.js"
+    "test:pg:storage": "node test/pgSuite.js test/storageUpload.test.js",
+    "test:pg:variants": "node test/pgSuite.js test/variants.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

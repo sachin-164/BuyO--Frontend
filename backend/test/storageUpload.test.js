@@ -18,7 +18,7 @@ const path = require("path");
 
 const helpers = require("./helpers");
 const imageStore = require("../lib/imageStore");
-const { uploadLedger } = require("../lib/uploadLedger");
+const { uploadLedger, UploadLedger } = require("../lib/uploadLedger");
 const { createMockSupabase } = require("./mockSupabaseStorage");
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
@@ -61,8 +61,10 @@ before(async () => {
 });
 
 after(async () => {
+  // Clear before closing the pool: after-hook order is LIFO for nested hooks,
+  // and ctx.close() shuts the Sequelize pool down.
+  await uploadLedger.clear();
   await ctx.close();
-  uploadLedger.clear();
   imageStore.__resetImageStoreForTests();
 });
 
@@ -189,6 +191,63 @@ test("one admin cannot consume another admin's upload authorization", async () =
   mock.seed(auth.json.objectPath, PNG, "image/png");
   const stolen = await createProduct(auth.json.objectPath, {}, admin2.token);
   assert.equal(stolen.status, 403, stolen.text);
+});
+
+test("durable ledger is shared across instances, single-use, expiry-aware and bounded", async () => {
+  const ledgerA = new UploadLedger();
+  const ledgerB = new UploadLedger();
+  await ledgerA.clear();
+
+  const base = {
+    adminId: admin.user.id,
+    mimetype: "image/png",
+    size: PNG.length,
+    ttlMs: 60000
+  };
+
+  // Instance A authorizes; instance B consumes. This is the exact Vercel
+  // failure mode the old per-process Map could not handle.
+  const put = await ledgerA.put("products/1700000000999-aaaaaaaaaaaaaaaa.png", base);
+  assert.equal(put.status, "ok");
+  const across = await ledgerB.take("products/1700000000999-aaaaaaaaaaaaaaaa.png", admin.user.id);
+  assert.equal(across.status, "ok");
+  assert.equal(across.entry.mimetype, "image/png");
+  assert.equal(across.entry.size, PNG.length);
+  assert.equal(
+    (await ledgerA.take("products/1700000000999-aaaaaaaaaaaaaaaa.png", admin.user.id)).status,
+    "missing",
+    "single-use: replay is refused across instances too"
+  );
+
+  // A failed (wrong-admin) attempt still consumes the row.
+  await ledgerA.put("products/1700000001000-bbbbbbbbbbbbbbbb.png", base);
+  assert.equal(
+    (await ledgerB.take("products/1700000001000-bbbbbbbbbbbbbbbb.png", admin2.user.id)).status,
+    "forbidden"
+  );
+  assert.equal(
+    (await ledgerA.take("products/1700000001000-bbbbbbbbbbbbbbbb.png", admin.user.id)).status,
+    "missing"
+  );
+
+  // Expired rows are classified and removed.
+  await ledgerA.put("products/1700000001001-cccccccccccccccc.png", {
+    ...base,
+    ttlMs: 1000,
+    now: Date.now() - 5000
+  });
+  assert.equal(
+    (await ledgerB.take("products/1700000001001-cccccccccccccccc.png", admin.user.id)).status,
+    "expired"
+  );
+
+  // Bounded growth: expired rows are pruned; the cap then refuses new work.
+  const bounded = new UploadLedger({ maxEntries: 1 });
+  await bounded.clear();
+  await bounded.put("products/1700000001002-dddddddddddddddd.png", { ...base, ttlMs: 1, now: Date.now() - 100 });
+  assert.equal((await bounded.put("products/1700000001003-eeeeeeeeeeeeeeee.png", base)).status, "ok");
+  assert.equal((await bounded.put("products/1700000001004-ffffffffffffffff.png", base)).status, "full");
+  await bounded.clear();
 });
 
 test("invalid object paths are refused before any storage or ledger touch", async () => {

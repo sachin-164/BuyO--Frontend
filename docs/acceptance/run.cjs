@@ -114,7 +114,7 @@ async function boot() {
   await conn.end();
 
   const sequelize = requireBackend("./config/db");
-  for (const model of ["user", "category", "product", "productVariant", "productReview", "cart", "wishlist", "address", "productImage", "order"]) {
+  for (const model of ["user", "category", "product", "productVariant", "productReview", "cart", "wishlist", "address", "productImage", "order", "uploadAuthorization"]) {
     requireBackend(`./models/${model}`);
   }
   await sequelize.sync();
@@ -134,6 +134,7 @@ async function boot() {
     OrderItem: requireBackend("./models/orderItem"),
     ProductVariant: requireBackend("./models/productVariant"),
     ProductReview: requireBackend("./models/productReview"),
+    WishlistItem: requireBackend("./models/wishlist"),
   };
 
   return {
@@ -717,6 +718,137 @@ function main() {
       assert.ok(!sizes.includes("S"), "deactivated size is not sold");
       assert.ok(!colours.includes("Navy"), "deactivated colour is not sold");
       report.checks.variantsAdmin = { edited: white.id, added: navy.id, deactivated: navy.isActive === false };
+    });
+
+    await step("admin uploads a real image, then deletes a variant product without a 23505 cart collision", async () => {
+      const adminPage = app.adminPage;
+      const productName = `Acceptance Upload ${Date.now()}`;
+
+      // 1. Real browser upload through the admin product form (local disk path:
+      // no production Supabase object is touched by this acceptance run).
+      await adminPage.goto("/admin/products/new");
+      await adminPage.getByRole("heading", { name: "Add product" }).waitFor({ timeout: 15000 });
+      await adminPage.locator("#product-name").fill(productName);
+      await adminPage.locator("#product-category").selectOption({ label: "Garden" });
+      await adminPage.locator("#product-description").fill("Uploaded in the real-stack acceptance run.");
+      await adminPage.locator("#product-mrp").fill("500");
+      await adminPage.locator("#product-selling").fill("400");
+      await adminPage.locator("#product-stock").fill("10");
+      await adminPage.locator("#product-image-file").setInputFiles({
+        name: "acceptance-upload.png",
+        mimeType: "image/png",
+        buffer: PNG,
+      });
+      await adminPage.getByRole("button", { name: "Add product", exact: true }).click();
+      await adminPage.waitForURL(/\/admin\/products\/\d+\/edit$/, { timeout: 20000 });
+      const uploadProductId = Number(adminPage.url().match(/\/admin\/products\/(\d+)\/edit$/)[1]);
+      await expectText(adminPage.getByText("Product created"), /Product created/);
+
+      const uploaded = await api(`/api/products/${uploadProductId}`);
+      assert.equal(uploaded.status, 200, uploaded.text);
+      assert.match(uploaded.json.product.image, /^\/uploads\//, "the browser upload produced a local image reference");
+      const imageRes = await fetch(BASE + uploaded.json.product.image);
+      assert.equal(imageRes.status, 200, "uploaded image is served");
+      assert.match(imageRes.headers.get("content-type") || "", /^image\/png/);
+      const imageBytes = Buffer.from(await imageRes.arrayBuffer());
+      assert.equal(imageBytes.length, PNG.length, "uploaded bytes round-trip unchanged");
+
+      // 2. Two variants, a legacy base line, two variant cart lines, wishlist
+      // and a paid order snapshot for a product that is about to be deleted.
+      const mkVariant = async (sku, size) => {
+        const res = await api(`/api/products/${uploadProductId}/variants`, {
+          method: "POST", token: admin.token,
+          body: { sku, size, color: "Green", stock: 5, priceAdjustment: 0 },
+        });
+        assert.equal(res.status, 201, res.text);
+        return res.json.variant;
+      };
+      const v1 = await mkVariant(`ACC-UPL-${Date.now()}-A`, "S");
+      const v2 = await mkVariant(`ACC-UPL-${Date.now()}-B`, "M");
+
+      const cartUser = await helpers.createVerifiedUser(BASE, { email: `delete.cart.${Date.now()}@buyotest.local` });
+      const orderUser = await helpers.createVerifiedUser(BASE, { email: `delete.order.${Date.now()}@buyotest.local` });
+
+      await models.CartItem.create({
+        UserId: cartUser.user.id, productId: uploadProductId, variantId: null,
+        name: productName, price: 400, qty: 1,
+      });
+      for (const variant of [v1, v2]) {
+        const add = await api("/api/cart", {
+          method: "POST", token: cartUser.token,
+          body: { productId: uploadProductId, variantId: variant.id, qty: 1 },
+        });
+        assert.equal(add.status, 201, add.text);
+      }
+      const wish = await api("/api/wishlist", {
+        method: "POST", token: cartUser.token, body: { productId: uploadProductId },
+      });
+      assert.equal(wish.status, 201, wish.text);
+
+      const addOrderLine = await api("/api/cart", {
+        method: "POST", token: orderUser.token,
+        body: { productId: uploadProductId, variantId: v1.id, qty: 2 },
+      });
+      assert.equal(addOrderLine.status, 201, addOrderLine.text);
+      const address = await api("/api/addresses", {
+        method: "POST", token: orderUser.token,
+        body: {
+          label: "Home", fullName: "Delete Order", phone: "9876543210",
+          line1: "9 Acceptance Road", city: "Bengaluru", state: "KA", pincode: "560001",
+        },
+      });
+      assert.equal(address.status, 201, address.text);
+      const placed = await api("/api/orders", {
+        method: "POST", token: orderUser.token,
+        body: { addressId: address.json.address.id, idempotencyKey: `delete-${Date.now()}` },
+      });
+      assert.equal(placed.status, 201, placed.text);
+      const snapshot = await models.OrderItem.findOne({ where: { orderId: placed.json.order.id } });
+      assert.equal(snapshot.variantSku, v1.sku);
+
+      // 3. Delete through the real admin UI confirmation dialog.
+      await adminPage.goto(`/admin/products?q=${encodeURIComponent(productName)}`);
+      await adminPage.getByRole("button", { name: "Apply filters" }).click();
+      await adminPage.getByRole("row", { name: new RegExp(productName) }).waitFor({ timeout: 15000 });
+      await adminPage.getByRole("button", { name: `Delete ${productName}` }).click();
+      const confirm = adminPage.getByRole("dialog");
+      await confirm.waitFor();
+      await confirm.getByRole("button", { name: "Delete product" }).click();
+      await expectText(adminPage.getByText("Product deleted"), /Product deleted/);
+
+      // 4. Regression: one unavailable cart line per user (base preferred; no
+      // PostgreSQL 23505), while wishlist + order snapshots survive.
+      assert.equal(await models.Product.findByPk(uploadProductId), null);
+      assert.equal(await models.ProductVariant.count({ where: { productId: uploadProductId } }), 0);
+      const remaining = await models.CartItem.findAll({
+        where: { UserId: cartUser.user.id, productId: uploadProductId },
+      });
+      assert.equal(remaining.length, 1, "exactly one cart line survives the cascade");
+      assert.equal(remaining[0].variantId, null);
+      const cartView = await api("/api/cart", { token: cartUser.token });
+      assert.equal(cartView.status, 200, cartView.text);
+      const deletedLine = cartView.json.items.find((item) => item.productId === uploadProductId);
+      assert.ok(deletedLine, "deleted product line is still visible");
+      assert.equal(deletedLine.unavailable, true);
+      assert.equal(deletedLine.unavailableReason, "product_unavailable");
+
+      const wishRows = await models.WishlistItem.findAll({ where: { UserId: cartUser.user.id } });
+      assert.equal(wishRows.length, 1, "wishlist row is preserved");
+
+      const keptSnapshot = await models.OrderItem.findByPk(snapshot.id);
+      assert.ok(keptSnapshot, "order snapshot survives");
+      assert.equal(keptSnapshot.productId, null);
+      assert.equal(keptSnapshot.variantId, null);
+      assert.equal(keptSnapshot.variantSku, v1.sku);
+      assert.equal(keptSnapshot.qty, 2);
+      assert.equal(Number(keptSnapshot.lineTotal), 800);
+
+      report.checks.imageUploadAndDelete = {
+        productId: uploadProductId,
+        uploadedImage: uploaded.json.product.image,
+        cartLinesAfterDelete: remaining.length,
+        orderSnapshotPreserved: keptSnapshot.id,
+      };
     });
 
     const reviewTitle = "Honest everyday tee";

@@ -21,7 +21,6 @@ const {
   __resetImageStoreForTests,
   __getSdkCreationCountForTests
 } = require("../lib/imageStore");
-const { UploadLedger } = require("../lib/uploadLedger");
 const { createMockSupabase } = require("./mockSupabaseStorage");
 
 const SUPA_ENV = {
@@ -141,7 +140,7 @@ describe("Storage adapter: local driver (existing behavior preserved)", () => {
 });
 
 describe("Storage adapter: supabase driver resolution (MOCKED SDK)", () => {
-  it("resolves pending uploads through ledger + verification; rejects unverified references", async () => {
+  it("refuses unsafe references and passes external URLs through", async () => {
     __resetImageStoreForTests();
     const mock = createMockSupabase();
     __setSupabaseClientForTests(mock.client);
@@ -154,95 +153,23 @@ describe("Storage adapter: supabase driver resolution (MOCKED SDK)", () => {
       assert.equal(store.driver, "supabase");
       assert.equal(__getSdkCreationCountForTests(), 0, "mock injection must prevent real SDK construction");
 
-      const objectPath = "products/1700000000000-abcdef0123456789.png";
-
-      // No ledger entry -> 400 (authorization proof missing)
-      await assert.rejects(
-        () => resolveProductImageValue(objectPath, 1),
-        (err) => err.status === 400 && /not found or already used/.test(err.publicMessage)
-      );
-
-      // Ledger entry + valid stored object -> public URL + cleanup path
-      const { uploadLedger } = require("../lib/uploadLedger");
-      uploadLedger.clear();
-      uploadLedger.put(objectPath, { adminId: 1, mimetype: "image/png", size: PNG.length, ttlMs: 60000 });
-      mock.seed(objectPath, PNG, "image/png");
-      const resolved = await resolveProductImageValue(objectPath, 1);
-      assert.equal(resolved.value, `${SUPA_ENV.SUPABASE_URL}/storage/v1/object/public/product-images/${objectPath}`);
-      assert.equal(resolved.cleanupPath, objectPath);
-      assert.ok(mock.calls.info >= 1, "verification must query object metadata");
-
-      // Replay of the same path -> consumed, 400
-      await assert.rejects(() => resolveProductImageValue(objectPath, 1), (err) => err.status === 400);
-
-      // Expired authorization -> 410 (backdated put, no sleeping)
-      const expiredPath = "products/1700000000001-babcdef0123456789.png";
-      uploadLedger.put(expiredPath, { adminId: 1, mimetype: "image/png", size: 4, ttlMs: 1000, now: Date.now() - 5000 });
-      await assert.rejects(() => resolveProductImageValue(expiredPath, 1), (err) => err.status === 410);
-
-      // Another admin's authorization -> 403
-      const foreignPath = "products/1700000000002-cabcdef0123456789.png";
-      uploadLedger.put(foreignPath, { adminId: 2, mimetype: "image/png", size: 4, ttlMs: 60000 });
-      await assert.rejects(() => resolveProductImageValue(foreignPath, 1), (err) => err.status === 403);
-
-      // Invalid shape -> 400 before any ledger/storage touch
+      // Invalid shape -> 400 before any ledger/storage touch.
       await assert.rejects(() => resolveProductImageValue("products/../../x", 1), (err) => err.status === 400);
 
-      // New /uploads/ writes refused in hosted mode (no ephemeral refs)
+      // New /uploads/ writes refused in hosted mode (no ephemeral refs).
       await assert.rejects(() => resolveProductImageValue("/uploads/x.png", 1), (err) => err.status === 400);
 
-      // External URLs pass through unchanged (existing feature)
+      // External URLs pass through unchanged (existing feature).
       const ext = await resolveProductImageValue("https://cdn.example.com/a.png", 1);
       assert.deepEqual(ext, { value: "https://cdn.example.com/a.png", cleanupPath: null });
+
+      // The durable ledger + real-object path (missing/replay/expiry/foreign,
+      // bad signatures, size mismatch, transient 502) is covered end-to-end by
+      // test/storageUpload.test.js against the scratch database.
     } finally {
       delete process.env.STORAGE_DRIVER;
       delete process.env.SUPABASE_URL;
       delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-      __resetImageStoreForTests();
-    }
-  });
-
-  it("classifies verification failures: bad content removed, storage errors -> 502", async () => {
-    __resetImageStoreForTests();
-    const mock = createMockSupabase();
-    __setSupabaseClientForTests(mock.client);
-    const { uploadLedger } = require("../lib/uploadLedger");
-
-    process.env.STORAGE_DRIVER = "supabase";
-    process.env.SUPABASE_URL = SUPA_ENV.SUPABASE_URL;
-    process.env.SUPABASE_SERVICE_ROLE_KEY = SUPA_ENV.SUPABASE_SERVICE_ROLE_KEY;
-    try {
-      // Spoofed content (HTML stored under an image/png authorization)
-      const spoofed = "products/1700000000010-abcdef0123456789.png";
-      uploadLedger.put(spoofed, { adminId: 1, mimetype: "image/png", size: 20, ttlMs: 60000 });
-      mock.seed(spoofed, Buffer.from("<html><script>x"), "image/png");
-      await assert.rejects(() => resolveProductImageValue(spoofed, 1), (err) => err.status === 400);
-      assert.ok(!mock.objects.has(spoofed), "invalid-content object must be removed (orphan control)");
-      assert.ok(mock.calls.removed.includes(spoofed));
-
-      // Authorized size mismatch (restricted authorization)
-      const wrongSize = "products/1700000000011-abcdef0123456789.png";
-      uploadLedger.put(wrongSize, { adminId: 1, mimetype: "image/png", size: 999, ttlMs: 60000 });
-      mock.seed(wrongSize, PNG, "image/png");
-      await assert.rejects(() => resolveProductImageValue(wrongSize, 1), (err) => err.status === 400);
-
-      // Object never uploaded -> 400 not-found
-      const neverUploaded = "products/1700000000012-abcdef0123456789.png";
-      uploadLedger.put(neverUploaded, { adminId: 1, mimetype: "image/png", size: 4, ttlMs: 60000 });
-      await assert.rejects(() => resolveProductImageValue(neverUploaded, 1), (err) => err.status === 400);
-
-      // Transient storage failure -> 502, object left alone (no destructive guess)
-      const storageBroken = "products/1700000000013-abcdef0123456789.png";
-      uploadLedger.put(storageBroken, { adminId: 1, mimetype: "image/png", size: 4, ttlMs: 60000 });
-      mock.seed(storageBroken, PNG, "image/png");
-      mock.objects.get(storageBroken).infoError = { message: "internal error" };
-      await assert.rejects(() => resolveProductImageValue(storageBroken, 1), (err) => err.status === 502);
-      assert.ok(mock.objects.has(storageBroken), "storage-error must NOT delete the object");
-    } finally {
-      delete process.env.STORAGE_DRIVER;
-      delete process.env.SUPABASE_URL;
-      delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-      uploadLedger.clear();
       __resetImageStoreForTests();
     }
   });
@@ -257,40 +184,5 @@ describe("Storage adapter: supabase driver resolution (MOCKED SDK)", () => {
       delete process.env.STORAGE_DRIVER;
       __resetImageStoreForTests();
     }
-  });
-});
-
-describe("Upload ledger (single-use authorization)", () => {
-  it("consumes entries atomically and refuses reuse after any outcome", () => {
-    const ledger = new UploadLedger({ maxEntries: 2 });
-    const base = { adminId: 1, mimetype: "image/png", size: 4, ttlMs: 1000 };
-
-    assert.equal(ledger.put("products/a.png", base).status, "ok");
-    const taken = ledger.take("products/a.png", 1);
-    assert.equal(taken.status, "ok");
-    assert.equal(taken.entry.adminId, 1);
-    assert.equal(taken.entry.mimetype, "image/png");
-    assert.equal(ledger.take("products/a.png", 1).status, "missing", "single-use: replay is refused");
-  });
-
-  it("classifies expired and foreign authorizations (and still consumes)", () => {
-    const ledger = new UploadLedger();
-    const base = { adminId: 7, mimetype: "image/png", size: 4, ttlMs: 1000 };
-    ledger.put("products/b.png", { ...base, now: Date.now() - 5000 });
-    assert.equal(ledger.take("products/b.png", 7).status, "expired");
-
-    ledger.put("products/c.png", base);
-    assert.equal(ledger.take("products/c.png", 8).status, "forbidden");
-    assert.equal(ledger.take("products/c.png", 7).status, "missing", "failed attempt must not leave a reusable entry");
-  });
-
-  it("prunes expired entries and refuses unbounded growth", () => {
-    const ledger = new UploadLedger({ maxEntries: 1 });
-    const base = { adminId: 1, mimetype: "image/png", size: 4, ttlMs: 1 };
-    ledger.put("products/d.png", { ...base, now: Date.now() - 100 });
-    assert.equal(ledger.put("products/e.png", base).status, "ok", "expired entry is pruned first");
-    assert.equal(ledger.put("products/f.png", base).status, "full", "cap refuses new authorizations");
-    ledger.clear();
-    assert.equal(ledger.size, 0);
   });
 });

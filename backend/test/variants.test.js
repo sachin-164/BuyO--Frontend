@@ -422,6 +422,105 @@ describe("Product variants (items 20–22)", () => {
     assert.match(priceCut.text, /zero or negative/i);
   });
 
+  it("deleting a product with several variant cart lines keeps one unavailable line and preserves history", async () => {
+    const Product = require("../models/product");
+    const ProductVariant = require("../models/productVariant");
+    const CartItem = require("../models/cart");
+    const WishlistItem = require("../models/wishlist");
+    const OrderItem = require("../models/orderItem");
+
+    const product = await createProduct({ sellingPrice: 300, stock: 10 });
+    const sku1 = nextSku("DEL1");
+    const sku2 = nextSku("DEL2");
+    const variant1 = await addVariant(product.id, { size: "S", sku: sku1, stock: 5 });
+    const variant2 = await addVariant(product.id, { size: "M", sku: sku2, stock: 5 });
+    assert.equal(variant1.status, 201, variant1.text);
+    assert.equal(variant2.status, 201, variant2.text);
+    const variant1Id = variant1.json.variant.id;
+    const variant2Id = variant2.json.variant.id;
+
+    const userA = await helpers.createVerifiedUser(ctx.baseUrl);
+    const userB = await helpers.createVerifiedUser(ctx.baseUrl);
+    const orderBuyer = await helpers.createVerifiedUser(ctx.baseUrl);
+
+    // User A: a legacy base line AND two variant lines. The base line must be
+    // the one kept (the variant lines would collide with it on cascade).
+    const legacyBase = await CartItem.create({
+      UserId: userA.user.id,
+      productId: product.id,
+      variantId: null,
+      name: product.name,
+      price: 300,
+      qty: 1
+    });
+    assert.equal((await addToCart(userA.token, { productId: product.id, variantId: variant1Id, qty: 1 })).status, 201);
+    assert.equal((await addToCart(userA.token, { productId: product.id, variantId: variant2Id, qty: 1 })).status, 201);
+
+    // User B: two variant lines and NO base line. The oldest line is kept.
+    const b1 = await addToCart(userB.token, { productId: product.id, variantId: variant1Id, qty: 1 });
+    const b2 = await addToCart(userB.token, { productId: product.id, variantId: variant2Id, qty: 1 });
+    assert.equal(b1.status, 201, b1.text);
+    assert.equal(b2.status, 201, b2.text);
+    const userBFirstLineId = b1.json.items.find((item) => item.variantId === variant1Id).id;
+
+    // Wishlist and a paid order snapshot both survive the catalog deletion.
+    const wish = await helpers.api(ctx.baseUrl, "/api/wishlist", {
+      method: "POST",
+      token: userA.token,
+      body: { productId: product.id }
+    });
+    assert.equal(wish.status, 201, wish.text);
+
+    assert.equal((await addToCart(orderBuyer.token, { productId: product.id, variantId: variant1Id, qty: 2 })).status, 201);
+    const address = await createAddress(orderBuyer.token);
+    const order = await checkout(orderBuyer.token, address.id);
+    assert.equal(order.status, 201, order.text);
+    const orderId = order.json.order.id;
+
+    const deleted = await helpers.api(ctx.baseUrl, `/api/products/${product.id}`, {
+      method: "DELETE",
+      token: admin.token
+    });
+    assert.equal(deleted.status, 200, deleted.text);
+
+    // Exactly one cart line per user remains; the cascade nulls variantId.
+    const aRows = await CartItem.findAll({ where: { UserId: userA.user.id }, order: [["id", "ASC"]] });
+    assert.equal(aRows.length, 1, "base line preferred and extra variant lines removed");
+    assert.equal(aRows[0].id, legacyBase.id);
+    assert.equal(aRows[0].variantId, null);
+    assert.equal(Number(aRows[0].productId), product.id);
+
+    const bRows = await CartItem.findAll({ where: { UserId: userB.user.id }, order: [["id", "ASC"]] });
+    assert.equal(bRows.length, 1, "oldest variant line kept when there is no base line");
+    assert.equal(bRows[0].id, userBFirstLineId);
+    assert.equal(bRows[0].variantId, null);
+
+    const cartView = await helpers.api(ctx.baseUrl, "/api/cart", { token: userA.token });
+    assert.equal(cartView.status, 200, cartView.text);
+    assert.equal(cartView.json.items.length, 1);
+    assert.equal(cartView.json.items[0].unavailable, true);
+    assert.equal(cartView.json.items[0].unavailableReason, "product_unavailable");
+
+    // Wishlist and order history are NOT cascade-deleted.
+    const wishRows = await WishlistItem.findAll({ where: { UserId: userA.user.id } });
+    assert.equal(wishRows.length, 1);
+    assert.equal(Number(wishRows[0].productId), product.id);
+
+    const orderItem = await OrderItem.findOne({ where: { orderId } });
+    assert.ok(orderItem, "order line survives");
+    assert.equal(orderItem.productId, null, "provenance FK is nulled, snapshot kept");
+    assert.equal(orderItem.variantId, null);
+    assert.equal(orderItem.variantSku, sku1);
+    assert.equal(orderItem.variantSize, "S");
+    assert.equal(orderItem.name, product.name);
+    assert.equal(orderItem.qty, 2);
+    assert.equal(Number(orderItem.lineTotal), 600);
+
+    // Catalog inventory rows are gone; no other product was touched.
+    assert.equal(await Product.findByPk(product.id), null);
+    assert.equal(await ProductVariant.count({ where: { productId: product.id } }), 0);
+  });
+
   it("products without variants keep the original base-stock behaviour", async () => {
     const product = await createProduct({ sellingPrice: 100, stock: 2 });
     const detail = await helpers.api(ctx.baseUrl, `/api/products/${product.slug}`);

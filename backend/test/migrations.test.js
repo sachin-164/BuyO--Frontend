@@ -340,7 +340,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
       "008_create_product_images.sql",
       "009_categories_parent.sql",
       "010_product_variants.sql",
-      "011_product_reviews.sql"
+      "011_product_reviews.sql",
+      "012_durable_upload_authorizations.sql"
     ]);
 
     // role column: additive; existing users default to customer (admins keep the allowlist fallback)
@@ -366,7 +367,7 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     assert.deepEqual(products.map((p) => p.categoryId), [1, 1, 2]);
 
     const applied = await queryDb(LEGACY_DB, "SELECT id FROM `schema_migrations` ORDER BY id");
-    assert.equal(applied.length, 8);
+    assert.equal(applied.length, 9);
     assert.ok(applied.some((row) => row.id === "008_create_product_images.sql"));
     assert.ok(applied.some((row) => row.id === "009_categories_parent.sql"));
   });
@@ -546,6 +547,7 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
     require("../models/productImage"); // gallery table must exist in both shapes
     require("../models/order"); // pulls in orderItem + orderStatusEvent
     require("../models/productReview");
+    require("../models/uploadAuthorization");
     await seq.sync();
     sequelize = seq;
 
@@ -559,7 +561,8 @@ describe("Phase 3 migrations + tooling (scratch DBs only)", () => {
       "008_create_product_images.sql",
       "009_categories_parent.sql",
       "010_product_variants.sql",
-      "011_product_reviews.sql"
+      "011_product_reviews.sql",
+      "012_durable_upload_authorizations.sql"
     ]);
     const second = await runMigrations({ settings: settingsFor(SYNC_DB), quiet: true });
     assert.equal(second.applied.length, 0);

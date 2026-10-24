@@ -47,6 +47,28 @@ const { pgClientOptions } = require("./lib/pgClientOptions");
 
 const BACKUP_DIR = path.resolve(__dirname, "..", "backups");
 
+// A dump contains PII (emails, addresses, order history) and password hashes.
+// Writing it into a consumer cloud-sync folder (OneDrive/Dropbox/iCloud/Google
+// Drive) copies it to a third party outside the access controls of this repo.
+// We warn loudly instead of silently accepting it; docs/backup-restore.md
+// requires an encrypted, access-restricted destination for real backups.
+const CLOUD_SYNC_MARKERS = [/onedrive/i, /dropbox/i, /google[ _-]?drive/i, /icloud/i, /sharepoint/i];
+
+function cloudSyncFolderFor(target) {
+  const normalized = path.resolve(target);
+  return CLOUD_SYNC_MARKERS.find((marker) => marker.test(normalized));
+}
+
+function warnIfCloudSynced(outDir) {
+  const marker = cloudSyncFolderFor(outDir);
+  if (!marker) return;
+  console.warn(
+    "⚠️  WARNING: this backup directory is inside a consumer cloud-sync folder. " +
+      "The dump contains PII and password hashes. Move it to encrypted, access-restricted storage " +
+      "and delete the plaintext copy (docs/backup-restore.md §1.1)."
+  );
+}
+
 // Migration Phase 7 (same rule as the migration runner): the PostgreSQL path
 // resolves its target from PG_* env vars only; explicit settings are a
 // MySQL-path concept and must not be silently ignored.
@@ -318,6 +340,7 @@ async function createBackup(options = {}) {
   if (!outPath.startsWith(outDir + path.sep)) {
     throw new Error("Refusing to write outside the backups directory.");
   }
+  warnIfCloudSynced(outDir);
 
   await fsp.writeFile(outPath, JSON.stringify(dump, null, 2), "utf8");
 

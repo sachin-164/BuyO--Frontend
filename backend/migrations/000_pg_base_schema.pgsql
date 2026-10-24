@@ -281,7 +281,7 @@ SELECT (
     AND c.relname IN ('Users', 'Categories', 'Products', 'CartItems', 'WishlistItems', 'Addresses', 'Orders', 'OrderItems', 'OrderStatusEvents')
 ) = 9 AS ok;
 
--- verify: every base table has at least its expected base columns
+-- verify: every base table has exactly its expected column count
 SELECT (
   SELECT count(*)
   FROM (
@@ -306,7 +306,7 @@ SELECT (
       AND NOT a.attisdropped
       AND c.relname IN ('Users', 'Categories', 'Products', 'CartItems', 'WishlistItems', 'Addresses', 'Orders', 'OrderItems', 'OrderStatusEvents')
     GROUP BY c.relname
-  ) actual ON actual.tbl = expected.tbl AND actual.n >= expected.n
+  ) actual ON actual.tbl = expected.tbl AND actual.n = expected.n
 ) = 9 AS ok;
 
 -- verify: the five enum types carry exactly the expected labels, in order
@@ -353,11 +353,11 @@ SELECT (
   )
 ) AS ok;
 
--- verify: nine primary keys, four unique constraints, at least nine FKs
+-- verify: nine primary keys, four unique constraints, nine foreign keys
 SELECT (
   SELECT count(*) FILTER (WHERE con.contype = 'p') = 9
      AND count(*) FILTER (WHERE con.contype = 'u') = 4
-     AND count(*) FILTER (WHERE con.contype = 'f') >= 9
+     AND count(*) FILTER (WHERE con.contype = 'f') = 9
   FROM pg_constraint con
   JOIN pg_namespace ns ON ns.oid = con.connamespace
   WHERE ns.nspname = current_schema()

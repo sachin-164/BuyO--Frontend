@@ -68,6 +68,7 @@ async function main() {
   require("../models/product");
   require("../models/cart");
   require("../models/wishlist");
+  require("../models/uploadAuthorization");
   const sequelize = require("../config/db");
 
   await sequelize.authenticate();

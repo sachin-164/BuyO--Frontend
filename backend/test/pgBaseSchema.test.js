@@ -2,23 +2,24 @@
 // The EMPTY-database bootstrap path for PostgreSQL, end to end:
 //
 //   1. A brand-new database initialized by the numbered .pgsql migrations
-//      ALONE (000_pg_base_schema + 005/006/007, NO sequelize.sync) — the
-//      in-file verify directives must pass and all four files must be
-//      recorded, with all nine tables and five enum types physically present.
-//   2. That migration-built schema must be catalog-IDENTICAL to a sync-built
-//      twin (columns incl. types/defaults/nullability, constraint definitions,
-//      index definitions, enum labels, sequences). Column ORDINALS are
-//      intentionally excluded: additive ALTERs append columns on an upgraded
-//      database while a fresh sync declares them in model order — the physical
-//      order is not part of the contract.
+//      ALONE (000_pg_base_schema + 005-012, NO sequelize.sync) — the
+//      in-file verify directives must pass and all nine files must be
+//      recorded, with all application tables and enum types physically present.
+//   2. That migration-built schema must be catalog-IDENTICAL to a
+//      migration-first + sync twin (columns incl. types/defaults/nullability,
+//      constraint definitions, index definitions, enum labels, sequences).
+//      Column ORDINALS are intentionally excluded: additive ALTERs append
+//      columns on an upgraded database while a fresh schema declares them in
+//      model order — the physical order is not part of the contract.
 //   3. The real application must RUN against the migration-built schema:
 //      signup → verify → login → /auth/me, admin catalog writes (Categories,
 //      Products), cart double-add collapsing to one line (005), wishlist
 //      composite uniqueness (006), case-insensitive email uniqueness enforced
 //      at the DATABASE level (007), direct order/item/status writes (enums,
 //      JSON columns, FKs, serial id defaults) and enum-value rejection.
-//   4. Reruns are no-ops (000 recorded exactly once), and the sync-built
-//      twin reports the same four applied files (000 must no-op there).
+//   4. Reruns are no-ops (000 recorded exactly once), and the migration-first
+//      twin's extra sequelize.sync reports the same nine applied files without
+//      changing the catalog.
 //
 // Exercised ONLY against scratch databases on the embedded loopback
 // cluster (pgSuite harness). Real buyoDB and Supabase are never touched.
@@ -45,13 +46,14 @@ const EXPECTED_MIGRATIONS = [
   "008_create_product_images.pgsql",
   "009_categories_parent.pgsql",
   "010_product_variants.pgsql",
-  "011_product_reviews.pgsql"
+  "011_product_reviews.pgsql",
+  "012_durable_upload_authorizations.pgsql"
 ];
 
 const APP_TABLES = [
   "Addresses", "CartItems", "Categories", "OrderItems", "OrderStatusEvents",
   "Orders", "ProductImages", "ProductReviews", "Products", "ProductVariants",
-  "Users", "WishlistItems"
+  "UploadAuthorizations", "Users", "WishlistItems"
 ];
 
 const APP_ENUMS = [
@@ -130,7 +132,7 @@ function firstMismatch(a, b) {
   const len = Math.max(a.length, b.length);
   for (let i = 0; i < len; i++) {
     if (JSON.stringify(a[i]) !== JSON.stringify(b[i])) {
-      return `first mismatch #${i}\n    migration-built: ${JSON.stringify(a[i])}\n    sync-built:      ${JSON.stringify(b[i])}`;
+      return `first mismatch #${i}\n    migration-built: ${JSON.stringify(a[i])}\n    twin:            ${JSON.stringify(b[i])}`;
     }
   }
   return "";
@@ -147,8 +149,8 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     await dropCreateDb(helpers.TEST_DB_NAME);
     emptyResult = await runMigrations({ quiet: true });
 
-    // 2. Sync-built twin via the existing child helper (sequelize.sync +
-    //    the same numbered .pgsql files) for the catalog-identity proof.
+    // 2. Migration-first twin via the existing child helper (same numbered
+    //    .pgsql files, then a no-op sequelize.sync) for catalog identity.
     await dropCreateDb(TWIN_DB);
     const { stdout } = await execFileAsync(
       process.execPath,
@@ -172,6 +174,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     require("../models/address");
     require("../models/order"); // pulls in orderItem + orderStatusEvent
     require("../models/productReview");
+    require("../models/uploadAuthorization");
 
     const app = createApp();
     server = app.listen(0);
@@ -202,11 +205,11 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
 
   // ------------------------------------------------------------------ tests
 
-  it("migrations alone initialize an empty database (000, 005–011)", async () => {
-    assert.deepEqual(emptyResult.applied, EXPECTED_MIGRATIONS, "all eight files must apply in order on an empty DB");
+  it("migrations alone initialize an empty database (000, 005-012)", async () => {
+    assert.deepEqual(emptyResult.applied, EXPECTED_MIGRATIONS, "all nine files must apply in order on an empty DB");
 
     const bookkeeping = (await query(`SELECT id FROM "schema_migrations" ORDER BY id`)).map((r) => r.id);
-    assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "bookkeeping must record exactly the eight files");
+    assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "bookkeeping must record exactly the nine files");
 
     // External proof (independent of the in-file verify directives): every
     // application table and enum type physically exists.
@@ -217,7 +220,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
          WHERE n.nspname = current_schema() AND c.relkind = 'r'`
       )
     ).map((r) => r.relname).sort();
-    assert.deepEqual(tables, [...APP_TABLES, "schema_migrations"].sort(), "exactly the twelve app tables + bookkeeping");
+    assert.deepEqual(tables, [...APP_TABLES, "schema_migrations"].sort(), "exactly the thirteen app tables + bookkeeping");
 
     const enums = (
       await query(
@@ -229,7 +232,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     assert.deepEqual(enums, [...APP_ENUMS].sort(), "exactly the six enum types");
   });
 
-  it("migration-built schema is catalog-identical to a sync-built twin", async () => {
+  it("migration-built schema is catalog-identical to a migration-first + sync twin", async () => {
     const built = await snapshot(helpers.TEST_DB_NAME);
     const sync = await snapshot(TWIN_DB);
     for (const key of Object.keys(CATALOG_SQL)) {
@@ -460,7 +463,7 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     assert.match(enumErr.message, /enum_Orders_status|invalid input value for enum/);
   });
 
-  it("rerun is a no-op and the sync-built twin applied the same files", async () => {
+  it("rerun is a no-op and the migration-first twin applied the same files", async () => {
     const again = await runMigrations({ quiet: true });
     assert.deepEqual(again.applied, []);
     assert.equal(again.upToDate, true);
@@ -468,9 +471,9 @@ describe("Base schema bootstrap: empty database via migrations alone (000)", () 
     const bookkeeping = (await query(`SELECT id FROM "schema_migrations" ORDER BY id`)).map((r) => r.id);
     assert.deepEqual(bookkeeping, [...EXPECTED_MIGRATIONS].sort(), "000 must be recorded exactly once");
 
-    // The twin child ran sync FIRST, then the same migrations — 000 and every
-    // additive migration must no-op there, and all eight files are recorded.
+    // The twin child ran the same migrations FIRST, then sequelize.sync — the
+    // sync must not alter the catalog, and all nine files are recorded.
     assert.match(twinStdout, new RegExp(`SCHEMA_OK ${TWIN_DB}`));
-    assert.match(twinStdout, /applied_pgsql=8/);
+    assert.match(twinStdout, /applied_pgsql=9/);
   });
 });

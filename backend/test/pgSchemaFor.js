@@ -34,12 +34,17 @@ process.env.PG_DB = dbName; // BEFORE config/db is required (models bind it)
   require("../models/cart");
   require("../models/wishlist");
   require("../models/productReview");
+  require("../models/uploadAuthorization");
   const sequelize = require("../config/db");
-  await sequelize.sync(); // base schema from models (no alter — Phase 7 rule)
 
+  // Migration-first: exact 000 verifies on the EMPTY database, then sync must
+  // be a no-op against the migration-built schema. A sync-first database has
+  // later additive columns, which the exact historical 000 by design rejects.
   const { runMigrations } = require("../scripts/migrate");
   const result = await runMigrations({ quiet: true });
   const applied = result && Array.isArray(result.applied) ? result.applied.length : -1;
+
+  await sequelize.sync(); // must not alter the migration-built schema
 
   await sequelize.close();
   console.log(`SCHEMA_OK ${dbName} applied_pgsql=${applied}`);

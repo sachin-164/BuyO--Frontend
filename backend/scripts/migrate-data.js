@@ -349,6 +349,20 @@ function lowerUniqueViolation(sourceRows, column) {
   return [...groups.values()].filter((g) => g.length > 1).flat();
 }
 
+// Cart identity (mirrors 010's expression index
+// uq_cartitems_user_product_variant, which pg_index discovery cannot read).
+// Legacy MySQL has no variantId column: undefined is the base/NULL line.
+function cartIdentityViolation(sourceRows) {
+  const groups = new Map();
+  for (const r of sourceRows) {
+    if (r.productId === null || r.productId === undefined) continue; // NULLs are distinct in PG
+    const key = `${r.UserId}\u0000${r.productId}\u0000${r.variantId ?? 0}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r.id);
+  }
+  return [...groups.values()].filter((g) => g.length > 1).flat();
+}
+
 // ---------------------------------------------------------------- import
 
 async function insertRows(client, targetTable, columns, rows) {
@@ -552,6 +566,7 @@ async function runDataMigration({ sourceDb, targetDb, flags = new Set(), dryRun 
       const lowerName = t.name.toLowerCase(); // PG physical casing may be "Users"/"Categories"
       if (lowerName === "users") addViolationList(violationsByTable, t.name, "case-insensitive unique lower(email)", lowerUniqueViolation(rows, "email"));
       if (lowerName === "categories") addViolationList(violationsByTable, t.name, "case-insensitive unique lower(name)", lowerUniqueViolation(rows, "name"));
+      if (lowerName === "cartitems") addViolationList(violationsByTable, t.name, "unique (UserId, productId, COALESCE(variantId, 0))", cartIdentityViolation(rows));
       summary.tables[t.name] = { sourceRows: rows.length };
     }
 

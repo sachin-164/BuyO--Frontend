@@ -76,16 +76,28 @@ have the platform inject it. Details: `docs/deployment.md` §5.
 ones on your machine / in the provider's dashboard and enter them only into
 the local `.env` and the platform secret manager.**
 
-1. **`JWT_SECRET` — MUST rotate.** A `JWT_SECRET` was committed in the repo's
-   early history (old commit `962a229`, reachable on GitHub from the original
-   `main` history). Anyone who ever fetched that history knows it. Removing a
-   secret from *current* files does **not** remove it from git history; the
-   mitigation is rotation, not archaeology.
+1. **`JWT_SECRET` — MUST rotate before production.** A `JWT_SECRET` was
+   committed in the repo's early history (old commit `962a229`, reachable on
+   GitHub from the original `main` history). Anyone who ever fetched that
+   history knows it. Removing a secret from *current* files does **not** remove
+   it from git history; the mitigation is rotation, not archaeology.
    - [ ] Generate ≥32 random chars (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
-   - [ ] Update Vercel + local `.env`; deploy/restart.
-   - [ ] Effect: every issued token becomes invalid — all users log in once
-         again (acceptable now; the P11 change already forces one re-login).
-   - [ ] Never reuse the old value anywhere.
+   - [ ] In Vercel: Project → Settings → Environment Variables → `JWT_SECRET`
+         → Edit/Create. Scope it to **Production only** (do not expose it to
+         Preview/Development unless those environments are trusted to mint
+         production-compatible tokens). Enable **Sensitive** when the plan
+         supports it (write-only after save; cannot be revealed again).
+   - [ ] Update local `backend/.env` with a different development secret (never
+         reuse the production value locally).
+   - [ ] Redeploy production (environment changes only apply to a new
+         deployment).
+   - [ ] **Session impact:** every issued access/verify/reset token becomes
+         invalid immediately after the new deployment. Signed-in users are
+         logged out once and must sign in again; outstanding verification and
+         password-reset links must be re-requested. Communicate this before the
+         release window.
+   - [ ] Never reuse the old value anywhere. Compare lengths/fingerprints only;
+         never print either value.
 2. **Legacy `MONGO_URI` — rotate/close if the service still exists.** Same
    old commit leaked a MongoDB connection string. If any Mongo instance is
    still provisioned with those credentials, rotate the password or delete
@@ -110,9 +122,94 @@ the local `.env` and the platform secret manager.**
    - [ ] App logs contain no secret material after deploy (grep the function
          logs for `SECRET`, `PASS`, `KEY` — expect only variable *names*)
 
+### 5.1 Production Supabase database password rotation (owner-approved change)
+
+**Do not run this during an unapproved release.** It immediately invalidates the
+old password and causes a short connection-failure window until Vercel redeploys
+with the new value. Take a verified backup first (`docs/backup-restore.md`).
+
+1. **Rotate in Supabase:** Dashboard → project → Project Settings → Database →
+   **Reset database password** (the label may be “Reset database password” or
+   “Database password → Reset”). Generate a strong password in a password
+   manager; do not paste it into chat, a ticket, shell history or this repo.
+2. **Update Vercel (production runtime):** Project → Settings → Environment
+   Variables → `DATABASE_URL` → Edit. Paste the new connection string (or only
+   the password inside the existing pooled/session string, depending on how the
+   variable is stored). Scope it to **Production**; add **Preview** only if that
+   environment is intentionally allowed to reach production data. Save.
+   - Keep the existing pooler host/port/database/user and any required query
+     parameters (`sslmode`, `pgbouncer`, `connection_limit`) — change only the
+     credential part.
+   - If production uses individual `PG_PASS` instead of `DATABASE_URL`, update
+     `PG_PASS`; `PG_*` **wins** over `DATABASE_URL` when both are set.
+3. **Update local `backend/.env`:** set `PG_PASS` (and `DATABASE_URL` if it is
+   the field in use) to the new value. Restart any local backend/Vite process.
+   Never commit the file.
+4. **Redeploy production** (Vercel → Deployments → Redeploy, or push the
+   approved commit). Environment changes are not applied to an existing
+   deployment. Wait for the new deployment to become Ready.
+5. **Verify the new password:**
+   - `GET /api/health/ready` returns 200 with a database check.
+   - Signup/login and one catalog read succeed against the alias.
+   - Connect once with `psql` using the Supabase **Session pooler** host shown
+     under Dashboard → Connect; enter the new password at the prompt and run
+     `select 1;`.
+6. **Verify the old password is dead:** in a separate shell, run the same
+   `psql` command against the same host/user and enter the **old** password at
+   the prompt. Expect `password authentication failed`. Do not put either
+   password in the command line, a script, or shell history; use the prompt.
+7. Record only the rotation timestamp and the verification result — never the
+   password or connection string.
+
+### 5.2 `TRUST_PROXY=1` on Vercel — verifying per-client rate limiting
+
+Without `TRUST_PROXY`, Express ignores `X-Forwarded-For` and every request can
+look like it came from one proxy address; global/auth limiters then share a
+bucket and can 429 unrelated users. `TRUST_PROXY=1` trusts exactly one hop
+(Vercel's edge). `TRUST_PROXY=true` is refused by startup — never use it.
+
+1. Set `TRUST_PROXY=1` in Vercel → Environment Variables (Production), then
+   redeploy. Do **not** set it locally unless a local reverse proxy is actually
+   in front of Express.
+2. Confirm the previous validation warning
+   (`ERR_ERL_UNEXPECTED_X_FORWARDED_FOR`) is absent from runtime logs after the
+   first requests.
+3. Verify client separation with two real client networks, not a spoofed header:
+   e.g. a laptop on Wi-Fi and a phone on cellular. Send the auth limiter's
+   budget (default 15 failed logins / 15 min) from client A, then one failed
+   login from client B. Only client A should receive `429`; client B must still
+   get a normal `401`. Repeat in the reverse order if needed.
+4. Do not send hand-crafted `X-Forwarded-For` values from a browser to “test”
+   this — the edge owns that header, and trusting arbitrary client-supplied
+   values is exactly the vulnerability this setting avoids. If your plan adds
+   another proxy hop, adjust the hop count deliberately and re-run step 3.
+
+### 5.3 Backup handling — no plaintext PII in a cloud-sync folder
+
+`db:backup` dumps contain emails, addresses, order history and bcrypt password
+hashes. `backend/backups/` is git-ignored, but a repo checkout inside OneDrive,
+Dropbox, iCloud Drive, Google Drive or SharePoint is **not** access-controlled
+like a secret store: the sync client copies the dump to a third party and often
+to every signed-in device. `db:backup` now prints a warning when it detects such
+a path. Treat that warning as a failure.
+
+- Keep the canonical copy in encrypted, access-restricted storage (an encrypted
+  disk/volume or a private bucket with server-side encryption, versioning and a
+  narrow IAM policy). Encrypt before it leaves the machine if the destination is
+  not itself encrypted at rest (e.g. `age`/`gpg`/7-Zip AES-256).
+- Delete the plaintext local copy after the encrypted copy is verified; empty
+  the sync provider's trash/version history too (deleting a file does not
+  revoke copies already synced).
+- Restrict who can read backups to the minimum owner/operator set, record
+  retention and test a restore from the encrypted copy at least once before
+  relying on it.
+- Never attach a dump to a ticket/chat, never commit it, and never place it on a
+  public static host. The earlier `backend/backups/buyo-backup-*.json` drill file
+  must not remain in the OneDrive-synced working tree.
+
 ## 6. What Phase 8 did NOT do
 
 - Did not rotate anything, did not print any value, did not connect to any
   remote service, did not change Vercel or Supabase settings.
 - Did not delete the inert `SUPABASE_*`/`DATABASE_URL` entries from anyone's
-  local `.env` — that is the user's machine; the recommendation is item 5.3.
+  local `.env` — that is the user's machine; the recommendation is §5 item 3.

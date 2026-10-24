@@ -57,7 +57,8 @@ const PG_MIGRATIONS = [
   "008_create_product_images.pgsql",
   "009_categories_parent.pgsql",
   "010_product_variants.pgsql",
-  "011_product_reviews.pgsql"
+  "011_product_reviews.pgsql",
+  "012_durable_upload_authorizations.pgsql"
 ];
 
 const CANDIDATE = "admin.candidate@buyotest.local";
@@ -116,7 +117,7 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
     // must never widen what the refusal tests expect).
     process.env.DB_RESTORE_ALLOWED_DATABASES = "";
 
-    ctx = await helpers.startTestApp();
+    ctx = await helpers.startTestApp({ migrateFirst: true });
     User = require("../models/user");
     Category = require("../models/category");
     CartItem = require("../models/cart");
@@ -146,10 +147,12 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
       }
     );
 
-    // Apply the .pgsql migrations so the backup contains the migration-created
-    // indexes and the schema_migrations bookkeeping (both must round-trip).
-    const applied = await runMigrations({ quiet: true });
-    assert.deepEqual(applied.applied, PG_MIGRATIONS);
+    // The harness already built this scratch DB with the .pgsql migrations
+    // (exact 000 verifies only on an empty database). Rerun must be a no-op,
+    // and the backup below still contains the migration-created indexes and
+    // schema_migrations bookkeeping (both must round-trip).
+    const rerun = await runMigrations({ quiet: true });
+    assert.deepEqual(rerun.applied, []);
 
     await dropDatabasePg(RESTORE_TARGET).catch(() => {}); // leftover from an aborted run
   });
@@ -299,7 +302,7 @@ describe("PostgreSQL database tooling (Phase 7)", () => {
 
     // Representative tables: rows, serial sequences, catalog-built CREATE TABLE.
     assert.equal(dump.tables.Users.rowCount, 2);
-    assert.equal(dump.tables.schema_migrations.rowCount, 8, "applied .pgsql migrations must be in the backup");
+    assert.equal(dump.tables.schema_migrations.rowCount, 9, "applied .pgsql migrations must be in the backup");
     assert.equal(dump.tables.Products.rowCount, 0, "empty tables are backed up too");
     assert.match(dump.tables.Users.createSql, /DEFAULT nextval\('"Users_id_seq"'::regclass\)/);
     assert.ok(

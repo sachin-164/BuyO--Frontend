@@ -83,12 +83,23 @@ router.post("/authorize", requireAuth, requireAdmin, validateBody(authorizeSchem
     return res.status(502).json({ success: false, message: "Could not authorize storage upload" });
   }
 
-  const put = uploadLedger.put(objectPath, {
-    adminId: req.user.id,
-    mimetype: contentType,
-    size,
-    ttlMs: resolveUploadAuthTtlMs()
-  });
+  let put;
+  try {
+    put = await uploadLedger.put(objectPath, {
+      adminId: req.user.id,
+      mimetype: contentType,
+      size,
+      ttlMs: resolveUploadAuthTtlMs()
+    });
+  } catch (err) {
+    // The signed URL was minted but the durable authorization could not be
+    // recorded. Refuse cleanly; the unused signed URL expires on its own.
+    console.error("Upload authorization could not be recorded:", err.message);
+    return res.status(503).json({
+      success: false,
+      message: "Upload authorization is temporarily unavailable; try again"
+    });
+  }
   if (put.status === "full") {
     return res.status(503).json({ success: false, message: "Too many pending uploads; retry shortly" });
   }

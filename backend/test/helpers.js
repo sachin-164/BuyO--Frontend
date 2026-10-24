@@ -92,8 +92,17 @@ async function recreateTestDatabase() {
   await connection.end();
 }
 
-async function startTestApp() {
+async function startTestApp({ migrateFirst = false } = {}) {
   await recreateTestDatabase();
+
+  // Migration-first mode: numbered .pgsql migrations build the schema from an
+  // EMPTY database, exactly like production bootstrap. Used by the PostgreSQL
+  // migration suite so exact 000 verification is meaningful (000 is a no-op on
+  // a database that sequelize.sync already extended with later columns).
+  if (migrateFirst) {
+    const { runMigrations } = require("../scripts/migrate");
+    await runMigrations({ quiet: true });
+  }
 
   const { createApp } = require("../app");
   const sequelize = require("../config/db");
@@ -104,7 +113,8 @@ async function startTestApp() {
   require("../models/address");
   require("../models/order"); // pulls in orderItem + orderStatusEvent
   require("../models/productReview");
-  await sequelize.sync(); // creates tables in the scratch test DB only
+  require("../models/uploadAuthorization");
+  if (!migrateFirst) await sequelize.sync(); // creates tables in the scratch test DB only
 
   const app = createApp();
   const server = app.listen(0);

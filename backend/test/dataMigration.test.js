@@ -166,7 +166,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
     const schema = await run("test/pgSchemaFor.js", [TARGET_DB]);
     assert.equal(schema.code, 0, `schema setup failed:\n${schema.stdout}${schema.stderr}`);
     assert.match(schema.stdout, new RegExp(`SCHEMA_OK ${TARGET_DB}`));
-    assert.match(schema.stdout, /applied_pgsql=8/); // 000, 005, 006, 007, 008, 009, 010, 011
+    assert.match(schema.stdout, /applied_pgsql=9/); // 000, 005, 006, 007, 008, 009, 010, 011, 012
   });
 
   after(async () => {
@@ -177,7 +177,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
 
   // ------------------------------------------------------------ §5 schema
 
-  it("fresh scratch target: all tables, migration indexes, 14 FKs and key types", async (t) => {
+  it("fresh scratch target: all tables, migration indexes, 18 FKs and key types", async (t) => {
     const client = new Client(pgClientOptions({ ...resolvePostgresSettings(), database: TARGET_DB }));
     await client.connect();
     try {
@@ -194,7 +194,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
       }
       assert.ok(pgNames.includes("schema_migrations"), "bookkeeping table exists");
       const bookkeeping = await client.query(`SELECT count(*)::int AS n FROM "schema_migrations"`);
-      assert.equal(bookkeeping.rows[0].n, 8, "numbered .pgsql migrations recorded");
+      assert.equal(bookkeeping.rows[0].n, 9, "numbered .pgsql migrations recorded");
 
       const idx = await client.query(
         `SELECT indexname FROM pg_indexes WHERE schemaname='public'`
@@ -215,7 +215,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
       const fks = await client.query(
         `SELECT count(*)::int AS n FROM pg_constraint WHERE contype='f' AND connamespace='public'::regnamespace`
       );
-      assert.equal(fks.rows[0].n, 14, "exactly 14 foreign keys");
+      assert.equal(fks.rows[0].n, 18, "exactly 18 foreign keys (9 base + 9 additive, incl. 012 upload authorizations)");
 
       const types = await client.query(
         `SELECT table_name, column_name, data_type, udt_name FROM information_schema.columns
@@ -287,7 +287,7 @@ describe("Phase 11: MySQL → PostgreSQL data migration rehearsal (local only)",
     assert.match(res.stderr, /NO rows were written/);
     assert.match(res.stderr, /case-insensitive unique lower\(email\)/);
     assert.match(res.stderr, /ids: 1, 2/);
-    assert.match(res.stderr, /unique \(UserId, productId\)/);
+    assert.match(res.stderr, /unique \(UserId, productId, COALESCE\(variantId, 0\)\)/);
     assert.match(res.stderr, /FK UserId -> Users \(parent row missing\)/);
     assert.match(res.stderr, /ids: 3/);
     assertCredentialFree(res);
