@@ -33,8 +33,10 @@ Production baseline inspected read-only:
 
 ## 1. Guardrails used for this verification
 
-- No merge to `master`, no production deployment, no Vercel/Supabase setting
-  changes, no DNS changes, no schema or migration changes.
+- At the time of this Phase 6 verification: no merge to `master`, no production
+  deployment, no Vercel/Supabase setting changes, no DNS changes, no schema or
+  migration changes. (The current release addendum above supersedes this for
+  the approved cutover.)
 - No production customer, order, product, category or upload data was created,
   modified or deleted. All browser writes went to an in-memory test API.
 - The temporary browser harness and screenshots live outside the repository in

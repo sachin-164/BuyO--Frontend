@@ -96,7 +96,7 @@ pre-existing Phase 3 PG-only savepoint case). New files:
 
 PostgreSQL: `test:pg` 5/5, `catalog` 18/18, `orders` 22/22, `auth` 16/16,
 `cart` 15/15, `security` 23/23, `migrations` 14/14, `tooling` 8/8, `data` 9/9,
-**`storage` 19/19** (new `test:pg:storage` — the upload API verified under the
+**`storage` 20/20** (new `test:pg:storage` — the upload API verified under the
 PG dialect too). All green, no test weakened or skipped.
 
 ## 4. Locally verified vs mocked vs unverified
