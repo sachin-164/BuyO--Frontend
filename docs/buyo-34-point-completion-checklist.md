@@ -168,7 +168,7 @@ Owner decisions recorded before implementation:
 
 | # | Requirement | Current | Remaining work | Depends on | Acceptance criteria | Tests | Status |
 |---|---|---|---|---|---|---|---|
-| 34 | Release readiness: migrations, env, rollback, acceptance | Phase 6 docs exist; migrations `008`–`011` recorded with risk + rollback, no new env vars, risk register, release/rollback plan, and the 2026-10-23 real-browser acceptance run (`docs/acceptance/report-2026-10-23.json`) | Done locally. The production schema migration and backend/frontend deploy still need explicit owner approval | 1–33 | Full suite green, production build clean, real-browser journeys pass against a real backend | `npm test` (backend 343: 342 pass, 1 PG-only skip), `npx vitest run` (228/228), `npx tsc --noEmit`, `npm run build`, PG migrations/base/tooling (14/14, 4/4, 8/8), `docs/acceptance/run.cjs` (29/29) | GATED |
+| 34 | Release readiness: migrations, env, rollback, acceptance | Phase 6 docs exist; migrations `008`–`012` recorded with risk + rollback, no new env vars, risk register, release/rollback plan, and the 2026-10-24 real-browser acceptance run (`docs/acceptance/report-2026-10-24.json`) | Done locally. The production schema migration and backend/frontend deploy still need explicit owner approval | 1–33 | Full suite green, production build clean, real-browser journeys pass against a real backend | `npm test` (backend 341: 340 pass, 1 PG-only skip), `npx vitest run` (228/228), `npx tsc --noEmit`, `npm run build`, all PG suites green, `docs/acceptance/run.cjs` (30/30) | GATED |
 
 ---
 
@@ -216,8 +216,20 @@ Media ships before multi-image so there is one upload path, not two.
 | `009_categories_parent.sql` / `.pgsql` (item 29) | Additive nullable `Categories.parentId` plus self-FK `Categories_parentId_fkey` (`ON UPDATE CASCADE ON DELETE SET NULL`). No backfill: every existing category stays a root | Low: one nullable column + one FK; old code ignores both, and no row or index is rewritten. Deliberately no extra index (matches `sequelize.sync`; MySQL creates its FK index automatically). Guarded/re-runnable; PG runs in one transaction | `ALTER TABLE "Categories" DROP CONSTRAINT "Categories_parentId_fkey"; ALTER TABLE "Categories" DROP COLUMN "parentId";` (MySQL: ``ALTER TABLE `Categories` DROP FOREIGN KEY `Categories_parentId_fkey`; ALTER TABLE `Categories` DROP COLUMN `parentId`;``) — discards hierarchy links only, never rows |
 | `010_product_variants.sql` / `.pgsql` (items 20–22) | Additive `ProductVariants` table, nullable `CartItems.variantId` + FK, and nullable `OrderItems` variant snapshot columns + FK. PostgreSQL replaces the cart unique index with `(UserId, productId, COALESCE(variantId, 0))`; MySQL keeps its transactional app-level dedup | Medium: new objects only and old code ignores them, but the PostgreSQL cart uniqueness change must land with the backend (one base line + one line per variant). No existing product/order row is modified. Production starts with no variants, so the new table is empty | Run `011` DOWN first, then `010` DOWN: drop order-item FKs/columns, cart FK/column, `ProductVariants`; on PostgreSQL also drop `uq_cartitems_user_product_variant`. If post-release variant orders exist, dump `ProductVariants` and the snapshot columns first — dropping them loses only newly added variant data, never historical order rows |
 | `011_product_reviews.sql` / `.pgsql` (items 23–25) | Additive `ProductReviews` table (rating/title/body/status/moderation metadata), unique `(userId, productId)` index, product/status index, and three FKs. PostgreSQL creates `enum_ProductReviews_status` | Low: one new table and its indexes; no existing table, column or row is touched. Production starts with no reviews | `DROP TABLE "ProductReviews"; DROP TYPE "enum_ProductReviews_status";` (MySQL: ``DROP TABLE `ProductReviews`;``) — removes only reviews created after release; snapshot a copy first if they must be preserved |
+| `012_durable_upload_authorizations.sql` / `.pgsql` (release hardening) | Additive `UploadAuthorizations` table: server-generated object path, admin id, validated MIME/size, expiry, unique path index, expiry index, admin FK. Replaces the process-local upload ledger so a signed upload minted by one Vercel instance can be redeemed by another | Low: one new table and its indexes; no existing row/column is touched. Pending authorizations are short-lived (10 min default), so losing them only forces a re-upload. **Required before the backend deploy** — without it admin image uploads return 503 | `DROP TABLE "UploadAuthorizations";` (MySQL: ``DROP TABLE `UploadAuthorizations`;``) — only pending upload authorizations are lost; no product, cart or order data depends on it |
 
 ---
+
+## Real-browser acceptance — 2026-10-24 (release candidate)
+
+Executed with `docs/acceptance/run.cjs` (recorded output:
+`docs/acceptance/report-2026-10-24.json`).
+
+Result: **30/30 steps passed**, including the new admin browser image upload and
+the variant-product deletion regression (multiple variant cart lines, wishlist
+and order snapshot preservation) through the real UI + real database. The
+earlier 2026-10-23 run (29/29, `report-2026-10-23.json`) remains as historical
+evidence.
 
 ## Real-browser acceptance — 2026-10-23
 
@@ -265,7 +277,7 @@ browser run. No production row, order, stock value or schema was changed.
 
 Nothing below has been executed against production. Production is still the
 baseline commit `9078aae` (Vercel deployment `dpl_GkpNWj9eoL5Khao7XFos7fjG2GFd`),
-with schema migrations `008`–`011` **not** applied.
+with schema migrations `008`–`012` **not** applied.
 
 ### Preconditions
 
@@ -275,20 +287,26 @@ with schema migrations `008`–`011` **not** applied.
    `SUPABASE_SERVICE_ROLE_KEY` (hosted start refuses local-disk storage) and real
    `EMAIL_USER`/`EMAIL_PASS`, `FRONTEND_URL`, `BACKEND_URL`, `JWT_SECRET`.
    **No new env vars are required by this release.**
-4. `react-migration` CI state: backend 343 tests (342 pass, 1 PG-only skip),
-   frontend 228/228, `tsc` clean, production build clean, PG
-   migrations/base/tooling 14/14 + 4/4 + 8/8, acceptance 29/29.
+4. `react-migration` CI state: backend 341 tests (340 pass, 1 PG-only skip),
+   frontend 228/228, `tsc` clean, production build clean, all PostgreSQL
+   suites green (base/migrations/tooling/data/storage/variants/catalog/orders/
+   auth/cart/security), real-stack acceptance 30/30 including the admin image
+   upload + variant-product deletion regression.
 
 ### Steps (in order)
 
 1. **Schema (Postgres):** back up first, then run
    `008_create_product_images.pgsql`, `009_categories_parent.pgsql`,
-   `010_product_variants.pgsql`, `011_product_reviews.pgsql` in the approved SQL
-   console. All are guarded/re-runnable and PG runs each in a transaction.
-   `010` replaces the cart uniqueness index; run it in the same change window as
-   the backend, before any variant is created.
+   `010_product_variants.pgsql`, `011_product_reviews.pgsql`,
+   `012_durable_upload_authorizations.pgsql` in the approved SQL console (or
+   `npm run db:migrate -- --confirm-local` against the approved target — it
+   applies **all** pending `.pgsql` files in order). All are guarded/re-runnable
+   and PG runs each in a transaction. `010` replaces the cart uniqueness index;
+   run it in the same change window as the backend, before any variant is
+   created. `012` creates `UploadAuthorizations`; without it the durable upload
+   authorization returns 503 and admin image uploads are broken.
 2. **Backend:** deploy the approved `react-migration` commit. Old frontend code
-   keeps working because all four changes are additive.
+   keeps working because all five changes are additive.
 3. **Frontend:** deploy the same commit to Vercel. `master` stays untouched
    until this is approved; promotion is a deliberate merge/redeploy step.
 4. **Smoke (read-only):** `GET /api/products`, `GET /api/categories` (expect
@@ -297,18 +315,23 @@ with schema migrations `008`–`011` **not** applied.
    routes. With owner credentials: create one real variant in admin, verify
    stock, submit one review, approve it in `/admin/reviews`, verify it appears
    publicly, then deactivate the variant and remove the test review only through
-   an approved data-cleanup step. There are currently no production
-   orders/accounts, so authenticated admin smoke still needs owner credentials.
+   an approved data-cleanup step. With separate owner approval for a production
+   storage write, create one product with an image in admin and confirm the
+   returned image URL loads — this is the live check for `012`. There are
+   currently no production orders/accounts, so authenticated admin smoke still
+   needs owner credentials.
 
 ### Rollback
 
 - **Frontend:** instant rollback in Vercel to `dpl_GkpNWj9eoL5Khao7XFos7fjG2GFd`
   (commit `9078aae`).
 - **Backend:** redeploy the previous backend build. Old code ignores
-  `ProductImages`, `Categories.parentId`, `ProductVariants` and
-  `ProductReviews`.
+  `ProductImages`, `Categories.parentId`, `ProductVariants`,
+  `ProductReviews` and `UploadAuthorizations`.
 - **Schema (only if a rollback requires it):** run the DOWN statements in
-  reverse order — `011` then `010` then `009` then `008`. Snapshot
+  reverse order — `012` then `011` then `010` then `009` then `008`. Dropping
+  `UploadAuthorizations` only invalidates pending (≤10 minute) uploads; no
+  product or order data depends on it. Snapshot
   `ProductVariants` and any order-item variant snapshot columns first if
   post-release variant orders must be preserved; no historical (pre-release)
   row is deleted by any UP migration.
@@ -321,6 +344,7 @@ with schema migrations `008`–`011` **not** applied.
 | Risk | Mitigation |
 | --- | --- |
 | Hierarchy UI before migration → SQL error on `parentId` | Apply `009` before deploying the backend/frontend; flat API fields remain |
+| Uploads 503 after deploy (`UploadAuthorizations` missing) | Apply `012` in the same approved window; verify `POST /api/uploads/authorize` and one owner-approved image upload |
 | Hosted storage misconfigured → image uploads 503 | Fail-fast config check before deploy; local driver never used on hosted |
 | Email delivery failure | Sends happen after commit and are logged/swallowed; orders never roll back; exactly one receipt per checkout via idempotency |
 | Double checkout / double restock | Server idempotency key + row lock + single transaction (covered by tests and the live replay step) |

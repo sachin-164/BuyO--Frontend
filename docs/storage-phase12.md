@@ -28,10 +28,13 @@ read credentials, or deploy.**
 
 ### Single-use upload ledger (`backend/lib/uploadLedger.js`, new)
 
-In-memory, TTL-bound, single-use authorizations bound to the authorizing
-admin. take() is atomic and consumes on every outcome (replay/foreign/expired
-are all dead ends). Cap = 500 entries (refuse, don't grow). Documented
-per-process limitation (same class as the in-memory rate limiter).
+Database-backed (`UploadAuthorizations`, migration `012`), TTL-bound,
+single-use authorizations bound to the authorizing admin. `take()` uses a
+transaction with `SELECT ... FOR UPDATE` + DELETE, so it is atomic across
+Vercel instances and consumes on every outcome (replay/foreign/expired are all
+dead ends). Cap = 500 active rows (refuse, don't grow; a rare cross-instance
+count race can exceed it by a few rows until the next prune). The old
+per-process Map limitation is gone.
 
 ### Direct-to-storage upload endpoints (`backend/routes/uploadRoutes.js`, new)
 
@@ -85,8 +88,8 @@ pre-existing Phase 3 PG-only savepoint case). New files:
 
 | Suite | Tests | What it covers |
 |---|---|---|
-| `test/storageAdapter.test.js` | 16 | driver/hosted refusal rules, config clamps, signatures, pending-path shape, local adapter (save/remove/traversal confinement), ledger semantics, MOCKED supabase resolution + failure classes |
-| `test/storageUpload.test.js` | 19 | authorize authz/validation, full authorize→upload→create flow, storage failure before save, MIME spoof through storage, size mismatch, expiry, replay, foreign admin, invalid paths, DB-failure orphan compensation, hosted multipart rejection, `/uploads/` preservation, external URLs, update flow, **real SDK never constructed** |
+| `test/storageAdapter.test.js` | 12 | driver/hosted refusal rules, config clamps, signatures, pending-path shape, local adapter (save/remove/traversal confinement), MOCKED supabase resolution + failure classes |
+| `test/storageUpload.test.js` | 20 | authorize authz/validation, full authorize→upload→create flow, storage failure before save, MIME spoof through storage, size mismatch, expiry, replay, foreign admin, durable cross-instance/cap semantics, invalid paths, DB-failure orphan compensation, hosted multipart rejection, `/uploads/` preservation, external URLs, update flow, **real SDK never constructed** |
 | `test/storageMigrate.test.js` | 7 | refusal without approval (zero SDK constructions), `DATABASE_URL` tripwire, dry-run classification without side effects, MOCKED apply (checksum-verified update, missing/invalid rows untouched, no source deletion), tamper → removal + no DB update, CLI wiring refusals |
 | `test/adminUploadFlow.test.js` | 6 | client orchestration with MOCKED network: multipart fallback, sequence order, error paths never upload/create |
 | `security.test.js` (+3) | — | local-mode authorize 409, `/uploads/` reference compat, static `/uploads/` serving |
@@ -113,7 +116,8 @@ PG dialect too). All green, no test weakened or skipped.
 
 ## 5. Known limitations / deferred decisions
 
-- Upload ledger is per-process (multi-instance → shared store at cutover).
+- Upload ledger is durable and shared (migration `012`); apply it at cutover.
+  Pending authorizations expire in ≤10 minutes and are safe to lose on rollback.
 - 4 MB default cap change deliberately deferred (configurable already).
 - Legacy `admin/add-product.html` remains a local-multipart page; hosted admin
   uses `admin/product-form.html`.

@@ -5,6 +5,14 @@ cutover are not executed.** The production site is still the legacy static
 frontend. Nothing in this document has been applied to Vercel, its environment
 variables, DNS, the database, or customer/order data.
 
+> **Current release addendum (2026-10-24).** The release now includes migration
+> `012_durable_upload_authorizations.pgsql` in addition to `008`–`011`. The
+> approved cutover must apply **all** pending `.pgsql` files (or run
+> `npm run db:migrate` against the approved target); without `012`, admin image
+> uploads return 503. The “no schema change” statements below describe the
+> original Phase 6 verification and do not override the current release
+> checklist in `docs/buyo-34-point-completion-checklist.md`.
+
 Starting point: branch `react-migration` at `e39311f` (`feat(phase-5): complete
 React admin panel`), with `master` and `origin/master` at `b6500cc`. The Phase 6
 verification commit records the hardening and this document.
@@ -301,9 +309,12 @@ critical defect; production deployment ID and database backup policy confirmed.
 3. **Apply the cutover config as its own commit.** Replace `vercel.json` with the
    candidate from section 5.4, validate JSON, and commit it separately so a
    rollback can revert exactly one commit.
-4. **Deploy through the normal production branch.** Push `master`; watch the
-   build log. Confirm the frontend install/build steps ran and the output is
-   `frontend/dist`. Do not change production env vars, DNS, database or storage.
+4. **Apply the approved schema, then deploy through the normal production
+   branch.** Back up first and apply every pending PostgreSQL migration
+   (`008`–`012`) under separate owner approval — `012` is required for durable
+   admin uploads. Then push `master`; watch the build log. Confirm the frontend
+   install/build steps ran and the output is `frontend/dist`. Do not change
+   production env vars, DNS or storage in this step.
 5. **Smoke test immediately** using `curl.exe` and a browser:
    - `/api/health` 200; `/api/health/ready` 200 after at most one retry
    - `/`, `/shop`, `/product/<real-slug>`, `/categories`, `/login`
@@ -361,10 +372,12 @@ push or rewrite `master` history.
 
 ### Data/rollback boundary
 
-- No schema or data migration is part of this cutover, so there is nothing to
-  down-migrate.
-- Tokens remain valid: the `token` key and JWT secret are unchanged, and both
-  frontends use the same API.
+- The release applies additive migrations `008`–`012` (no backfill). Rolling the
+  application code back does not require dropping them: old code ignores the new
+  tables/indexes, and `UploadAuthorizations` rows expire within 10 minutes.
+  Dropping `012` is only needed for a deliberate schema rollback.
+- Tokens remain valid unless `JWT_SECRET` is rotated as a separate owner-approved
+  change; both frontends use the same API.
 - Orders placed during the React window remain valid and readable by the legacy
   API; no order rollback is needed.
 - If a data incident is ever suspected, stop and use the existing

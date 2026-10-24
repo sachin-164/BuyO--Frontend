@@ -211,19 +211,25 @@ platform, and run the first real (sandbox) upload.
 
 ```bash
 cd backend
-npm test                # 157 tests: 156 pass, 1 skip (PG-only savepoint), MySQL + config/serverless/health/TLS/gate suites
+npm test                # 341 tests: 340 pass, 1 skip (PG-only savepoint), MySQL + config/serverless/health/TLS/gate suites
 npm run test:pg         # 5/5   (embedded-PG smoke)
 npm run test:pg:catalog # 18/18    npm run test:pg:orders   # 22/22
 npm run test:pg:auth    # 16/16    npm run test:pg:cart     # 15/15
-npm run test:pg:security# 20/20    npm run test:pg:migrations # 14/14
-npm run test:pg:tooling # 8/8
+npm run test:pg:security  # 23/23  npm run test:pg:migrations # 14/14
+npm run test:pg:tooling   # 8/8    npm run test:pg:base       # 4/4
+npm run test:pg:data      # 9/9    npm run test:pg:storage    # 20/20
+npm run test:pg:variants  # 9/9
 npm ci --omit=dev && node -e "require('pg'); console.log('pg OK')"   # prod install check (§3)
 git ls-files .env backend/.env backend/.env.* | findstr .            # must print nothing
+cd ../frontend
+npm test                # 228/228
+npm run build           # tsc --noEmit + vite build (frontend/dist)
 ```
 
-Production build check: the frontend has no build step; the API's "build" is
-`npm ci --omit=dev` (§3). On Vercel, the function build happens at deploy time —
-verified in the preview step (§8.5), never claimed before it runs.
+Production build check: the frontend build is `npm run build` (TypeScript check
++ Vite output in `frontend/dist`); the API's "build" is `npm ci --omit=dev`
+(§3). On Vercel, the function build happens at deploy time — verified in the
+preview step (§8.5), never claimed before it runs.
 
 ## 10. Production smoke-test checklist (post-deploy; none of it has been run)
 

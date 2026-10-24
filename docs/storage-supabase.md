@@ -125,8 +125,9 @@ references in hosted mode. Configuration errors surface at first storage use
    `{ contentType, size, filename }`.
 2. Server validates (allowlist type, `MAX_IMAGE_BYTES`, safe original
    filename), generates the object path, records a **single-use, TTL-bound
-   upload authorization** (`backend/lib/uploadLedger.js`, in-memory —
-   per-process limitation documented like the rate limiter) and returns
+   upload authorization** in the database (`UploadAuthorizations`, migration
+   `012`; consumed transactionally via `backend/lib/uploadLedger.js` so every
+   Vercel instance shares the same state) and returns
    `{ objectPath, signedUploadUrl, publicUrl, expiresAt }`. The service-role
    key never leaves the server; the signed URL is scoped to exactly that path.
 3. Admin client **PUTs the bytes directly to storage** (`admin/js/
@@ -213,9 +214,11 @@ Still unverified / to do in the approved storage-activation phase:
    (approval token + `--confirm-remote` + `--bucket` + `DATABASE_URL` unset),
    following §6; production `buyoDB` migration happens at the approved cutover
    with the documented dry-run → apply → verify sequence.
-3. **Multi-instance upload ledger** — the in-memory single-use ledger works
-   per process; a multi-instance deployment needs a shared store (same class
-   as the in-memory rate limiter; both are cutover decisions).
+3. **Multi-instance upload ledger** - resolved: authorizations are stored in
+   `UploadAuthorizations` (migration `012`) and consumed with
+   `SELECT ... FOR UPDATE` + DELETE, so a signed upload minted by one Vercel
+   instance can be redeemed by another. Apply `012` at cutover; the in-memory
+   rate limiter remains a separate decision.
 4. Browser CORS for the direct PUT to the storage origin + deploy smoke of
    cross-origin image loading (verify in the deploy smoke test, §4).
 5. The 4 MB default cap change (§3) remains an optional, separately reviewed
